@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -13,6 +14,13 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RolePermissionSeeder::class);
+
+        $organization = Organization::create([
+            'name' => 'BASE Search Marketing',
+            'slug' => 'base-search-marketing',
+            'description' => 'BASE Search Marketing organization',
+            'timezone' => 'America/Boise',
+        ]);
 
         $user = User::factory()->create([
             'first_name' => 'Admin',
@@ -28,9 +36,10 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $user->billingAddress()->create([
-            'company' => 'Test Company',
+            'company' => 'BASE Search Marketing',
         ]);
 
         $user->assignRole('super_admin');
+        $user->assignRole('owner', $organization->id);
     }
 }

@@ -60,8 +60,19 @@ class User extends Authenticatable implements JWTSubject
 
     public function getJWTCustomClaims(): array
     {
+        $globalRoles = $this->getGlobalRoles();
+
+        $organizations = $this->organizations->map(function ($org) {
+            return [
+                'id' => $org->id,
+                'slug' => $org->slug,
+                'roles' => $this->getRolesForOrganization($org->id),
+            ];
+        })->unique('id')->values();
+
         return [
-            'roles' => $this->roles->pluck('name')->toArray(),
+            'global_roles' => $globalRoles,
+            'organizations' => $organizations,
         ];
     }
 }

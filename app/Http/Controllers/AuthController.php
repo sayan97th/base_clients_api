@@ -23,10 +23,11 @@ class AuthController extends Controller
 
         $user->preference()->create();
         $user->billingAddress()->create();
+        $user->assignRole('user');
 
         $token = auth()->login($user);
 
-        return $this->respondWithToken($token);
+        return $this->respondWithToken($token, $user);
     }
 
     public function login(LoginRequest $request): JsonResponse
@@ -41,12 +42,18 @@ class AuthController extends Controller
             ], 401);
         }
 
-        return $this->respondWithToken($token);
+        return $this->respondWithToken($token, auth()->user());
     }
 
     public function me(): JsonResponse
     {
-        return response()->json(auth()->user());
+        $user = auth()->user();
+        $user->load('roles:id,name,display_name');
+
+        return response()->json([
+            'user' => $user,
+            'permissions' => $user->getAllPermissions(),
+        ]);
     }
 
     public function logout(): JsonResponse
@@ -62,15 +69,24 @@ class AuthController extends Controller
     {
         $token = auth()->refresh();
 
-        return $this->respondWithToken($token);
+        return $this->respondWithToken($token, auth()->user());
     }
 
-    protected function respondWithToken(string $token): JsonResponse
+    protected function respondWithToken(string $token, $user = null): JsonResponse
     {
+        $user?->load('roles:id,name,display_name');
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => auth()->factory()->getTTL() * 60,
+            'user' => $user ? [
+                'id' => $user->id,
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'email' => $user->email,
+                'roles' => $user->roles->pluck('name'),
+            ] : null,
         ]);
     }
 }

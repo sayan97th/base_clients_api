@@ -3,6 +3,9 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\TeamController;
+use App\Http\Controllers\TeamInvitationController;
+use App\Http\Controllers\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -36,4 +39,32 @@ Route::middleware('auth:api')->group(function () {
             Route::put('/{organization}', [OrganizationController::class, 'update']);
         });
     });
+
+    // Team routes
+    Route::prefix('teams')->group(function () {
+        Route::get('/', [TeamController::class, 'index']);
+        Route::post('/', [TeamController::class, 'store']);
+        Route::get('/{team}', [TeamController::class, 'show']);
+        Route::put('/{team}', [TeamController::class, 'update']);
+        Route::delete('/{team}', [TeamController::class, 'destroy']);
+
+        // Team members
+        Route::get('/{team}/members', [TeamMemberController::class, 'index']);
+        Route::put('/{team}/members/{user}', [TeamMemberController::class, 'update']);
+        Route::delete('/{team}/members/{user}', [TeamMemberController::class, 'destroy']);
+        Route::post('/{team}/leave', [TeamMemberController::class, 'leave']);
+
+        // Team invitations
+        Route::get('/{team}/invitations', [TeamInvitationController::class, 'index']);
+        Route::post('/{team}/invitations', [TeamInvitationController::class, 'store']);
+        Route::delete('/{team}/invitations/{invitation}', [TeamInvitationController::class, 'cancel']);
+        Route::post('/{team}/invitations/{invitation}/resend', [TeamInvitationController::class, 'resend']);
+    });
+
+    // Invitation accept/decline (token-based)
+    Route::post('/invitations/{token}/accept', [TeamInvitationController::class, 'accept']);
+    Route::post('/invitations/{token}/decline', [TeamInvitationController::class, 'decline']);
+
+    // User's pending invitations
+    Route::get('/my-invitations', [TeamInvitationController::class, 'myInvitations']);
 });

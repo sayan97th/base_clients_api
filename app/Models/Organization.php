@@ -47,4 +47,9 @@ class Organization extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    public function teams(): HasMany
+    {
+        return $this->hasMany(Team::class);
+    }
 }

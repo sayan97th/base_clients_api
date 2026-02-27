@@ -39,6 +39,11 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'clients.create', 'display_name' => 'Create Clients'],
             ['name' => 'clients.update', 'display_name' => 'Update Clients'],
             ['name' => 'clients.delete', 'display_name' => 'Delete Clients'],
+            ['name' => 'teams.view', 'display_name' => 'View Teams'],
+            ['name' => 'teams.create', 'display_name' => 'Create Teams'],
+            ['name' => 'teams.update', 'display_name' => 'Update Teams'],
+            ['name' => 'teams.delete', 'display_name' => 'Delete Teams'],
+            ['name' => 'teams.invite', 'display_name' => 'Invite Team Members'],
         ];
 
         foreach ($permissions as $permission) {
@@ -55,6 +60,7 @@ class RolePermissionSeeder extends Seeder
                 'roles.view', 'roles.assign',
                 'organizations.view', 'organizations.update',
                 'clients.view', 'clients.create', 'clients.update', 'clients.delete',
+                'teams.view', 'teams.create', 'teams.update', 'teams.delete', 'teams.invite',
             ])->pluck('id')
         );
 
@@ -64,6 +70,7 @@ class RolePermissionSeeder extends Seeder
                 'users.view', 'users.create', 'users.update',
                 'organizations.view',
                 'clients.view', 'clients.create', 'clients.update',
+                'teams.view', 'teams.create', 'teams.update', 'teams.invite',
             ])->pluck('id')
         );
 
@@ -73,6 +80,7 @@ class RolePermissionSeeder extends Seeder
                 'users.view',
                 'organizations.view',
                 'clients.view',
+                'teams.view',
             ])->pluck('id')
         );
     }

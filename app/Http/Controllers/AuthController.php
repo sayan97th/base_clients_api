@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 
@@ -23,6 +24,8 @@ class AuthController extends Controller
 
         $user->preference()->create();
         $user->billingAddress()->create();
+
+        $this->processTeamInvitations($user, $validated_data['invitation_token'] ?? null);
 
         $token = auth()->login($user);
 
@@ -69,6 +72,46 @@ class AuthController extends Controller
         $token = auth()->refresh();
 
         return $this->respondWithToken($token, auth()->user());
+    }
+
+    protected function processTeamInvitations(User $user, ?string $invitation_token = null): void
+    {
+        $query = TeamInvitation::where('email', $user->email)
+            ->where('status', 'pending')
+            ->where('expires_at', '>', now());
+
+        if ($invitation_token) {
+            $query->orWhere(function ($q) use ($invitation_token) {
+                $q->where('token', $invitation_token)
+                    ->where('status', 'pending')
+                    ->where('expires_at', '>', now());
+            });
+        }
+
+        $pending_invitations = $query->get();
+
+        foreach ($pending_invitations as $invitation) {
+            $invitation->team->members()->attach($user->id, [
+                'role' => $invitation->role,
+                'permissions' => is_array($invitation->permissions)
+                    ? json_encode($invitation->permissions)
+                    : $invitation->permissions,
+                'joined_at' => now(),
+            ]);
+
+            $invitation->update([
+                'status' => 'accepted',
+                'user_id' => $user->id,
+                'accepted_at' => now(),
+            ]);
+
+            if (!$user->organization_id) {
+                $user->update([
+                    'organization_id' => $invitation->team->organization_id,
+                ]);
+                $user->refresh();
+            }
+        }
     }
 
     protected function respondWithToken(string $token, $user = null): JsonResponse

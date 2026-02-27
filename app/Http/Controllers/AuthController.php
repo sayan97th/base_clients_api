@@ -14,10 +14,15 @@ class AuthController extends Controller
         $validated_data = $request->validated();
 
         $user = User::create([
-            'name' => $validated_data['name'],
+            'first_name' => $validated_data['first_name'],
+            'last_name' => $validated_data['last_name'],
             'email' => $validated_data['email'],
+            'business_email' => $validated_data['business_email'],
             'password' => $validated_data['password'],
         ]);
+
+        $user->preference()->create();
+        $user->billingAddress()->create();
 
         $token = auth()->login($user);
 

@@ -17,7 +17,7 @@ class AuthController extends Controller
             'first_name' => $validated_data['first_name'],
             'last_name' => $validated_data['last_name'],
             'email' => $validated_data['email'],
-            'business_email' => $validated_data['business_email'],
+            'business_email' => $validated_data['business_email'] ?? null,
             'password' => $validated_data['password'],
         ]);
 

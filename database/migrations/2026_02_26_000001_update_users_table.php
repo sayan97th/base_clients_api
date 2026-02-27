@@ -13,7 +13,7 @@ return new class extends Migration
 
             $table->string('first_name', 100)->after('id');
             $table->string('last_name', 100)->after('first_name');
-            $table->string('business_email')->unique()->after('email');
+            $table->string('business_email')->nullable()->unique()->after('email');
             $table->string('phone', 30)->nullable()->after('password');
             $table->string('job_title')->nullable()->after('phone')->comment('Job title, e.g: Team Manager');
             $table->string('profile_photo_url', 500)->nullable()->after('job_title');

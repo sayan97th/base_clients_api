@@ -5,6 +5,7 @@ use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
+use App\Http\Controllers\ScheduledCallController;
 use App\Http\Controllers\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
@@ -67,4 +68,13 @@ Route::middleware('auth:api')->group(function () {
 
     // User's pending invitations
     Route::get('/my-invitations', [TeamInvitationController::class, 'myInvitations']);
+
+    // Scheduled calls
+    Route::prefix('scheduled-calls')->group(function () {
+        Route::get('/', [ScheduledCallController::class, 'index']);
+        Route::post('/', [ScheduledCallController::class, 'store']);
+        Route::get('/{scheduled_call}', [ScheduledCallController::class, 'show']);
+        Route::put('/{scheduled_call}', [ScheduledCallController::class, 'update']);
+        Route::delete('/{scheduled_call}', [ScheduledCallController::class, 'destroy']);
+    });
 });

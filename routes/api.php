@@ -7,6 +7,8 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
 use App\Http\Controllers\ScheduledCallController;
 use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\NotificationPreferenceController;
 use App\Http\Controllers\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
@@ -86,5 +88,21 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/{support_ticket}', [SupportTicketController::class, 'show']);
         Route::patch('/{support_ticket}', [SupportTicketController::class, 'update']);
         Route::post('/{support_ticket}/messages', [SupportTicketController::class, 'storeMessage']);
+    });
+
+    // Notifications
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::patch('/{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::patch('/{notification}/archive', [NotificationController::class, 'archive']);
+        Route::patch('/{notification}/snooze', [NotificationController::class, 'snooze']);
+    });
+
+    // Notification preferences
+    Route::prefix('notification-preferences')->group(function () {
+        Route::get('/', [NotificationPreferenceController::class, 'show']);
+        Route::put('/', [NotificationPreferenceController::class, 'update']);
     });
 });

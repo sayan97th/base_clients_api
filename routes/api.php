@@ -6,6 +6,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
 use App\Http\Controllers\ScheduledCallController;
+use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
@@ -76,5 +77,14 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/{scheduled_call}', [ScheduledCallController::class, 'show']);
         Route::put('/{scheduled_call}', [ScheduledCallController::class, 'update']);
         Route::delete('/{scheduled_call}', [ScheduledCallController::class, 'destroy']);
+    });
+
+    // Support tickets
+    Route::prefix('support-tickets')->group(function () {
+        Route::get('/', [SupportTicketController::class, 'index']);
+        Route::post('/', [SupportTicketController::class, 'store']);
+        Route::get('/{support_ticket}', [SupportTicketController::class, 'show']);
+        Route::patch('/{support_ticket}', [SupportTicketController::class, 'update']);
+        Route::post('/{support_ticket}/messages', [SupportTicketController::class, 'storeMessage']);
     });
 });

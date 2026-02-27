@@ -73,6 +73,16 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(TeamInvitation::class);
     }
 
+    public function supportTickets(): HasMany
+    {
+        return $this->hasMany(SupportTicket::class);
+    }
+
+    public function supportTicketMessages(): HasMany
+    {
+        return $this->hasMany(SupportTicketMessage::class, 'sender_id');
+    }
+
     public function hasTeamPermission(Team $team, string $permission): bool
     {
         if ($this->hasRole('super_admin')) {

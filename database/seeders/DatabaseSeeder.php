@@ -15,14 +15,15 @@ class DatabaseSeeder extends Seeder
         $this->call(RolePermissionSeeder::class);
 
         $user = User::factory()->create([
-            'first_name' => 'Test',
-            'last_name' => 'User',
-            'email' => 'test@example.com',
-            'business_email' => 'test@company.com',
+            'first_name' => 'Admin',
+            'last_name' => 'Admin',
+            'email' => 'admin@97thfloor.com',
+            'business_email' => 'admin@97thfloor.co',
+            'password' => 'admin',
         ]);
 
         $user->preference()->create([
-            'timezone' => 'America/New_York',
+            'timezone' => 'America/Boise',
             'language' => 'en',
         ]);
 

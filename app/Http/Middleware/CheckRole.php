@@ -12,20 +12,7 @@ class CheckRole
     {
         $user = $request->user();
 
-        if (!$user) {
-            return response()->json([
-                'message' => 'Unauthorized.',
-            ], 401);
-        }
-
-        if ($user->hasGlobalRole('super_admin')) {
-            return $next($request);
-        }
-
-        $organizationId = $request->route('organization')?->id
-            ?? $request->input('organization_id');
-
-        if (!$user->hasRole($roles, $organizationId)) {
+        if (!$user || !$user->hasRole($roles)) {
             return response()->json([
                 'message' => 'Forbidden. Insufficient role.',
             ], 403);

@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             'email' => 'admin@97thfloor.com',
             'business_email' => 'admin@97thfloor.co',
             'password' => 'admin',
+            'organization_id' => $organization->id,
         ]);
 
         $user->preference()->create([
@@ -40,6 +41,6 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $user->assignRole('super_admin');
-        $user->assignRole('owner', $organization->id);
+        $user->assignRole('owner');
     }
 }

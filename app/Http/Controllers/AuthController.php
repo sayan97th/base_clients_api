@@ -47,24 +47,11 @@ class AuthController extends Controller
     public function me(): JsonResponse
     {
         $user = auth()->user();
-        $user->load('roles');
-
-        $globalRoles = $user->getGlobalRoles();
-
-        $organizations = $user->organizations->map(function ($org) use ($user) {
-            return [
-                'id' => $org->id,
-                'name' => $org->name,
-                'slug' => $org->slug,
-                'roles' => $user->getRolesForOrganization($org->id),
-                'permissions' => $user->getAllPermissions($org->id),
-            ];
-        })->unique('id')->values();
+        $user->load(['roles:id,name,display_name', 'organization']);
 
         return response()->json([
-            'user' => $user->makeHidden('roles'),
-            'global_roles' => $globalRoles,
-            'organizations' => $organizations,
+            'user' => $user,
+            'permissions' => $user->getAllPermissions(),
         ]);
     }
 
@@ -86,6 +73,8 @@ class AuthController extends Controller
 
     protected function respondWithToken(string $token, $user = null): JsonResponse
     {
+        $user?->load(['roles:id,name,display_name', 'organization']);
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
@@ -95,6 +84,8 @@ class AuthController extends Controller
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
                 'email' => $user->email,
+                'roles' => $user->roles->pluck('name'),
+                'organization' => $user->organization,
             ] : null,
         ]);
     }

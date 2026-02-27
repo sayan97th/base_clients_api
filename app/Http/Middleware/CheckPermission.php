@@ -12,16 +12,7 @@ class CheckPermission
     {
         $user = $request->user();
 
-        if (!$user) {
-            return response()->json([
-                'message' => 'Unauthorized.',
-            ], 401);
-        }
-
-        $organizationId = $request->route('organization')?->id
-            ?? $request->input('organization_id');
-
-        if (!$user->hasPermission($permission, $organizationId)) {
+        if (!$user || !$user->hasPermission($permission)) {
             return response()->json([
                 'message' => 'Forbidden. Missing required permission.',
             ], 403);

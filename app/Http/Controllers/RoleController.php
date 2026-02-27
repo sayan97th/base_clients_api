@@ -20,15 +20,10 @@ class RoleController extends Controller
     {
         $request->validate([
             'role' => ['required', 'string', 'exists:roles,name'],
-            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
         ]);
 
-        $user->assignRole(
-            $request->input('role'),
-            $request->input('organization_id')
-        );
-
-        $user->load('roles');
+        $user->assignRole($request->input('role'));
+        $user->load('roles:id,name,display_name');
 
         return response()->json([
             'message' => 'Role assigned successfully.',
@@ -40,15 +35,10 @@ class RoleController extends Controller
     {
         $request->validate([
             'role' => ['required', 'string', 'exists:roles,name'],
-            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
         ]);
 
-        $user->removeRole(
-            $request->input('role'),
-            $request->input('organization_id')
-        );
-
-        $user->load('roles');
+        $user->removeRole($request->input('role'));
+        $user->load('roles:id,name,display_name');
 
         return response()->json([
             'message' => 'Role revoked successfully.',

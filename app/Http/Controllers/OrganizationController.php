@@ -12,10 +12,10 @@ class OrganizationController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->hasGlobalRole('super_admin')) {
+        if ($user->hasRole('super_admin')) {
             $organizations = Organization::all();
         } else {
-            $organizations = $user->organizations->unique('id')->values();
+            $organizations = $user->organization ? [$user->organization] : [];
         }
 
         return response()->json(['organizations' => $organizations]);

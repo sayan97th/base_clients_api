@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Traits\HasRoles;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -23,6 +24,7 @@ class User extends Authenticatable implements JWTSubject
         'phone',
         'job_title',
         'profile_photo_url',
+        'organization_id',
     ];
 
     protected $hidden = [
@@ -36,6 +38,11 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function organization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class);
     }
 
     public function billingAddress(): HasOne
@@ -60,19 +67,9 @@ class User extends Authenticatable implements JWTSubject
 
     public function getJWTCustomClaims(): array
     {
-        $globalRoles = $this->getGlobalRoles();
-
-        $organizations = $this->organizations->map(function ($org) {
-            return [
-                'id' => $org->id,
-                'slug' => $org->slug,
-                'roles' => $this->getRolesForOrganization($org->id),
-            ];
-        })->unique('id')->values();
-
         return [
-            'global_roles' => $globalRoles,
-            'organizations' => $organizations,
+            'roles' => $this->roles->pluck('name')->toArray(),
+            'organization_id' => $this->organization_id,
         ];
     }
 }

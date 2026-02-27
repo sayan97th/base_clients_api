@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\Team\SendTeamInvitationRequest;
+use App\Jobs\SendEmailJob;
 use App\Mail\TeamInvitationMail;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class TeamInvitationController extends Controller
@@ -89,8 +89,9 @@ class TeamInvitationController extends Controller
 
         $invitation->load(['team.organization', 'invitedBy']);
 
-        Mail::to($email)->send(
-            new TeamInvitationMail($invitation, (bool) $existing_user)
+        SendEmailJob::dispatchWithThrottle(
+            new TeamInvitationMail($invitation, (bool) $existing_user),
+            $email,
         );
 
         return response()->json([
@@ -259,8 +260,9 @@ class TeamInvitationController extends Controller
 
         $invitation->load(['team.organization', 'invitedBy']);
 
-        Mail::to($invitation->email)->send(
-            new TeamInvitationMail($invitation, (bool) $existing_user)
+        SendEmailJob::dispatchWithThrottle(
+            new TeamInvitationMail($invitation, (bool) $existing_user),
+            $invitation->email,
         );
 
         return response()->json([

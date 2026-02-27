@@ -126,4 +126,19 @@ return [
         'table' => 'failed_jobs',
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Email Throttle Settings
+    |--------------------------------------------------------------------------
+    |
+    | These settings control the rate at which emails are dispatched to
+    | prevent SMTP providers from blocking the application due to
+    | excessive email sending in a short period of time.
+    |
+    */
+
+    'email_rate_limit' => (int) env('QUEUE_EMAIL_RATE_LIMIT', 10),
+
+    'email_throttle_delay' => (int) env('QUEUE_EMAIL_THROTTLE_DELAY', 5),
+
 ];

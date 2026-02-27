@@ -15,32 +15,49 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(RolePermissionSeeder::class);
 
-        $organization = Organization::create([
-            'name' => 'BASE Search Marketing',
-            'slug' => 'base-search-marketing',
-            'description' => 'BASE Search Marketing organization',
-            'timezone' => 'America/Boise',
-        ]);
+        $this->seedOrganization();
+    }
 
-        $user = User::factory()->create([
-            'first_name' => 'Admin',
-            'last_name' => 'Admin',
-            'email' => 'admin@97thfloor.com',
-            'business_email' => 'admin@97thfloor.co',
-            'password' => 'admin',
-            'organization_id' => $organization->id,
-        ]);
+    private function seedOrganization(): void
+    {
+        $organization = Organization::updateOrCreate(
+            ['slug' => 'base-search-marketing'],
+            [
+                'name' => 'BASE Search Marketing',
+                'description' => 'BASE Search Marketing organization',
+                'timezone' => 'America/Boise',
+            ]
+        );
 
-        $user->preference()->create([
-            'timezone' => 'America/Boise',
-            'language' => 'en',
-        ]);
+        $this->seedAdminUser($organization);
+    }
 
-        $user->billingAddress()->create([
-            'company' => 'BASE Search Marketing',
-        ]);
+    private function seedAdminUser(Organization $organization): void
+    {
+        $admin_user = User::updateOrCreate(
+            ['email' => 'admin@97thfloor.com'],
+            [
+                'first_name' => 'Admin',
+                'last_name' => 'Admin',
+                'business_email' => 'admin@97thfloor.co',
+                'password' => 'admin',
+                'organization_id' => $organization->id,
+            ]
+        );
 
-        $user->assignRole('super_admin');
-        $user->assignRole('owner');
+        $admin_user->preference()->updateOrCreate(
+            ['user_id' => $admin_user->id],
+            [
+                'timezone' => 'America/Boise',
+                'language' => 'en',
+            ]
+        );
+
+        $admin_user->billingAddress()->updateOrCreate(
+            ['user_id' => $admin_user->id],
+            ['company' => 'BASE Search Marketing']
+        );
+
+        $admin_user->syncRoles(['super_admin', 'owner']);
     }
 }

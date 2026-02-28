@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\NewNotification;
 use App\Mail\NotificationEmail;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
@@ -48,6 +49,7 @@ class NotificationService
         ]);
 
         $this->sendEmailIfEnabled($user, $notification);
+        $this->broadcastIfEnabled($user, $notification);
 
         return $notification;
     }
@@ -107,6 +109,15 @@ class NotificationService
 
         if (!$preference || $preference->shouldSendEmail()) {
             Mail::to($user->email)->queue(new NotificationEmail($user, $notification));
+        }
+    }
+
+    protected function broadcastIfEnabled(User $user, Notification $notification): void
+    {
+        $preference = $user->notificationPreference;
+
+        if (!$preference || $preference->push_notifications_enabled) {
+            NewNotification::dispatch($notification);
         }
     }
 }

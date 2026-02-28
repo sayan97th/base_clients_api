@@ -7,6 +7,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
 use App\Http\Controllers\ScheduledCallController;
 use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationPreferenceController;
 use App\Http\Controllers\TeamMemberController;
@@ -105,4 +106,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
     });
+
+    // Broadcasting auth (JWT-based)
+    Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
 });

@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\UpdateProfileRequest;
+use Illuminate\Http\JsonResponse;
+
+class ProfileController extends Controller
+{
+    public function show(): JsonResponse
+    {
+        $user = auth()->user();
+        $preference = $user->preference;
+        $billing = $user->billingAddress;
+
+        return response()->json([
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'business_email' => $user->business_email,
+            'phone' => $user->phone,
+            'timezone' => $preference?->timezone ?? 'UTC',
+            'interested_in' => $this->mapInterestedInToFrontend($preference?->interested_in),
+            'notification_channel' => $preference?->notification_channel ?? 'email_and_portal',
+            'team_order_updates' => (bool) ($preference?->team_order_updates ?? true),
+            'push_notifications_enabled' => (bool) ($preference?->push_notifications_enabled ?? false),
+            'address' => $billing?->address,
+            'city' => $billing?->city,
+            'country' => $billing?->country,
+            'state_province' => $billing?->state_province,
+            'postal_code' => $billing?->postal_code,
+            'company' => $billing?->company,
+            'tax_id' => $billing?->tax_id,
+        ]);
+    }
+
+    public function update(UpdateProfileRequest $request): JsonResponse
+    {
+        $user = auth()->user();
+        $validated = $request->validated();
+
+        $user->update([
+            'first_name' => $validated['first_name'],
+            'last_name' => $validated['last_name'],
+            'business_email' => $validated['business_email'],
+            'phone' => $validated['phone'] ?? null,
+        ]);
+
+        $user->preference()->updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'timezone' => $validated['timezone'],
+                'interested_in' => $this->mapInterestedInToDatabase($validated['interested_in'] ?? ''),
+                'notification_channel' => $validated['notification_channel'],
+                'team_order_updates' => $validated['team_order_updates'],
+                'push_notifications_enabled' => $validated['push_notifications_enabled'],
+            ]
+        );
+
+        $user->billingAddress()->updateOrCreate(
+            ['user_id' => $user->id],
+            [
+                'address' => $validated['address'] ?? null,
+                'city' => $validated['city'] ?? null,
+                'country' => $validated['country'] ?? null,
+                'state_province' => $validated['state_province'] ?? null,
+                'postal_code' => $validated['postal_code'] ?? null,
+                'company' => $validated['company'] ?? null,
+                'tax_id' => $validated['tax_id'] ?? null,
+            ]
+        );
+
+        $user->load(['roles:id,name,display_name', 'organization']);
+
+        return response()->json([
+            'user' => $user,
+            'message' => 'Profile updated successfully.',
+        ]);
+    }
+
+    private function mapInterestedInToFrontend(?string $value): string
+    {
+        return match ($value) {
+            'links' => 'Links',
+            'content' => 'Content',
+            'both' => 'Both',
+            default => '',
+        };
+    }
+
+    private function mapInterestedInToDatabase(?string $value): string
+    {
+        return match ($value) {
+            'Links' => 'links',
+            'Content' => 'content',
+            'Both' => 'both',
+            default => 'nothing',
+        };
+    }
+}

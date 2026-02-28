@@ -10,6 +10,7 @@ use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\NotificationPreferenceController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
@@ -106,6 +107,10 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
     });
+
+    // Profile
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::put('/profile', [ProfileController::class, 'update']);
 
     // Broadcasting auth (JWT-based)
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);

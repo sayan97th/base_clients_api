@@ -20,6 +20,7 @@ class ProfileController extends Controller
             'last_name' => $user->last_name,
             'business_email' => $user->business_email,
             'phone' => $user->phone,
+            'profile_photo_url' => $user->profile_photo_url,
             'timezone' => $preference?->timezone ?? 'UTC',
             'interested_in' => $this->mapInterestedInToFrontend($preference?->interested_in),
             'notification_channel' => $preference?->notification_channel ?? 'email_and_portal',

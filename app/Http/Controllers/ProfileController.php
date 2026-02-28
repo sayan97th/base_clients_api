@@ -6,6 +6,7 @@ use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\UploadProfilePhotoRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProfileController extends Controller
 {
@@ -89,7 +90,11 @@ class ProfileController extends Controller
             Storage::disk('public')->delete($user->profile_photo_path);
         }
 
-        $path = $request->file('profile_photo')->store('profile-photos', 'public');
+        $file = $request->file('profile_photo');
+        $extension = $file->getClientOriginalExtension();
+        $filename = Str::uuid() . '.' . $extension;
+        $directory = "users/{$user->id}/profile";
+        $path = $file->storeAs($directory, $filename, 'public');
 
         $user->update([
             'profile_photo_path' => $path,

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateProfileRequest;
+use App\Http\Requests\UploadProfilePhotoRequest;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
@@ -74,6 +76,50 @@ class ProfileController extends Controller
         return response()->json([
             'user' => $user,
             'message' => 'Profile updated successfully.',
+        ]);
+    }
+
+    public function uploadPhoto(UploadProfilePhotoRequest $request): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ($user->profile_photo_url) {
+            $old_path = str_replace('/storage/', '', parse_url($user->profile_photo_url, PHP_URL_PATH));
+            Storage::disk('public')->delete($old_path);
+        }
+
+        $path = $request->file('profile_photo')->store('profile-photos', 'public');
+
+        $user->update([
+            'profile_photo_url' => asset('storage/' . $path),
+        ]);
+
+        $user->load(['roles:id,name,display_name', 'organization']);
+
+        return response()->json([
+            'user' => $user,
+            'message' => 'Profile photo updated successfully.',
+        ]);
+    }
+
+    public function deletePhoto(): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ($user->profile_photo_url) {
+            $old_path = str_replace('/storage/', '', parse_url($user->profile_photo_url, PHP_URL_PATH));
+            Storage::disk('public')->delete($old_path);
+        }
+
+        $user->update([
+            'profile_photo_url' => null,
+        ]);
+
+        $user->load(['roles:id,name,display_name', 'organization']);
+
+        return response()->json([
+            'user' => $user,
+            'message' => 'Profile photo removed successfully.',
         ]);
     }
 

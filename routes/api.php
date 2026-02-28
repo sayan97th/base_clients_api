@@ -111,6 +111,8 @@ Route::middleware('auth:api')->group(function () {
     // Profile
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::put('/profile', [ProfileController::class, 'update']);
+    Route::post('/profile/photo', [ProfileController::class, 'uploadPhoto']);
+    Route::delete('/profile/photo', [ProfileController::class, 'deletePhoto']);
 
     // Broadcasting auth (JWT-based)
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);

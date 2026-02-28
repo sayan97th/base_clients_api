@@ -39,7 +39,7 @@ class DatabaseSeeder extends Seeder
             [
                 'first_name' => 'Admin',
                 'last_name' => 'Admin',
-                'business_email' => 'admin@97thfloor.co',
+                'business_email' => 'admin@97thfloor.com',
                 'password' => 'admin',
                 'organization_id' => $organization->id,
             ]

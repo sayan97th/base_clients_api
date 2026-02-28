@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 
 class User extends Authenticatable implements JWTSubject
@@ -25,13 +27,17 @@ class User extends Authenticatable implements JWTSubject
         'password',
         'phone',
         'job_title',
-        'profile_photo_url',
+        'profile_photo_path',
         'organization_id',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+    ];
+
+    protected $appends = [
+        'profile_photo_url',
     ];
 
     protected function casts(): array
@@ -126,6 +132,15 @@ class User extends Authenticatable implements JWTSubject
     public function getTeamRole(Team $team): ?string
     {
         return $this->teams()->where('team_id', $team->id)->first()?->pivot?->role;
+    }
+
+    protected function profilePhotoUrl(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->profile_photo_path
+                ? Storage::disk('public')->url($this->profile_photo_path)
+                : null,
+        );
     }
 
     public function getFullNameAttribute(): string

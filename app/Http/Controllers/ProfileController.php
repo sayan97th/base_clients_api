@@ -20,6 +20,7 @@ class ProfileController extends Controller
             'last_name' => $user->last_name,
             'business_email' => $user->business_email,
             'phone' => $user->phone,
+            'profile_photo_path' => $user->profile_photo_path,
             'profile_photo_url' => $user->profile_photo_url,
             'timezone' => $preference?->timezone ?? 'UTC',
             'interested_in' => $this->mapInterestedInToFrontend($preference?->interested_in),
@@ -84,15 +85,14 @@ class ProfileController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->profile_photo_url) {
-            $old_path = str_replace('/storage/', '', parse_url($user->profile_photo_url, PHP_URL_PATH));
-            Storage::disk('public')->delete($old_path);
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
         }
 
         $path = $request->file('profile_photo')->store('profile-photos', 'public');
 
         $user->update([
-            'profile_photo_url' => asset('storage/' . $path),
+            'profile_photo_path' => $path,
         ]);
 
         $user->load(['roles:id,name,display_name', 'organization']);
@@ -107,13 +107,12 @@ class ProfileController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->profile_photo_url) {
-            $old_path = str_replace('/storage/', '', parse_url($user->profile_photo_url, PHP_URL_PATH));
-            Storage::disk('public')->delete($old_path);
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
         }
 
         $user->update([
-            'profile_photo_url' => null,
+            'profile_photo_path' => null,
         ]);
 
         $user->load(['roles:id,name,display_name', 'organization']);

@@ -26,7 +26,7 @@ class TeamMemberController extends Controller
         }
 
         $members = $team->members()
-            ->select('users.id', 'first_name', 'last_name', 'email', 'profile_photo_url')
+            ->select('users.id', 'first_name', 'last_name', 'email', 'profile_photo_path')
             ->get()
             ->map(function ($member) {
                 return [
@@ -35,6 +35,7 @@ class TeamMemberController extends Controller
                     'last_name' => $member->last_name,
                     'full_name' => $member->full_name,
                     'email' => $member->email,
+                    'profile_photo_path' => $member->profile_photo_path,
                     'profile_photo_url' => $member->profile_photo_url,
                     'role' => $member->pivot->role,
                     'permissions' => is_string($member->pivot->permissions)

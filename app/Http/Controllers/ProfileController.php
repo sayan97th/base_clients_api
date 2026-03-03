@@ -131,19 +131,21 @@ class ProfileController extends Controller
     private function mapInterestedInToFrontend(?string $value): string
     {
         return match ($value) {
-            'links' => 'Links',
-            'content' => 'Content',
-            'both' => 'Both',
+            'links' => 'links',
+            'content' => 'content',
+            'both' => 'both',
             default => '',
         };
     }
 
     private function mapInterestedInToDatabase(?string $value): string
     {
-        return match ($value) {
-            'Links' => 'links',
-            'Content' => 'content',
-            'Both' => 'both',
+        $normalized_value = strtolower(trim($value ?? ''));
+
+        return match ($normalized_value) {
+            'links' => 'links',
+            'content' => 'content',
+            'both' => 'both',
             default => 'nothing',
         };
     }

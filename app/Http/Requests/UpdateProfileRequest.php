@@ -12,6 +12,15 @@ class UpdateProfileRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('interested_in')) {
+            $this->merge([
+                'interested_in' => strtolower($this->input('interested_in', '')),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -20,7 +29,7 @@ class UpdateProfileRequest extends FormRequest
             'business_email' => ['required', 'email', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'timezone' => ['required', 'string', 'max:50', 'timezone:all'],
-            'interested_in' => ['nullable', 'string', Rule::in(['', 'Links', 'Content', 'Both'])],
+            'interested_in' => ['nullable', 'string', Rule::in(['', 'links', 'content', 'both'])],
             'notification_channel' => ['required', 'string', Rule::in(['email_and_portal', 'portal_only'])],
             'team_order_updates' => ['required', 'boolean'],
             'push_notifications_enabled' => ['required', 'boolean'],

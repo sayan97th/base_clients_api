@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Notifications;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Notification\ListNotificationsRequest;
 use App\Http\Requests\Notification\SnoozeNotificationRequest;
 use App\Models\Notification;

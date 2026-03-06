@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\UserProfile;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateProfileRequest;
 use App\Http\Requests\UploadProfilePhotoRequest;
 use Illuminate\Http\JsonResponse;

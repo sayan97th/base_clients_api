@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Team;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Team\StoreTeamRequest;
 use App\Http\Requests\Team\UpdateTeamRequest;
 use App\Models\Team;

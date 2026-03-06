@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\SupportTicket;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\SupportTicket\StoreSupportTicketMessageRequest;
 use App\Http\Requests\SupportTicket\StoreSupportTicketRequest;
 use App\Http\Requests\SupportTicket\UpdateSupportTicketRequest;

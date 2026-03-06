@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Team;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Team\SendTeamInvitationRequest;
 use App\Jobs\SendEmailJob;
 use App\Mail\TeamInvitationMail;

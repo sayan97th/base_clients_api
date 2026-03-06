@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Notifications;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Notification\UpdateNotificationPreferenceRequest;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;

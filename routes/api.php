@@ -1,19 +1,19 @@
 <?php
 
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DrTierController;
-use App\Http\Controllers\LinkBuildingOrderController;
-use App\Http\Controllers\OrganizationController;
-use App\Http\Controllers\RoleController;
-use App\Http\Controllers\TeamController;
-use App\Http\Controllers\TeamInvitationController;
-use App\Http\Controllers\ScheduledCallController;
-use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\LinkBuilding\DrTierController;
+use App\Http\Controllers\LinkBuilding\LinkBuildingOrderController;
+use App\Http\Controllers\Organization\OrganizationController;
+use App\Http\Controllers\Role\RoleController;
+use App\Http\Controllers\Team\TeamController;
+use App\Http\Controllers\Team\TeamInvitationController;
+use App\Http\Controllers\ScheduledCall\ScheduledCallController;
+use App\Http\Controllers\SupportTicket\SupportTicketController;
 use App\Http\Controllers\BroadcastAuthController;
-use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\NotificationPreferenceController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\TeamMemberController;
+use App\Http\Controllers\Notifications\NotificationController;
+use App\Http\Controllers\Notifications\NotificationPreferenceController;
+use App\Http\Controllers\UserProfile\ProfileController;
+use App\Http\Controllers\Team\TeamMemberController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {

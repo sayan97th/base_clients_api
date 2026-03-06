@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\ScheduledCall;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\ScheduledCall\StoreScheduledCallRequest;
 use App\Http\Requests\ScheduledCall\UpdateScheduledCallRequest;
 use App\Models\ScheduledCall;

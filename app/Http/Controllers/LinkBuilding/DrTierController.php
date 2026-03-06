@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\LinkBuilding;
 
+use App\Http\Controllers\Controller;
 use App\Models\DrTier;
 use Illuminate\Http\JsonResponse;
 

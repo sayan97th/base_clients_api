@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\LinkBuilding;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Models\LinkBuildingOrder;
 use Illuminate\Http\JsonResponse;

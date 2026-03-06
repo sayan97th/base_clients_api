@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\DrTierController;
+use App\Http\Controllers\LinkBuildingOrderController;
 use App\Http\Controllers\OrganizationController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\TeamController;
@@ -106,6 +108,16 @@ Route::middleware('auth:api')->group(function () {
     Route::prefix('notification-preferences')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
+    });
+
+    // DR Tiers catalog
+    Route::get('/dr-tiers', [DrTierController::class, 'index']);
+
+    // Link Building orders
+    Route::prefix('link-building')->group(function () {
+        Route::get('/orders', [LinkBuildingOrderController::class, 'index']);
+        Route::post('/orders', [LinkBuildingOrderController::class, 'store']);
+        Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
     });
 
     // Profile

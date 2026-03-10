@@ -118,6 +118,10 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/orders', [LinkBuildingOrderController::class, 'index']);
         Route::post('/orders', [LinkBuildingOrderController::class, 'store']);
         Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
+
+        Route::middleware('role:super_admin')->group(function () {
+            Route::get('/admin/orders', [LinkBuildingOrderController::class, 'adminIndex']);
+        });
     });
 
     // Profile

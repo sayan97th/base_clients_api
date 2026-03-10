@@ -6,12 +6,39 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Models\LinkBuildingOrder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class LinkBuildingOrderController extends Controller
 {
     private const BULK_DISCOUNT_THRESHOLD = 10;
     private const BULK_DISCOUNT_RATE      = 0.10;
+
+    public function adminIndex(Request $request): JsonResponse
+    {
+        $query = LinkBuildingOrder::with('user:id,first_name,last_name,email')
+            ->withCount(['items as items_count' => function ($query) {
+                $query->selectRaw('sum(quantity)');
+            }]);
+
+        if ($request->has('status') && in_array($request->input('status'), LinkBuildingOrder::STATUSES)) {
+            $query->where('status', $request->input('status'));
+        }
+
+        $orders = $query->orderBy('created_at', 'desc')
+            ->paginate($request->input('per_page', 15))
+            ->through(fn ($order) => [
+                'id'           => $order->id,
+                'order_title'  => $order->order_title,
+                'total_amount' => $order->total_amount,
+                'status'       => $order->status,
+                'created_at'   => $order->created_at,
+                'items_count'  => (int) ($order->items_count ?? 0),
+                'user'         => $order->user,
+            ]);
+
+        return response()->json($orders);
+    }
 
     public function index(): JsonResponse
     {

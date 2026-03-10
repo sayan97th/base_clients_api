@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Invoice\InvoiceController;
 use App\Http\Controllers\LinkBuilding\Admin\LinkBuildingOrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\LinkBuilding\DrTierController;
 use App\Http\Controllers\LinkBuilding\LinkBuildingOrderController;
@@ -123,6 +124,13 @@ Route::middleware('auth:api')->group(function () {
         Route::middleware('role:super_admin')->group(function () {
             Route::get('/admin/orders', [AdminLinkBuildingOrderController::class, 'index']);
         });
+    });
+
+    // Invoices
+    Route::prefix('invoices')->group(function () {
+        Route::get('/', [InvoiceController::class, 'index']);
+        Route::post('/', [InvoiceController::class, 'store']);
+        Route::get('/{unique_id}', [InvoiceController::class, 'show']);
     });
 
     // Profile

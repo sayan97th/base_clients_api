@@ -2,20 +2,24 @@
 
 namespace App\Http\Controllers\Invoice;
 
-use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
 use App\Models\User;
+use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
 {
+    public function __construct(
+        protected InvoiceService $invoiceService
+    ) {}
+
     public function index(): JsonResponse
     {
+        /** @var User $user */
         $user = auth()->user();
 
         $invoices = Invoice::where('user_id', $user->id)
@@ -34,11 +38,12 @@ class InvoiceController extends Controller
 
     public function show(string $unique_id): JsonResponse
     {
+        /** @var User $user */
         $user = auth()->user();
 
         $invoice = Invoice::where('unique_id', $unique_id)
             ->where('user_id', $user->id)
-            ->with(['lineItems', 'billedTo'])
+            ->with(['lineItems', 'billedTo', 'order.items.drTier', 'order.items.placements', 'order.billing'])
             ->first();
 
         if (! $invoice) {
@@ -57,6 +62,7 @@ class InvoiceController extends Controller
             'credit_amount'  => ['nullable', 'numeric', 'min:0'],
         ]);
 
+        /** @var User $user */
         $user  = auth()->user();
         $order = LinkBuildingOrder::where('id', $request->order_id)
             ->where('user_id', $user->id)
@@ -72,74 +78,15 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'An invoice already exists for this order.'], 409);
         }
 
-        $payment_method = $request->payment_method ?? 'Account Balance';
-        $currency_type  = $request->currency_type ?? 'usd';
-        $credit_amount  = (float) ($request->credit_amount ?? 0);
+        $invoice = $this->invoiceService->createForLinkBuildingOrder(
+            user:           $user,
+            order:          $order,
+            payment_method: $request->payment_method ?? 'Account Balance',
+            currency_type:  $request->currency_type ?? 'usd',
+            credit_amount:  (float) ($request->credit_amount ?? 0),
+        );
 
-        $subtotal_amount = $order->items->sum('subtotal');
-        $total_amount    = $order->total_amount;
-
-        $invoice = DB::transaction(function () use (
-            $user, $order, $payment_method, $currency_type,
-            $subtotal_amount, $total_amount, $credit_amount
-        ) {
-            $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
-
-            $invoice = Invoice::create([
-                'unique_id'       => $unique_id,
-                'invoice_number'  => $invoice_number,
-                'user_id'         => $user->id,
-                'order_id'        => $order->id,
-                'status'          => 'paid',
-                'payment_method'  => $payment_method,
-                'currency_type'   => $currency_type,
-                'subtotal_amount' => $subtotal_amount,
-                'total_amount'    => $total_amount,
-                'credit_amount'   => $credit_amount,
-                'date_issued'     => now(),
-                'date_due'        => now()->addDays(30),
-                'date_paid'       => now(),
-            ]);
-
-            foreach ($order->items as $item) {
-                $item_name = $item->drTier
-                    ? $item->drTier->dr_label . ' Link Building'
-                    : 'Link Building Service';
-
-                $invoice->lineItems()->create([
-                    'item_name'  => $item_name,
-                    'price'      => $item->unit_price,
-                    'quantity'   => $item->quantity,
-                    'item_total' => $item->subtotal,
-                ]);
-            }
-
-            $billing = $order->billing;
-            $invoice->billedTo()->create([
-                'company_name'        => $billing?->company ?? $user->organization?->name,
-                'company_description' => $user->job_title,
-                'address_line_1'      => $billing?->address,
-                'address_line_2'      => null,
-                'state'               => $billing?->state,
-                'country'             => $billing?->country,
-            ]);
-
-            return $invoice->load(['lineItems', 'billedTo']);
-        });
-
-        $payer_name = $user->full_name ?? $user->email;
-
-        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
-                event(new PaymentCompleted(
-                    $admin,
-                    $payer_name,
-                    $total_amount,
-                    $invoice->invoice_number,
-                    '/invoices/' . $invoice->unique_id,
-                ));
-            });
+        $invoice->load(['lineItems', 'billedTo']);
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)], 201);
     }
@@ -147,6 +94,7 @@ class InvoiceController extends Controller
     private function buildInvoiceDetail(Invoice $invoice): array
     {
         $billed_to = $invoice->billedTo;
+        $order     = $invoice->order;
 
         return [
             'invoice_number' => $invoice->invoice_number,
@@ -173,6 +121,39 @@ class InvoiceController extends Controller
                 'quantity'   => $item->quantity,
                 'item_total' => $this->formatAmount($item->item_total, $invoice->currency_type),
             ]),
+            'order' => $order ? [
+                'id'          => $order->id,
+                'order_title' => $order->order_title,
+                'order_notes' => $order->order_notes,
+                'status'      => $order->status,
+                'created_at'  => $order->created_at?->format('F j, Y'),
+                'billing'     => $order->billing ? [
+                    'company'     => $order->billing->company,
+                    'address'     => $order->billing->address,
+                    'city'        => $order->billing->city,
+                    'state'       => $order->billing->state,
+                    'country'     => $order->billing->country,
+                    'postal_code' => $order->billing->postal_code,
+                ] : null,
+                'items' => $order->items->map(fn ($item) => [
+                    'dr_tier'    => $item->drTier ? [
+                        'id'             => $item->drTier->id,
+                        'dr_label'       => $item->drTier->dr_label,
+                        'traffic_range'  => $item->drTier->traffic_range,
+                        'word_count'     => $item->drTier->word_count,
+                        'price_per_link' => $item->drTier->price_per_link,
+                    ] : null,
+                    'quantity'   => $item->quantity,
+                    'unit_price' => $item->unit_price,
+                    'subtotal'   => $item->subtotal,
+                    'placements' => $item->placements->map(fn ($placement) => [
+                        'row_index'    => $placement->row_index,
+                        'keyword'      => $placement->keyword,
+                        'landing_page' => $placement->landing_page,
+                        'exact_match'  => $placement->exact_match,
+                    ]),
+                ]),
+            ] : null,
         ];
     }
 

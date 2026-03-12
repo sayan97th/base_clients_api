@@ -49,6 +49,11 @@ class Invoice extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(LinkBuildingOrder::class, 'order_id');
+    }
+
     public function lineItems(): HasMany
     {
         return $this->hasMany(InvoiceLineItem::class);

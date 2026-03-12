@@ -44,4 +44,9 @@ class LinkBuildingOrder extends Model
     {
         return $this->hasOne(LinkBuildingOrderBilling::class, 'order_id');
     }
+
+    public function invoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class, 'order_id');
+    }
 }

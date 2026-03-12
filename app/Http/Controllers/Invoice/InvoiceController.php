@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\Invoice;
 
+use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -125,6 +127,19 @@ class InvoiceController extends Controller
 
             return $invoice->load(['lineItems', 'billedTo']);
         });
+
+        $payer_name = $user->full_name ?? $user->email;
+
+        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
+                event(new PaymentCompleted(
+                    $admin,
+                    $payer_name,
+                    $total_amount,
+                    $invoice->invoice_number,
+                    '/invoices/' . $invoice->unique_id,
+                ));
+            });
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)], 201);
     }

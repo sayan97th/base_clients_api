@@ -24,6 +24,8 @@ class Notification extends Model
         'snoozed_until',
     ];
 
+    protected $appends = ['date', 'relative_time'];
+
     protected function casts(): array
     {
         return [
@@ -33,6 +35,16 @@ class Notification extends Model
             'read_at' => 'datetime',
             'snoozed_until' => 'datetime',
         ];
+    }
+
+    public function getDateAttribute(): string
+    {
+        return $this->created_at->format("M jS 'y \\a\\t g:i a");
+    }
+
+    public function getRelativeTimeAttribute(): string
+    {
+        return $this->created_at->diffForHumans();
     }
 
     public function user(): BelongsTo

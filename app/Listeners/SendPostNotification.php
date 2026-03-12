@@ -17,10 +17,10 @@ class SendPostNotification implements ShouldQueue
         $this->notificationService->createNotification(
             user: $event->user,
             type: 'post',
-            message: "New post published: {$event->post_title}.",
+            message: "BASE Search Marketing posted a message in {$event->service_name}.",
             extra: [
                 'preview_text' => $event->preview_text,
-                'link' => $event->link,
+                'link'         => $event->link,
             ],
         );
     }

@@ -17,31 +17,35 @@ class NotificationController extends Controller
 
     public function index(ListNotificationsRequest $request): JsonResponse
     {
-        $user = auth()->user();
+        $user    = auth()->user();
         $filters = $request->only(['type', 'is_read']);
-        $per_page = $request->integer('per_page', 15);
 
-        $notifications = $this->notificationService->getNotifications($user, $filters, $per_page);
+        if ($request->has('per_page')) {
+            $per_page      = $request->integer('per_page', 15);
+            $paginated     = $this->notificationService->getNotifications($user, $filters, $per_page);
 
-        return response()->json([
-            'notifications' => $notifications->items(),
-            'pagination' => [
-                'current_page' => $notifications->currentPage(),
-                'last_page' => $notifications->lastPage(),
-                'per_page' => $notifications->perPage(),
-                'total' => $notifications->total(),
-            ],
-        ]);
+            return response()->json([
+                'data'       => $paginated->items(),
+                'pagination' => [
+                    'current_page' => $paginated->currentPage(),
+                    'last_page'    => $paginated->lastPage(),
+                    'per_page'     => $paginated->perPage(),
+                    'total'        => $paginated->total(),
+                ],
+            ]);
+        }
+
+        $notifications = $this->notificationService->getAllNotifications($user, $filters);
+
+        return response()->json(['data' => $notifications]);
     }
 
     public function unreadCount(): JsonResponse
     {
-        $user = auth()->user();
+        $user  = auth()->user();
         $count = $this->notificationService->getUnreadCount($user);
 
-        return response()->json([
-            'unread_count' => $count,
-        ]);
+        return response()->json(['data' => ['unread_count' => $count]]);
     }
 
     public function markAsRead(Notification $notification): JsonResponse
@@ -49,27 +53,26 @@ class NotificationController extends Controller
         $user = auth()->user();
 
         if ($notification->user_id !== $user->id) {
-            return response()->json([
-                'message' => 'Forbidden.',
-            ], 403);
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $this->notificationService->markAsRead($notification);
 
         return response()->json([
-            'message' => 'Notification marked as read.',
-            'notification' => $notification->fresh(),
+            'data' => [
+                'id'      => $notification->id,
+                'is_read' => true,
+            ],
         ]);
     }
 
     public function markAllAsRead(): JsonResponse
     {
-        $user = auth()->user();
-        $count = $this->notificationService->markAllAsRead($user);
+        $user          = auth()->user();
+        $updated_count = $this->notificationService->markAllAsRead($user);
 
         return response()->json([
-            'message' => "All notifications marked as read.",
-            'updated_count' => $count,
+            'data' => ['updated_count' => $updated_count],
         ]);
     }
 
@@ -78,16 +81,16 @@ class NotificationController extends Controller
         $user = auth()->user();
 
         if ($notification->user_id !== $user->id) {
-            return response()->json([
-                'message' => 'Forbidden.',
-            ], 403);
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         $this->notificationService->archive($notification);
 
         return response()->json([
-            'message' => 'Notification archived.',
-            'notification' => $notification->fresh(),
+            'data' => [
+                'id'          => $notification->id,
+                'is_archived' => true,
+            ],
         ]);
     }
 
@@ -96,17 +99,24 @@ class NotificationController extends Controller
         $user = auth()->user();
 
         if ($notification->user_id !== $user->id) {
-            return response()->json([
-                'message' => 'Forbidden.',
-            ], 403);
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $snoozed_until = new \DateTime($request->validated('snoozed_until'));
-        $this->notificationService->snooze($notification, $snoozed_until);
+        $snooze_until = $request->validated('snooze_until')
+            ? new \DateTime($request->validated('snooze_until'))
+            : (new \DateTime())->modify('+24 hours');
+
+        $this->notificationService->snooze($notification, $snooze_until);
+
+        $notification->refresh();
 
         return response()->json([
-            'message' => 'Notification snoozed.',
-            'notification' => $notification->fresh(),
+            'data' => [
+                'id'           => $notification->id,
+                'is_snoozed'   => true,
+                'is_read'      => true,
+                'snoozed_until' => $notification->snoozed_until?->toIso8601String(),
+            ],
         ]);
     }
 }

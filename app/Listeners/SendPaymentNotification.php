@@ -19,7 +19,7 @@ class SendPaymentNotification implements ShouldQueue
         $this->notificationService->createNotification(
             user: $event->user,
             type: 'payment',
-            message: "{$event->user->full_name} paid \${$amount} for invoice #{$event->invoice_number}.",
+            message: "{$event->payer_name} paid \${$amount} for invoice #{$event->invoice_number}.",
             extra: [
                 'link' => $event->link,
             ],

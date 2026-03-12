@@ -12,7 +12,7 @@ class PostPublished
 
     public function __construct(
         public User $user,
-        public string $post_title,
+        public string $service_name,
         public ?string $preview_text = null,
         public ?string $link = null,
     ) {}

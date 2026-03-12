@@ -14,7 +14,7 @@ class SnoozeNotificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'snoozed_until' => ['required', 'date', 'after:now'],
+            'snooze_until' => ['sometimes', 'nullable', 'date', 'after:now'],
         ];
     }
 }

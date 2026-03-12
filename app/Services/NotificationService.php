@@ -7,24 +7,37 @@ use App\Mail\NotificationEmail;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
+    /**
+     * Return all non-archived, non-snoozed notifications for a user as a flat collection.
+     * Used by the frontend for client-side pagination.
+     */
+    public function getAllNotifications(User $user, array $filters = []): Collection
+    {
+        $query = Notification::forUser($user->id)
+            ->notArchived()
+            ->notSnoozed();
+
+        $this->applyFilters($query, $filters);
+
+        return $query->orderByDesc('created_at')->get();
+    }
+
+    /**
+     * Return paginated notifications — used when the caller passes a per_page param.
+     */
     public function getNotifications(User $user, array $filters = [], int $per_page = 15): LengthAwarePaginator
     {
         $query = Notification::forUser($user->id)
             ->notArchived()
             ->notSnoozed();
 
-        if (isset($filters['type'])) {
-            $query->ofType($filters['type']);
-        }
-
-        if (isset($filters['is_read'])) {
-            $filters['is_read'] ? $query->where('is_read', true) : $query->unread();
-        }
+        $this->applyFilters($query, $filters);
 
         return $query->orderByDesc('created_at')->paginate($per_page);
     }
@@ -41,11 +54,11 @@ class NotificationService
     public function createNotification(User $user, string $type, string $message, array $extra = []): Notification
     {
         $notification = Notification::create([
-            'user_id' => $user->id,
-            'type' => $type,
-            'message' => $message,
+            'user_id'      => $user->id,
+            'type'         => $type,
+            'message'      => $message,
             'preview_text' => $extra['preview_text'] ?? null,
-            'link' => $extra['link'] ?? null,
+            'link'         => $extra['link'] ?? null,
         ]);
 
         $this->sendEmailIfEnabled($user, $notification);
@@ -77,7 +90,12 @@ class NotificationService
 
     public function snooze(Notification $notification, \DateTimeInterface $until): void
     {
-        $notification->snooze($until);
+        $notification->update([
+            'is_snoozed'   => true,
+            'is_read'      => true,
+            'read_at'      => now(),
+            'snoozed_until' => $until,
+        ]);
     }
 
     public function unsnoozeExpired(): int
@@ -85,7 +103,7 @@ class NotificationService
         return Notification::where('is_snoozed', true)
             ->where('snoozed_until', '<=', now())
             ->update([
-                'is_snoozed' => false,
+                'is_snoozed'    => false,
                 'snoozed_until' => null,
             ]);
     }
@@ -101,6 +119,17 @@ class NotificationService
         $preference->update($data);
 
         return $preference->fresh();
+    }
+
+    protected function applyFilters($query, array $filters): void
+    {
+        if (isset($filters['type'])) {
+            $query->ofType($filters['type']);
+        }
+
+        if (isset($filters['is_read'])) {
+            $filters['is_read'] ? $query->where('is_read', true) : $query->unread();
+        }
     }
 
     protected function sendEmailIfEnabled(User $user, Notification $notification): void

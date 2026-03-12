@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\LinkBuilding;
 
+use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Models\LinkBuildingOrder;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -37,6 +39,7 @@ class LinkBuildingOrderController extends Controller
 
     public function store(StoreLinkBuildingOrderRequest $request): JsonResponse
     {
+        /** @var User $user */
         $user = auth()->user();
 
         $total_links = collect($request->items)->sum('quantity');
@@ -87,6 +90,8 @@ class LinkBuildingOrderController extends Controller
 
             return $order;
         });
+
+        event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 
         return response()->json([
             'data' => [

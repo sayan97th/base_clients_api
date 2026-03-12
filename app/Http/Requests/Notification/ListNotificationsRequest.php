@@ -15,7 +15,7 @@ class ListNotificationsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type' => ['sometimes', Rule::in(['payment', 'post', 'system'])],
+            'type' => ['sometimes', Rule::in(['payment', 'post', 'system', 'order'])],
             'is_read' => ['sometimes', 'boolean'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ];

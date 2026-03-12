@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Notifications;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Notification\CreateNotificationRequest;
 use App\Http\Requests\Notification\ListNotificationsRequest;
 use App\Http\Requests\Notification\SnoozeNotificationRequest;
 use App\Models\Notification;
@@ -14,6 +15,24 @@ class NotificationController extends Controller
     public function __construct(
         protected NotificationService $notificationService
     ) {}
+
+    public function store(CreateNotificationRequest $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user         = auth()->user();
+        $validated    = $request->validated();
+        $notification = $this->notificationService->createNotification(
+            $user,
+            $validated['type'],
+            $validated['message'],
+            [
+                'preview_text' => $validated['preview_text'] ?? null,
+                'link'         => $validated['link'] ?? null,
+            ]
+        );
+
+        return response()->json(['data' => $notification], 201);
+    }
 
     public function index(ListNotificationsRequest $request): JsonResponse
     {

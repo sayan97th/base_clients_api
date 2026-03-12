@@ -99,6 +99,7 @@ Route::middleware('auth:api')->group(function () {
     // Notifications
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
+        Route::post('/', [NotificationController::class, 'store']);
         Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
         Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
         Route::patch('/{notification}/read', [NotificationController::class, 'markAsRead']);

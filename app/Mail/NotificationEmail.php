@@ -17,14 +17,17 @@ class NotificationEmail extends Mailable
     public function __construct(
         public User $user,
         public Notification $notification,
-    ) {}
+    ) {
+        $this->onQueue('emails');
+    }
 
     public function envelope(): Envelope
     {
         $subjects = [
             'payment' => 'Payment Notification',
-            'post' => 'New Post Update',
-            'system' => 'System Notification',
+            'post'    => 'New Post Update',
+            'system'  => 'System Notification',
+            'order'   => 'Order Update',
         ];
 
         $subject = $subjects[$this->notification->type] ?? 'New Notification';
@@ -39,12 +42,17 @@ class NotificationEmail extends Mailable
         return new Content(
             view: 'emails.notification',
             with: [
-                'user_name' => $this->user->full_name,
-                'notification_type' => $this->notification->type,
-                'notification_message' => $this->notification->message,
-                'preview_text' => $this->notification->preview_text,
-                'action_url' => $this->buildActionUrl(),
-                'app_name' => config('app.name'),
+                'user_name'              => $this->user->full_name,
+                'user_email'             => $this->user->email,
+                'notification_type'      => $this->notification->type,
+                'notification_message'   => $this->notification->message,
+                'preview_text'           => $this->notification->preview_text,
+                'notification_date'      => $this->notification->date,
+                'notification_relative'  => $this->notification->relative_time,
+                'notification_id'        => $this->notification->id,
+                'action_url'             => $this->buildActionUrl(),
+                'preferences_url'        => config('app.frontend_url') . '/settings/notifications',
+                'app_name'               => config('app.name'),
             ],
         );
     }

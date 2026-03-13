@@ -1,4 +1,4 @@
-sudo cp -f ./config/base_clients_api.conf /etc/supervisor/conf.d/base_clients_api.conf
+sudo cp -f ./config/base_clients_api_testing.conf /etc/supervisor/conf.d/base_clients_api_testing.conf
 sudo systemctl restart supervisor
 sudo supervisorctl reread
 sudo supervisorctl update

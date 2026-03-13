@@ -24,7 +24,8 @@ class SendEmailJob implements ShouldQueue
     public function __construct(
         public Mailable $mailable,
         public string $recipient_email,
-    ) {
+        )
+    {
         $this->onQueue('emails');
     }
 
@@ -53,8 +54,9 @@ class SendEmailJob implements ShouldQueue
         Mailable $mailable,
         string $recipient_email,
         int $position = 0,
-    ): void {
-        $delay_seconds = $position * (int) config('queue.email_throttle_delay', 5);
+        ): void
+    {
+        $delay_seconds = $position * (int)config('queue.email_throttle_delay', 5);
 
         static::dispatch($mailable, $recipient_email)
             ->delay(now()->addSeconds($delay_seconds));

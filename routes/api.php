@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Test\TestEmailController;
 use App\Http\Controllers\Invoice\InvoiceController;
 use App\Http\Controllers\LinkBuilding\Admin\LinkBuildingOrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\LinkBuilding\DrTierController;
@@ -17,6 +18,10 @@ use App\Http\Controllers\Notifications\NotificationPreferenceController;
 use App\Http\Controllers\UserProfile\ProfileController;
 use App\Http\Controllers\Team\TeamMemberController;
 use Illuminate\Support\Facades\Route;
+
+// Test routes — remove in production
+Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
+Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);

@@ -50,17 +50,12 @@ return [
         ],
 
         /*
-         * Mailgun SMTP — used in production.
+         * Mailgun HTTP API — used in production.
          * Set MAIL_MAILER=mailgun in your production .env file.
+         * Credentials are read from config/services.php (mailgun key).
          */
         'mailgun' => [
-            'transport' => 'smtp',
-            'host' => env('MAILGUN_SMTP_HOST', 'smtp.mailgun.org'),
-            'port' => env('MAILGUN_SMTP_PORT', 587),
-            'encryption' => env('MAILGUN_SMTP_ENCRYPTION', 'tls'),
-            'username' => env('MAILGUN_SMTP_USERNAME'),
-            'password' => env('MAILGUN_SMTP_PASSWORD'),
-            'timeout' => null,
+            'transport' => 'mailgun',
         ],
 
         /*

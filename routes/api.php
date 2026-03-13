@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Route;
 // Test routes — remove in production
 Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
 Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
+Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);

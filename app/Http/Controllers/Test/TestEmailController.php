@@ -7,10 +7,12 @@ use App\Jobs\SendEmailJob;
 use App\Mail\TestEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
+use Throwable;
 
 class TestEmailController extends Controller
 {
-    private string $dummy_email = 'test@example.com';
+    private string $dummy_email = 'ernesto@97thfloor.com';
     private string $dummy_name = 'John Doe';
     private string $dummy_message = 'This is a pre-loaded test email to verify that mail delivery is working correctly through the queue.';
 
@@ -34,6 +36,42 @@ class TestEmailController extends Controller
                 'mailer' => config('mail.default'),
             ],
         ]);
+    }
+
+    /**
+     * Send a test email synchronously (no queue) so any delivery error is returned immediately.
+     * Uses pre-loaded dummy data — open directly in the browser: GET /api/test/send-email-realtime
+     */
+    public function sendTestEmailRealtime(): JsonResponse
+    {
+        $recipient_email = $this->dummy_email;
+        $recipient_name = $this->dummy_name;
+
+        try {
+            Mail::to($recipient_email)->send(new TestEmail($recipient_name));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Test email sent successfully (real-time, no queue).',
+                'data' => [
+                    'recipient_email' => $recipient_email,
+                    'recipient_name' => $recipient_name,
+                    'mailer' => config('mail.default'),
+                ],
+            ]);
+        }
+        catch (Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send test email.',
+                'error' => [
+                    'type' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                ],
+            ], 500);
+        }
     }
 
     /**

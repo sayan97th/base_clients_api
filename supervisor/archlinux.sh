@@ -3,3 +3,4 @@ sudo systemctl restart supervisord
 sudo supervisorctl reread
 sudo supervisorctl update
 sudo supervisorctl start base_clients_api:*
+sudo supervisorctl status

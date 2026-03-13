@@ -19,7 +19,10 @@ class InvoiceService
         LinkBuildingOrder $order,
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        ?string $stripe_payment_intent_id = null,
+        ?string $stripe_charge_id = null,
+        string $initial_status = 'paid'
     ): Invoice {
         $order->loadMissing(['items.drTier', 'billing']);
 
@@ -28,25 +31,28 @@ class InvoiceService
 
         $invoice = DB::transaction(function () use (
             $user, $order, $payment_method, $currency_type,
-            $subtotal_amount, $total_amount, $credit_amount
+            $subtotal_amount, $total_amount, $credit_amount,
+            $stripe_payment_intent_id, $stripe_charge_id, $initial_status
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
 
             $invoice = Invoice::create([
-                'unique_id'       => $unique_id,
-                'invoice_number'  => $invoice_number,
-                'user_id'         => $user->id,
-                'order_id'        => $order->id,
-                'status'          => 'paid',
-                'payment_method'  => $payment_method,
-                'currency_type'   => $currency_type,
-                'subtotal_amount' => $subtotal_amount,
-                'total_amount'    => $total_amount,
-                'credit_amount'   => $credit_amount,
-                'date_issued'     => now(),
-                'date_due'        => now()->addDays(30),
-                'date_paid'       => now(),
+                'unique_id'                  => $unique_id,
+                'invoice_number'             => $invoice_number,
+                'user_id'                    => $user->id,
+                'order_id'                   => $order->id,
+                'status'                     => $initial_status,
+                'payment_method'             => $payment_method,
+                'stripe_payment_intent_id'   => $stripe_payment_intent_id,
+                'stripe_charge_id'           => $stripe_charge_id,
+                'currency_type'              => $currency_type,
+                'subtotal_amount'            => $subtotal_amount,
+                'total_amount'               => $total_amount,
+                'credit_amount'              => $credit_amount,
+                'date_issued'                => now(),
+                'date_due'                   => now()->addDays(30),
+                'date_paid'                  => $initial_status === 'paid' ? now() : null,
             ]);
 
             foreach ($order->items as $item) {
@@ -75,18 +81,20 @@ class InvoiceService
             return $invoice->load(['lineItems', 'billedTo']);
         });
 
-        $payer_name = $user->full_name ?? $user->email;
+        if ($invoice->status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
 
-        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
-                event(new PaymentCompleted(
-                    $admin,
-                    $payer_name,
-                    $total_amount,
-                    $invoice->invoice_number,
-                    '/invoices/' . $invoice->unique_id,
-                ));
-            });
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                    ));
+                });
+        }
 
         return $invoice;
     }

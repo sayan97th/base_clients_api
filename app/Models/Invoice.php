@@ -12,9 +12,9 @@ class Invoice extends Model
 {
     use HasUuids;
 
-    const STATUSES        = ['paid', 'void'];
+    const STATUSES        = ['pending', 'paid', 'void'];
     const CURRENCY_TYPES  = ['usd', 'credits'];
-    const PAYMENT_METHODS = ['Account Balance', 'Credit Card'];
+    const PAYMENT_METHODS = ['Account Balance', 'Credit Card', 'Stripe'];
 
     protected $fillable = [
         'unique_id',
@@ -23,6 +23,8 @@ class Invoice extends Model
         'order_id',
         'status',
         'payment_method',
+        'stripe_payment_intent_id',
+        'stripe_charge_id',
         'currency_type',
         'subtotal_amount',
         'total_amount',

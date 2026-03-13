@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Billing\BillingController;
+use App\Http\Controllers\Billing\PaymentMethodController;
+use App\Http\Controllers\Billing\WebhookController;
 use App\Http\Controllers\Test\TestEmailController;
 use App\Http\Controllers\Invoice\InvoiceController;
 use App\Http\Controllers\LinkBuilding\Admin\LinkBuildingOrderController as AdminLinkBuildingOrderController;
@@ -18,6 +21,9 @@ use App\Http\Controllers\Notifications\NotificationPreferenceController;
 use App\Http\Controllers\UserProfile\ProfileController;
 use App\Http\Controllers\Team\TeamMemberController;
 use Illuminate\Support\Facades\Route;
+
+// Stripe webhook — must be outside auth middleware, no CSRF
+Route::post('/stripe/webhook', [WebhookController::class, 'handle']);
 
 // Test routes — remove in production
 Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
@@ -138,6 +144,19 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [InvoiceController::class, 'index']);
         Route::post('/', [InvoiceController::class, 'store']);
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
+    });
+
+    // Billing — payment profiles and Stripe setup
+    Route::prefix('billing')->group(function () {
+        Route::get('/overview', [BillingController::class, 'overview']);
+        Route::post('/setup-intent', [BillingController::class, 'createSetupIntent']);
+
+        Route::prefix('payment-methods')->group(function () {
+            Route::get('/', [PaymentMethodController::class, 'index']);
+            Route::post('/', [PaymentMethodController::class, 'store']);
+            Route::put('/{payment_method}/default', [PaymentMethodController::class, 'setDefault']);
+            Route::delete('/{payment_method}', [PaymentMethodController::class, 'destroy']);
+        });
     });
 
     // Profile

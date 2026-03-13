@@ -29,6 +29,7 @@ class User extends Authenticatable implements JWTSubject
         'job_title',
         'profile_photo_path',
         'organization_id',
+        'stripe_customer_id',
     ];
 
     protected $hidden = [
@@ -56,6 +57,16 @@ class User extends Authenticatable implements JWTSubject
     public function billingAddress(): HasOne
     {
         return $this->hasOne(BillingAddress::class);
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(PaymentMethod::class);
+    }
+
+    public function defaultPaymentMethod(): HasOne
+    {
+        return $this->hasOne(PaymentMethod::class)->where('is_default', true);
     }
 
     public function preference(): HasOne

@@ -6,10 +6,13 @@ use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Models\LinkBuildingOrder;
+use App\Models\PaymentMethod;
 use App\Models\User;
 use App\Services\InvoiceService;
+use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Stripe\Exception\ApiErrorException;
 
 class LinkBuildingOrderController extends Controller
 {
@@ -17,7 +20,8 @@ class LinkBuildingOrderController extends Controller
     private const BULK_DISCOUNT_RATE      = 0.10;
 
     public function __construct(
-        protected InvoiceService $invoiceService
+        protected InvoiceService $invoiceService,
+        protected StripeService $stripeService
     ) {}
 
     public function index(): JsonResponse
@@ -97,21 +101,42 @@ class LinkBuildingOrderController extends Controller
             return $order;
         });
 
-        $invoice = $this->invoiceService->createForLinkBuildingOrder($user, $order);
+        $payment_result = $this->processOrderPayment($user, $order, $request->payment, $total_amount);
+
+        if (isset($payment_result['error'])) {
+            $order->delete();
+            return response()->json(['message' => $payment_result['error']], 422);
+        }
+
+        $invoice = $this->invoiceService->createForLinkBuildingOrder(
+            user: $user,
+            order: $order,
+            payment_method: $payment_result['payment_method_label'],
+            stripe_payment_intent_id: $payment_result['stripe_payment_intent_id'] ?? null,
+            stripe_charge_id: $payment_result['stripe_charge_id'] ?? null,
+            initial_status: $payment_result['invoice_status'],
+        );
 
         event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 
-        return response()->json([
-            'data' => [
-                'order_id'        => $order->id,
-                'status'          => $order->status,
-                'total_amount'    => $order->total_amount,
-                'discount_applied' => $discount_applied,
-                'created_at'      => $order->created_at,
-                'invoice_number'  => $invoice->invoice_number,
-                'invoice_id'      => $invoice->unique_id,
-            ],
-        ], 201);
+        $response = [
+            'order_id'         => $order->id,
+            'status'           => $order->status,
+            'total_amount'     => $order->total_amount,
+            'discount_applied' => $discount_applied,
+            'created_at'       => $order->created_at,
+            'invoice_number'   => $invoice->invoice_number,
+            'invoice_id'       => $invoice->unique_id,
+            'payment_status'   => $payment_result['invoice_status'],
+        ];
+
+        // 3D Secure required — return client_secret so frontend can complete authentication
+        if ($payment_result['invoice_status'] === 'pending') {
+            $response['requires_action'] = true;
+            $response['client_secret']   = $payment_result['client_secret'];
+        }
+
+        return response()->json(['data' => $response], 201);
     }
 
     public function show(string $id): JsonResponse
@@ -134,6 +159,107 @@ class LinkBuildingOrderController extends Controller
         }
 
         return response()->json(['data' => $this->buildOrderDetail($order)]);
+    }
+
+    /**
+     * Resolve payment for an order based on the payment type provided.
+     *
+     * Returns an array with:
+     *   payment_method_label     string   — human-readable label stored on the invoice
+     *   invoice_status           string   — 'paid' or 'pending' (pending = 3DS required)
+     *   stripe_payment_intent_id string|null
+     *   stripe_charge_id         string|null
+     *   client_secret            string|null  — only present when requires_action
+     *   error                    string|null  — present when payment failed
+     */
+    private function processOrderPayment(
+        User $user,
+        LinkBuildingOrder $order,
+        array $payment,
+        float $total_amount
+    ): array {
+        $type = $payment['type'];
+
+        if ($type === 'account_balance') {
+            return [
+                'payment_method_label'     => 'Account Balance',
+                'invoice_status'           => 'paid',
+                'stripe_payment_intent_id' => null,
+                'stripe_charge_id'         => null,
+                'client_secret'            => null,
+                'error'                    => null,
+            ];
+        }
+
+        if ($type === 'credits') {
+            return [
+                'payment_method_label'     => 'Credits',
+                'invoice_status'           => 'paid',
+                'stripe_payment_intent_id' => null,
+                'stripe_charge_id'         => null,
+                'client_secret'            => null,
+                'error'                    => null,
+            ];
+        }
+
+        // Determine the Stripe PaymentMethod ID to charge
+        $stripe_pm_id  = null;
+        $off_session   = false;
+
+        if ($type === 'saved_card') {
+            $profile = PaymentMethod::where('id', $payment['payment_profile_id'])
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$profile) {
+                return ['error' => 'Payment profile not found.', 'payment_method_label' => '', 'invoice_status' => '', 'stripe_payment_intent_id' => null, 'stripe_charge_id' => null, 'client_secret' => null];
+            }
+
+            $stripe_pm_id = $profile->stripe_payment_method_id;
+            $off_session  = true;
+        }
+
+        if ($type === 'new_card') {
+            $stripe_pm_id = $payment['stripe_payment_method_id'];
+
+            // Optionally save the card to the user's billing profile
+            if (!empty($payment['save_card'])) {
+                try {
+                    $this->stripeService->attachPaymentMethod($user, $stripe_pm_id, false);
+                } catch (ApiErrorException) {
+                    // Non-fatal: card save failed, payment can still proceed
+                }
+            }
+        }
+
+        try {
+            $amount_cents = (int) round($total_amount * 100);
+            $description  = 'Link Building Order #' . $order->id;
+
+            $result = $this->stripeService->processPayment(
+                user: $user,
+                amount_cents: $amount_cents,
+                stripe_payment_method_id: $stripe_pm_id,
+                currency: 'usd',
+                description: $description,
+                off_session: $off_session
+            );
+
+            if ($result['status'] === 'failed') {
+                return ['error' => $result['error'] ?? 'Payment was declined.', 'payment_method_label' => '', 'invoice_status' => '', 'stripe_payment_intent_id' => null, 'stripe_charge_id' => null, 'client_secret' => null];
+            }
+
+            return [
+                'payment_method_label'     => 'Credit Card',
+                'invoice_status'           => $result['status'] === 'succeeded' ? 'paid' : 'pending',
+                'stripe_payment_intent_id' => $result['payment_intent_id'],
+                'stripe_charge_id'         => $result['charge_id'],
+                'client_secret'            => $result['client_secret'],
+                'error'                    => null,
+            ];
+        } catch (ApiErrorException $e) {
+            return ['error' => $e->getMessage(), 'payment_method_label' => '', 'invoice_status' => '', 'stripe_payment_intent_id' => null, 'stripe_charge_id' => null, 'client_secret' => null];
+        }
     }
 
     private function buildOrderDetail(LinkBuildingOrder $order): array

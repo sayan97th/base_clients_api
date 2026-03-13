@@ -33,8 +33,11 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'billing.state'                      => 'required|string|max:100',
             'billing.country'                    => 'required|string|max:100',
             'billing.postal_code'                => 'required|string|max:20',
-            'payment'                            => 'required|array',
-            'payment.payment_method_id'          => 'required|string',
+            'payment'                              => 'required|array',
+            'payment.type'                         => 'required|string|in:account_balance,credits,saved_card,new_card',
+            'payment.payment_profile_id'           => 'required_if:payment.type,saved_card|nullable|integer|exists:payment_methods,id',
+            'payment.stripe_payment_method_id'     => 'required_if:payment.type,new_card|nullable|string|starts_with:pm_',
+            'payment.save_card'                    => 'sometimes|boolean',
         ];
     }
 }

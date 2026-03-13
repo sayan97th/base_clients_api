@@ -2,14 +2,13 @@
 
 namespace App\Services;
 
-use App\Events\NewNotification;
+use App\Jobs\SendEmailJob;
 use App\Mail\NotificationEmail;
 use App\Models\Notification;
 use App\Models\NotificationPreference;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
@@ -62,7 +61,6 @@ class NotificationService
         ]);
 
         $this->sendEmailIfEnabled($user, $notification);
-        $this->broadcastIfEnabled($user, $notification);
 
         return $notification;
     }
@@ -137,16 +135,9 @@ class NotificationService
         $preference = $user->notificationPreference;
 
         if (!$preference || $preference->shouldSendEmail()) {
-            Mail::to($user->email)->queue(new NotificationEmail($user, $notification));
+            SendEmailJob::dispatch(new NotificationEmail($user, $notification), $user->email);
         }
     }
 
-    protected function broadcastIfEnabled(User $user, Notification $notification): void
-    {
-        $preference = $user->notificationPreference;
 
-        if (!$preference || $preference->push_notifications_enabled) {
-            NewNotification::dispatch($notification);
-        }
-    }
 }

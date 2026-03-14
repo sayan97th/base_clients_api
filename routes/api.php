@@ -1,12 +1,12 @@
 <?php
 
-use App\Http\Controllers\Admin\InvitationController as AdminInvitationController;
-use App\Http\Controllers\Admin\InvoiceController as AdminInvoiceController;
+use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
+use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
-use App\Http\Controllers\Admin\OrderController as AdminOrderController;
-use App\Http\Controllers\Admin\OrganizationController as AdminOrganizationController;
-use App\Http\Controllers\Admin\RoleController;
-use App\Http\Controllers\Admin\UserController as AdminUserController;
+use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
+use App\Http\Controllers\Admin\Role\RoleController;
+use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
@@ -15,9 +15,9 @@ use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrde
 use App\Http\Controllers\Client\Notification\NotificationController;
 use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Client\Organization\OrganizationController;
-use App\Http\Controllers\Client\ProfileController;
-use App\Http\Controllers\Client\ScheduledCallController;
-use App\Http\Controllers\Client\SupportTicketController;
+use App\Http\Controllers\Client\Profile\ProfileController;
+use App\Http\Controllers\Client\ScheduledCall\ScheduledCallController;
+use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;

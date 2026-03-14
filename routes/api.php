@@ -1,27 +1,27 @@
 <?php
 
-use App\Http\Controllers\Api\InvitationController;
-use App\Http\Controllers\Api\StaffInvoiceController;
-use App\Http\Controllers\Api\StaffOrderController;
-use App\Http\Controllers\Api\StaffOrganizationController;
-use App\Http\Controllers\Api\StaffUserController;
+use App\Http\Controllers\Admin\InvitationController as AdminInvitationController;
+use App\Http\Controllers\Admin\InvoiceController as AdminInvoiceController;
+use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
+use App\Http\Controllers\Admin\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\OrganizationController as AdminOrganizationController;
+use App\Http\Controllers\Admin\RoleController;
+use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\BroadcastAuthController;
-use App\Http\Controllers\Invoice\InvoiceController;
-use App\Http\Controllers\LinkBuilding\Admin\LinkBuildingOrderController as AdminLinkBuildingOrderController;
-use App\Http\Controllers\LinkBuilding\DrTierController;
-use App\Http\Controllers\LinkBuilding\LinkBuildingOrderController;
-use App\Http\Controllers\Notifications\NotificationController;
-use App\Http\Controllers\Notifications\NotificationPreferenceController;
-use App\Http\Controllers\Organization\OrganizationController;
-use App\Http\Controllers\Role\RoleController;
-use App\Http\Controllers\ScheduledCall\ScheduledCallController;
-use App\Http\Controllers\SupportTicket\SupportTicketController;
-use App\Http\Controllers\Team\TeamController;
-use App\Http\Controllers\Team\TeamInvitationController;
-use App\Http\Controllers\Team\TeamMemberController;
+use App\Http\Controllers\Client\LinkBuilding\DrTierController;
+use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
+use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
+use App\Http\Controllers\Client\Notification\NotificationController;
+use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
+use App\Http\Controllers\Client\Organization\OrganizationController;
+use App\Http\Controllers\Client\ProfileController;
+use App\Http\Controllers\Client\ScheduledCallController;
+use App\Http\Controllers\Client\SupportTicketController;
+use App\Http\Controllers\Client\Team\TeamController;
+use App\Http\Controllers\Client\Team\TeamInvitationController;
+use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Test\TestEmailController;
-use App\Http\Controllers\UserProfile\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 // Test routes — remove in production
@@ -31,8 +31,8 @@ Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEm
 
 // ─── Public invitation routes (token is the secret, no auth required) ────────
 Route::group(['prefix' => 'invitations'], function () {
-    Route::get('{token}/validate', [InvitationController::class, 'validateToken']);
-    Route::post('accept', [InvitationController::class, 'accept']);
+    Route::get('{token}/validate', [AdminInvitationController::class, 'validateToken']);
+    Route::post('accept', [AdminInvitationController::class, 'accept']);
 });
 
 Route::prefix('auth')->group(function () {
@@ -162,18 +162,18 @@ Route::middleware('auth:api')->group(function () {
 
     // ─── Staff / Admin portal routes ──────────────────────────────────────────
     Route::group(['prefix' => 'staff', 'middleware' => ['role:super_admin,admin,staff']], function () {
-        Route::get('users', [StaffUserController::class, 'index']);
-        Route::get('organizations', [StaffOrganizationController::class, 'index']);
-        Route::get('orders', [StaffOrderController::class, 'index']);
-        Route::get('invoices', [StaffInvoiceController::class, 'index']);
+        Route::get('users', [AdminUserController::class, 'index']);
+        Route::get('organizations', [AdminOrganizationController::class, 'index']);
+        Route::get('orders', [AdminOrderController::class, 'index']);
+        Route::get('invoices', [AdminInvoiceController::class, 'index']);
 
         // All staff roles can list invitations
-        Route::get('invitations', [InvitationController::class, 'index']);
+        Route::get('invitations', [AdminInvitationController::class, 'index']);
 
         // Only super-admin and admin can create or revoke invitations
         Route::group(['middleware' => ['role:super_admin,admin']], function () {
-            Route::post('invitations', [InvitationController::class, 'store']);
-            Route::delete('invitations/{id}', [InvitationController::class, 'destroy']);
+            Route::post('invitations', [AdminInvitationController::class, 'store']);
+            Route::delete('invitations/{id}', [AdminInvitationController::class, 'destroy']);
         });
     });
 });

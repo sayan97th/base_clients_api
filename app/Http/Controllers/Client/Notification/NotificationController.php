@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Notifications;
+namespace App\Http\Controllers\Client\Notification;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Notification\CreateNotificationRequest;
@@ -40,8 +40,8 @@ class NotificationController extends Controller
         $filters = $request->only(['type', 'is_read']);
 
         if ($request->has('per_page')) {
-            $per_page      = $request->integer('per_page', 15);
-            $paginated     = $this->notificationService->getNotifications($user, $filters, $per_page);
+            $per_page  = $request->integer('per_page', 15);
+            $paginated = $this->notificationService->getNotifications($user, $filters, $per_page);
 
             return response()->json([
                 'data'       => $paginated->items(),

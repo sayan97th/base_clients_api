@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\LinkBuilding;
+namespace App\Http\Controllers\Client\LinkBuilding;
 
 use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
@@ -11,7 +11,7 @@ use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
-class LinkBuildingOrderController extends Controller
+class OrderController extends Controller
 {
     private const BULK_DISCOUNT_THRESHOLD = 10;
     private const BULK_DISCOUNT_RATE      = 0.10;
@@ -103,13 +103,13 @@ class LinkBuildingOrderController extends Controller
 
         return response()->json([
             'data' => [
-                'order_id'        => $order->id,
-                'status'          => $order->status,
-                'total_amount'    => $order->total_amount,
+                'order_id'         => $order->id,
+                'status'           => $order->status,
+                'total_amount'     => $order->total_amount,
                 'discount_applied' => $discount_applied,
-                'created_at'      => $order->created_at,
-                'invoice_number'  => $invoice->invoice_number,
-                'invoice_id'      => $invoice->unique_id,
+                'created_at'       => $order->created_at,
+                'invoice_number'   => $invoice->invoice_number,
+                'invoice_id'       => $invoice->unique_id,
             ],
         ], 201);
     }
@@ -129,7 +129,7 @@ class LinkBuildingOrderController extends Controller
             ])
             ->first();
 
-        if (! $order) {
+        if (!$order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
@@ -141,13 +141,13 @@ class LinkBuildingOrderController extends Controller
         $invoice = $order->invoice;
 
         return [
-            'id'              => $order->id,
-            'order_title'     => $order->order_title,
-            'order_notes'     => $order->order_notes,
-            'status'          => $order->status,
-            'total_amount'    => $order->total_amount,
-            'created_at'      => $order->created_at?->format('F j, Y'),
-            'billing'         => $order->billing ? [
+            'id'           => $order->id,
+            'order_title'  => $order->order_title,
+            'order_notes'  => $order->order_notes,
+            'status'       => $order->status,
+            'total_amount' => $order->total_amount,
+            'created_at'   => $order->created_at?->format('F j, Y'),
+            'billing'      => $order->billing ? [
                 'company'     => $order->billing->company,
                 'address'     => $order->billing->address,
                 'city'        => $order->billing->city,
@@ -156,8 +156,8 @@ class LinkBuildingOrderController extends Controller
                 'postal_code' => $order->billing->postal_code,
             ] : null,
             'items'   => $order->items->map(fn ($item) => [
-                'id'         => $item->id,
-                'dr_tier'    => $item->drTier ? [
+                'id'       => $item->id,
+                'dr_tier'  => $item->drTier ? [
                     'id'             => $item->drTier->id,
                     'dr_label'       => $item->drTier->dr_label,
                     'traffic_range'  => $item->drTier->traffic_range,

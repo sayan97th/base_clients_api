@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Team;
+namespace App\Http\Controllers\Client\Team;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Team\SendTeamInvitationRequest;
@@ -42,9 +42,9 @@ class TeamInvitationController extends Controller
 
     public function store(SendTeamInvitationRequest $request, Team $team): JsonResponse
     {
-        $user = auth()->user();
+        $user           = auth()->user();
         $validated_data = $request->validated();
-        $email = $validated_data['email'];
+        $email          = $validated_data['email'];
 
         if ($user->organization_id !== $team->organization_id) {
             return response()->json([
@@ -77,14 +77,14 @@ class TeamInvitationController extends Controller
         $existing_user = User::where('email', $email)->first();
 
         $invitation = TeamInvitation::create([
-            'team_id' => $team->id,
+            'team_id'    => $team->id,
             'invited_by' => $user->id,
-            'user_id' => $existing_user?->id,
-            'email' => $email,
-            'role' => $validated_data['role'] ?? 'member',
+            'user_id'    => $existing_user?->id,
+            'email'      => $email,
+            'role'        => $validated_data['role'] ?? 'member',
             'permissions' => $validated_data['permissions'] ?? null,
-            'token' => Str::random(64),
-            'status' => 'pending',
+            'token'      => Str::random(64),
+            'status'     => 'pending',
             'expires_at' => now()->addDays(7),
         ]);
 
@@ -96,7 +96,7 @@ class TeamInvitationController extends Controller
         );
 
         return response()->json([
-            'message' => 'Invitation sent successfully.',
+            'message'    => 'Invitation sent successfully.',
             'invitation' => $invitation,
         ], 201);
     }
@@ -127,19 +127,19 @@ class TeamInvitationController extends Controller
 
         if ($invitation->team->hasMember($user)) {
             $invitation->update([
-                'status' => 'accepted',
-                'user_id' => $user->id,
+                'status'      => 'accepted',
+                'user_id'     => $user->id,
                 'accepted_at' => now(),
             ]);
 
             return response()->json([
                 'message' => 'You are already a member of this team.',
-                'team' => $invitation->team,
+                'team'    => $invitation->team,
             ]);
         }
 
         $invitation->team->members()->attach($user->id, [
-            'role' => $invitation->role,
+            'role'        => $invitation->role,
             'permissions' => is_array($invitation->permissions)
                 ? json_encode($invitation->permissions)
                 : $invitation->permissions,
@@ -147,8 +147,8 @@ class TeamInvitationController extends Controller
         ]);
 
         $invitation->update([
-            'status' => 'accepted',
-            'user_id' => $user->id,
+            'status'      => 'accepted',
+            'user_id'     => $user->id,
             'accepted_at' => now(),
         ]);
 
@@ -162,7 +162,7 @@ class TeamInvitationController extends Controller
 
         return response()->json([
             'message' => 'Invitation accepted. You have joined the team.',
-            'team' => $invitation->team,
+            'team'    => $invitation->team,
         ]);
     }
 
@@ -191,7 +191,7 @@ class TeamInvitationController extends Controller
         }
 
         $invitation->update([
-            'status' => 'declined',
+            'status'  => 'declined',
             'user_id' => $user->id,
         ]);
 

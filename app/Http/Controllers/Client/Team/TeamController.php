@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Team;
+namespace App\Http\Controllers\Client\Team;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Team\StoreTeamRequest;
@@ -32,28 +32,28 @@ class TeamController extends Controller
 
     public function store(StoreTeamRequest $request): JsonResponse
     {
-        $user = auth()->user();
+        $user           = auth()->user();
         $validated_data = $request->validated();
 
         $team = Team::create([
             'organization_id' => $user->organization_id,
-            'created_by' => $user->id,
-            'name' => $validated_data['name'],
-            'slug' => Str::slug($validated_data['name']),
-            'description' => $validated_data['description'] ?? null,
+            'created_by'      => $user->id,
+            'name'            => $validated_data['name'],
+            'slug'            => Str::slug($validated_data['name']),
+            'description'     => $validated_data['description'] ?? null,
         ]);
 
         $team->members()->attach($user->id, [
-            'role' => 'owner',
+            'role'        => 'owner',
             'permissions' => json_encode(Team::TEAM_PERMISSIONS),
-            'joined_at' => now(),
+            'joined_at'   => now(),
         ]);
 
         $team->load('members:id,first_name,last_name,email');
 
         return response()->json([
             'message' => 'Team created successfully.',
-            'team' => $team,
+            'team'    => $team,
         ], 201);
     }
 
@@ -98,7 +98,7 @@ class TeamController extends Controller
 
         return response()->json([
             'message' => 'Team updated successfully.',
-            'team' => $team->fresh(),
+            'team'    => $team->fresh(),
         ]);
     }
 

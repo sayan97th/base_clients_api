@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class StaffOrganizationController extends Controller
+class OrganizationController extends Controller
 {
     /**
      * GET /api/staff/organizations?page=N

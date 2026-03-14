@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class StaffInvoiceController extends Controller
+class InvoiceController extends Controller
 {
     /**
      * GET /api/staff/invoices?page=N

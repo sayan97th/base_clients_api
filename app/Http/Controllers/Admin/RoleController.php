@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Role;
+namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Role;
@@ -28,7 +28,7 @@ class RoleController extends Controller
 
         return response()->json([
             'message' => 'Role assigned successfully.',
-            'user' => $user,
+            'user'    => $user,
         ]);
     }
 
@@ -43,7 +43,7 @@ class RoleController extends Controller
 
         return response()->json([
             'message' => 'Role revoked successfully.',
-            'user' => $user,
+            'user'    => $user,
         ]);
     }
 }

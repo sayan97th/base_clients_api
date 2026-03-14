@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\LinkBuilding;
+namespace App\Http\Controllers\Client\LinkBuilding;
 
 use App\Http\Controllers\Controller;
 use App\Models\DrTier;

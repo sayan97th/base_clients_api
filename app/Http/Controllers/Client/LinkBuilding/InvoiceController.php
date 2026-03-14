@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Invoice;
+namespace App\Http\Controllers\Client\LinkBuilding;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
@@ -46,7 +46,7 @@ class InvoiceController extends Controller
             ->with(['lineItems', 'billedTo', 'order.items.drTier', 'order.items.placements', 'order.billing'])
             ->first();
 
-        if (! $invoice) {
+        if (!$invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
 
@@ -69,7 +69,7 @@ class InvoiceController extends Controller
             ->with(['items.drTier', 'billing'])
             ->first();
 
-        if (! $order) {
+        if (!$order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 

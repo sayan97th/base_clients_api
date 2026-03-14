@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Notifications;
+namespace App\Http\Controllers\Client\Notification;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Notification\UpdateNotificationPreferenceRequest;
@@ -15,7 +15,7 @@ class NotificationPreferenceController extends Controller
 
     public function show(): JsonResponse
     {
-        $user = auth()->user();
+        $user        = auth()->user();
         $preferences = $this->notificationService->getOrCreatePreferences($user);
 
         return response()->json([
@@ -25,11 +25,11 @@ class NotificationPreferenceController extends Controller
 
     public function update(UpdateNotificationPreferenceRequest $request): JsonResponse
     {
-        $user = auth()->user();
+        $user        = auth()->user();
         $preferences = $this->notificationService->updatePreferences($user, $request->validated());
 
         return response()->json([
-            'message' => 'Notification preferences updated.',
+            'message'     => 'Notification preferences updated.',
             'preferences' => $preferences,
         ]);
     }

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Team;
+namespace App\Http\Controllers\Client\Team;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Team\UpdateTeamMemberRequest;
@@ -31,15 +31,15 @@ class TeamMemberController extends Controller
             ->get()
             ->map(function ($member) {
                 return [
-                    'id' => $member->id,
-                    'first_name' => $member->first_name,
-                    'last_name' => $member->last_name,
-                    'full_name' => $member->full_name,
-                    'email' => $member->email,
-                    'profile_photo_path' => $member->profile_photo_path,
-                    'profile_photo_url' => $member->profile_photo_url,
-                    'role' => $member->pivot->role,
-                    'permissions' => is_string($member->pivot->permissions)
+                    'id'                  => $member->id,
+                    'first_name'          => $member->first_name,
+                    'last_name'           => $member->last_name,
+                    'full_name'           => $member->full_name,
+                    'email'               => $member->email,
+                    'profile_photo_path'  => $member->profile_photo_path,
+                    'profile_photo_url'   => $member->profile_photo_url,
+                    'role'                => $member->pivot->role,
+                    'permissions'         => is_string($member->pivot->permissions)
                         ? json_decode($member->pivot->permissions, true)
                         : $member->pivot->permissions,
                     'joined_at' => $member->pivot->joined_at,
@@ -76,7 +76,7 @@ class TeamMemberController extends Controller
         }
 
         $validated_data = $request->validated();
-        $update_data = [];
+        $update_data    = [];
 
         if (isset($validated_data['role'])) {
             $update_data['role'] = $validated_data['role'];
@@ -94,12 +94,12 @@ class TeamMemberController extends Controller
 
         return response()->json([
             'message' => 'Team member updated successfully.',
-            'member' => [
-                'id' => $updated_member->id,
-                'first_name' => $updated_member->first_name,
-                'last_name' => $updated_member->last_name,
-                'email' => $updated_member->email,
-                'role' => $updated_member->pivot->role,
+            'member'  => [
+                'id'          => $updated_member->id,
+                'first_name'  => $updated_member->first_name,
+                'last_name'   => $updated_member->last_name,
+                'email'       => $updated_member->email,
+                'role'        => $updated_member->pivot->role,
                 'permissions' => is_string($updated_member->pivot->permissions)
                     ? json_decode($updated_member->pivot->permissions, true)
                     : $updated_member->pivot->permissions,

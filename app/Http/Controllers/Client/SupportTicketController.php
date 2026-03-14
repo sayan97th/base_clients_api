@@ -1,13 +1,12 @@
 <?php
 
-namespace App\Http\Controllers\SupportTicket;
+namespace App\Http\Controllers\Client;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SupportTicket\StoreSupportTicketMessageRequest;
 use App\Http\Requests\SupportTicket\StoreSupportTicketRequest;
 use App\Http\Requests\SupportTicket\UpdateSupportTicketRequest;
 use App\Models\SupportTicket;
-use App\Models\SupportTicketMessage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +15,7 @@ class SupportTicketController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $user = auth()->user();
+        $user  = auth()->user();
         $query = SupportTicket::where('user_id', $user->id);
 
         if ($request->has('status') && in_array($request->status, SupportTicket::STATUSES)) {
@@ -41,23 +40,23 @@ class SupportTicketController extends Controller
 
         $support_ticket = DB::transaction(function () use ($request, $user) {
             $ticket = SupportTicket::create([
-                'subject' => $request->subject,
-                'priority' => $request->priority ?? 'medium',
+                'subject'       => $request->subject,
+                'priority'      => $request->priority ?? 'medium',
                 'related_order' => $request->related_order,
-                'user_id' => $user->id,
+                'user_id'       => $user->id,
             ]);
 
             $ticket->messages()->create([
                 'sender_id' => $user->id,
-                'content' => $request->content,
+                'content'   => $request->content,
             ]);
 
             return $ticket->load('messages.sender:id,first_name,last_name,email');
         });
 
         return response()->json([
-            'message' => 'Support ticket created successfully.',
-            'support_ticket' => $support_ticket,
+            'message'         => 'Support ticket created successfully.',
+            'support_ticket'  => $support_ticket,
         ], 201);
     }
 
@@ -102,7 +101,7 @@ class SupportTicketController extends Controller
         $support_ticket->update($data);
 
         return response()->json([
-            'message' => 'Support ticket updated successfully.',
+            'message'        => 'Support ticket updated successfully.',
             'support_ticket' => $support_ticket->fresh()->load('user:id,first_name,last_name,email'),
         ]);
     }
@@ -121,13 +120,13 @@ class SupportTicketController extends Controller
 
         $message = $support_ticket->messages()->create([
             'sender_id' => $user->id,
-            'content' => $request->content,
+            'content'   => $request->content,
         ]);
 
         $message->load('sender:id,first_name,last_name,email');
 
         return response()->json([
-            'message' => 'Message added successfully.',
+            'message'        => 'Message added successfully.',
             'ticket_message' => $message,
         ], 201);
     }

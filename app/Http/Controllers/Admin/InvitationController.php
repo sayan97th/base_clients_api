@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcceptInvitationRequest;
@@ -149,24 +149,24 @@ class InvitationController extends Controller
     private function formatUser(\App\Models\User $user): array
     {
         return [
-            'id'               => $user->id,
-            'first_name'       => $user->first_name,
-            'last_name'        => $user->last_name,
-            'email'            => $user->email,
-            'business_email'   => $user->business_email,
-            'phone'            => $user->phone,
-            'job_title'        => $user->job_title,
+            'id'                => $user->id,
+            'first_name'        => $user->first_name,
+            'last_name'         => $user->last_name,
+            'email'             => $user->email,
+            'business_email'    => $user->business_email,
+            'phone'             => $user->phone,
+            'job_title'         => $user->job_title,
             'profile_photo_url' => $user->profile_photo_url,
-            'organization_id'  => $user->organization_id,
+            'organization_id'   => $user->organization_id,
             'email_verified_at' => $user->email_verified_at,
-            'created_at'       => $user->created_at,
-            'updated_at'       => $user->updated_at,
-            'roles'            => $user->roles->map(fn ($role) => [
+            'created_at'        => $user->created_at,
+            'updated_at'        => $user->updated_at,
+            'roles'             => $user->roles->map(fn ($role) => [
                 'id'           => $role->id,
                 'name'         => $role->name,
                 'display_name' => $role->display_name,
             ])->values(),
-            'organization'     => $user->organization,
+            'organization' => $user->organization,
         ];
     }
 }

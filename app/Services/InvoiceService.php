@@ -77,16 +77,17 @@ class InvoiceService
 
         $payer_name = $user->full_name ?? $user->email;
 
-        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
-                event(new PaymentCompleted(
-                    $admin,
-                    $payer_name,
-                    $total_amount,
-                    $invoice->invoice_number,
-                    '/invoices/' . $invoice->unique_id,
-                ));
-            });
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
 
         return $invoice;
     }

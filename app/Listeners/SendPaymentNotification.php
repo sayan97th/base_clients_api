@@ -14,14 +14,42 @@ class SendPaymentNotification implements ShouldQueue
 
     public function handle(PaymentCompleted $event): void
     {
-        $amount = number_format($event->amount, 2);
+        $amount    = number_format($event->amount, 2);
+        $mail_data = [];
+
+        if ($event->invoice) {
+            $invoice = $event->invoice->loadMissing(['lineItems', 'billedTo']);
+
+            $mail_data = [
+                'invoice_number'  => $invoice->invoice_number,
+                'invoice_url'     => config('app.frontend_url') . '/invoices/' . $invoice->unique_id,
+                'invoice_pdf_url' => config('app.frontend_url') . '/share/invoices/' . $invoice->unique_id . '/pdf',
+                'currency_type'   => $invoice->currency_type,
+                'subtotal_amount' => $invoice->subtotal_amount,
+                'total_amount'    => $invoice->total_amount,
+                'credit_amount'   => $invoice->credit_amount,
+                'line_items'      => $invoice->lineItems->map(fn ($item) => [
+                    'name'       => $item->item_name,
+                    'price'      => $item->price,
+                    'quantity'   => $item->quantity,
+                    'item_total' => $item->item_total,
+                ])->toArray(),
+                'billed_to' => $invoice->billedTo ? [
+                    'company_name'   => $invoice->billedTo->company_name,
+                    'address_line_1' => $invoice->billedTo->address_line_1,
+                    'state'          => $invoice->billedTo->state,
+                    'country'        => $invoice->billedTo->country,
+                ] : null,
+            ];
+        }
 
         $this->notificationService->createNotification(
             user: $event->user,
             type: 'payment',
             message: "{$event->payer_name} paid \${$amount} for invoice #{$event->invoice_number}.",
             extra: [
-                'link' => $event->link,
+                'link'      => $event->link,
+                'mail_data' => $mail_data,
             ],
         );
     }

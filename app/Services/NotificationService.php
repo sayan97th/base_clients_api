@@ -60,7 +60,7 @@ class NotificationService
             'link'         => $extra['link'] ?? null,
         ]);
 
-        $this->sendEmailIfEnabled($user, $notification);
+        $this->sendEmailIfEnabled($user, $notification, $extra['mail_data'] ?? []);
 
         return $notification;
     }
@@ -130,12 +130,12 @@ class NotificationService
         }
     }
 
-    protected function sendEmailIfEnabled(User $user, Notification $notification): void
+    protected function sendEmailIfEnabled(User $user, Notification $notification, array $mail_data = []): void
     {
         $preference = $user->notificationPreference;
 
         if (!$preference || $preference->shouldSendEmail()) {
-            SendEmailJob::dispatch(new NotificationEmail($user, $notification), $user->email);
+            SendEmailJob::dispatch(new NotificationEmail($user, $notification, $mail_data), $user->email);
         }
     }
 

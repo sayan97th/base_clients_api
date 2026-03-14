@@ -1,28 +1,39 @@
 <?php
 
+use App\Http\Controllers\Api\InvitationController;
+use App\Http\Controllers\Api\StaffInvoiceController;
+use App\Http\Controllers\Api\StaffOrderController;
+use App\Http\Controllers\Api\StaffOrganizationController;
+use App\Http\Controllers\Api\StaffUserController;
 use App\Http\Controllers\Auth\AuthController;
-use App\Http\Controllers\Test\TestEmailController;
+use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Invoice\InvoiceController;
 use App\Http\Controllers\LinkBuilding\Admin\LinkBuildingOrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\LinkBuilding\DrTierController;
 use App\Http\Controllers\LinkBuilding\LinkBuildingOrderController;
-use App\Http\Controllers\Organization\OrganizationController;
-use App\Http\Controllers\Role\RoleController;
-use App\Http\Controllers\Team\TeamController;
-use App\Http\Controllers\Team\TeamInvitationController;
-use App\Http\Controllers\ScheduledCall\ScheduledCallController;
-use App\Http\Controllers\SupportTicket\SupportTicketController;
-use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Notifications\NotificationController;
 use App\Http\Controllers\Notifications\NotificationPreferenceController;
-use App\Http\Controllers\UserProfile\ProfileController;
+use App\Http\Controllers\Organization\OrganizationController;
+use App\Http\Controllers\Role\RoleController;
+use App\Http\Controllers\ScheduledCall\ScheduledCallController;
+use App\Http\Controllers\SupportTicket\SupportTicketController;
+use App\Http\Controllers\Team\TeamController;
+use App\Http\Controllers\Team\TeamInvitationController;
 use App\Http\Controllers\Team\TeamMemberController;
+use App\Http\Controllers\Test\TestEmailController;
+use App\Http\Controllers\UserProfile\ProfileController;
 use Illuminate\Support\Facades\Route;
 
 // Test routes — remove in production
 Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
 Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
 Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
+
+// ─── Public invitation routes (token is the secret, no auth required) ────────
+Route::group(['prefix' => 'invitations'], function () {
+    Route::get('{token}/validate', [InvitationController::class, 'validateToken']);
+    Route::post('accept', [InvitationController::class, 'accept']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
@@ -148,4 +159,21 @@ Route::middleware('auth:api')->group(function () {
 
     // Broadcasting auth (JWT-based)
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
+
+    // ─── Staff / Admin portal routes ──────────────────────────────────────────
+    Route::group(['prefix' => 'staff', 'middleware' => ['role:super-admin,admin,staff']], function () {
+        Route::get('users', [StaffUserController::class, 'index']);
+        Route::get('organizations', [StaffOrganizationController::class, 'index']);
+        Route::get('orders', [StaffOrderController::class, 'index']);
+        Route::get('invoices', [StaffInvoiceController::class, 'index']);
+
+        // All staff roles can list invitations
+        Route::get('invitations', [InvitationController::class, 'index']);
+
+        // Only super-admin and admin can create or revoke invitations
+        Route::group(['middleware' => ['role:super-admin,admin']], function () {
+            Route::post('invitations', [InvitationController::class, 'store']);
+            Route::delete('invitations/{id}', [InvitationController::class, 'destroy']);
+        });
+    });
 });

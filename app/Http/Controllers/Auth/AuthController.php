@@ -26,8 +26,13 @@ class AuthController extends Controller
         $user->preference()->create();
         $user->billingAddress()->create();
 
+        // Always assign the client role on public registration.
+        // Admin/staff accounts are only created via the invitation flow.
+        $user->assignRole('client');
+
         $this->processTeamInvitations($user, $validated_data['invitation_token'] ?? null);
 
+        /** @var string $token */
         $token = auth()->login($user);
 
         return $this->respondWithToken($token, $user);
@@ -50,11 +55,12 @@ class AuthController extends Controller
 
     public function me(): JsonResponse
     {
+        /** @var \App\Models\User $user */
         $user = auth()->user();
         $user->load(['roles:id,name,display_name', 'organization']);
 
         return response()->json([
-            'user' => $user,
+            'user' => $this->formatUser($user),
             'permissions' => $user->getAllPermissions(),
         ]);
     }
@@ -70,9 +76,13 @@ class AuthController extends Controller
 
     public function refresh(): JsonResponse
     {
+        /** @var string $token */
         $token = auth()->refresh();
 
-        return $this->respondWithToken($token, auth()->user());
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        return $this->respondWithToken($token, $user);
     }
 
     protected function processTeamInvitations(User $user, ?string $invitation_token = null): void
@@ -115,6 +125,30 @@ class AuthController extends Controller
         }
     }
 
+    protected function formatUser(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'business_email' => $user->business_email,
+            'phone' => $user->phone,
+            'job_title' => $user->job_title,
+            'profile_photo_url' => $user->profile_photo_url,
+            'organization_id' => $user->organization_id,
+            'email_verified_at' => $user->email_verified_at,
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
+            'roles' => $user->roles->map(fn ($role) => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'display_name' => $role->display_name,
+            ])->values(),
+            'organization' => $user->organization,
+        ];
+    }
+
     protected function respondWithToken(string $token, $user = null): JsonResponse
     {
         $user?->load(['roles:id,name,display_name', 'organization']);
@@ -123,16 +157,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => auth()->factory()->getTTL() * 60,
-            'user' => $user ? [
-                'id' => $user->id,
-                'first_name' => $user->first_name,
-                'last_name' => $user->last_name,
-                'email' => $user->email,
-                'profile_photo_path' => $user->profile_photo_path,
-                'profile_photo_url' => $user->profile_photo_url,
-                'roles' => $user->roles->pluck('name'),
-                'organization' => $user->organization,
-            ] : null,
+            'user' => $user ? $this->formatUser($user) : null,
         ]);
     }
 }

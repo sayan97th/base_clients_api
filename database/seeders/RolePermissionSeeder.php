@@ -14,10 +14,15 @@ class RolePermissionSeeder extends Seeder
     public function run(): void
     {
         $roles = [
+            // Legacy roles (kept for backward compatibility)
             ['name' => 'super_admin', 'display_name' => 'Super Administrator', 'description' => 'Full system access'],
             ['name' => 'owner', 'display_name' => 'Owner', 'description' => 'Organization owner'],
-            ['name' => 'admin', 'display_name' => 'Administrator', 'description' => 'Organization administrator'],
             ['name' => 'user', 'display_name' => 'User', 'description' => 'Standard user'],
+            // Portal roles used by the frontend for routing decisions
+            ['name' => 'super-admin', 'display_name' => 'Super Admin', 'description' => 'Full platform access, can invite admins'],
+            ['name' => 'admin', 'display_name' => 'Admin', 'description' => 'Manages the platform, can invite staff'],
+            ['name' => 'staff', 'display_name' => 'Staff', 'description' => 'Operational team member'],
+            ['name' => 'client', 'display_name' => 'Client', 'description' => 'Regular paying user'],
         ];
 
         foreach ($roles as $role) {
@@ -25,6 +30,7 @@ class RolePermissionSeeder extends Seeder
         }
 
         $permissions = [
+            // Legacy permissions
             ['name' => 'users.view', 'display_name' => 'View Users'],
             ['name' => 'users.create', 'display_name' => 'Create Users'],
             ['name' => 'users.update', 'display_name' => 'Update Users'],
@@ -44,12 +50,17 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'teams.update', 'display_name' => 'Update Teams'],
             ['name' => 'teams.delete', 'display_name' => 'Delete Teams'],
             ['name' => 'teams.invite', 'display_name' => 'Invite Team Members'],
+            // Portal permissions used by frontend sidebar visibility
+            ['name' => 'orders.view', 'display_name' => 'View Orders'],
+            ['name' => 'invoices.view', 'display_name' => 'View Invoices'],
+            ['name' => 'invitations.manage', 'display_name' => 'Manage Invitations'],
         ];
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission['name']], $permission);
         }
 
+        // Legacy role permissions
         $superAdmin = Role::where('name', 'super_admin')->first();
         $superAdmin->permissions()->sync(Permission::pluck('id'));
 
@@ -64,16 +75,6 @@ class RolePermissionSeeder extends Seeder
             ])->pluck('id')
         );
 
-        $admin = Role::where('name', 'admin')->first();
-        $admin->permissions()->sync(
-            Permission::whereIn('name', [
-                'users.view', 'users.create', 'users.update',
-                'organizations.view',
-                'clients.view', 'clients.create', 'clients.update',
-                'teams.view', 'teams.create', 'teams.update', 'teams.invite',
-            ])->pluck('id')
-        );
-
         $user = Role::where('name', 'user')->first();
         $user->permissions()->sync(
             Permission::whereIn('name', [
@@ -83,5 +84,37 @@ class RolePermissionSeeder extends Seeder
                 'teams.view',
             ])->pluck('id')
         );
+
+        // Portal role permissions
+        $portalSuperAdmin = Role::where('name', 'super-admin')->first();
+        $portalSuperAdmin->permissions()->sync(Permission::pluck('id'));
+
+        $admin = Role::where('name', 'admin')->first();
+        $admin->permissions()->sync(
+            Permission::whereIn('name', [
+                'users.view',
+                'organizations.view',
+                'orders.view',
+                'invoices.view',
+                'invitations.manage',
+                // Legacy permissions kept for backward compat
+                'users.create', 'users.update',
+                'clients.view', 'clients.create', 'clients.update',
+                'teams.view', 'teams.create', 'teams.update', 'teams.invite',
+            ])->pluck('id')
+        );
+
+        $staff = Role::where('name', 'staff')->first();
+        $staff->permissions()->sync(
+            Permission::whereIn('name', [
+                'users.view',
+                'organizations.view',
+                'orders.view',
+                'invoices.view',
+            ])->pluck('id')
+        );
+
+        $client = Role::where('name', 'client')->first();
+        $client->permissions()->sync([]);
     }
 }

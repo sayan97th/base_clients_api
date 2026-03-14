@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Admin\User;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserWithRolesResource;
@@ -20,10 +20,10 @@ class UserController extends Controller
             ->paginate(15);
 
         return response()->json([
-            'data'         => UserWithRolesResource::collection($users->items()),
+            'data' => UserWithRolesResource::collection($users->items()),
             'current_page' => $users->currentPage(),
-            'last_page'    => $users->lastPage(),
-            'total'        => $users->total(),
+            'last_page' => $users->lastPage(),
+            'total' => $users->total(),
         ]);
     }
 }

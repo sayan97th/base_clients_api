@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Admin\Invoice;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
@@ -19,10 +19,10 @@ class InvoiceController extends Controller
             ->paginate(15);
 
         return response()->json([
-            'data'         => $invoices->items(),
+            'data' => $invoices->items(),
             'current_page' => $invoices->currentPage(),
-            'last_page'    => $invoices->lastPage(),
-            'total'        => $invoices->total(),
+            'last_page' => $invoices->lastPage(),
+            'total' => $invoices->total(),
         ]);
     }
 }

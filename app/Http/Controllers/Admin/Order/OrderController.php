@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Admin\Order;
 
 use App\Http\Controllers\Controller;
 use App\Models\LinkBuildingOrder;
@@ -19,10 +19,10 @@ class OrderController extends Controller
             ->paginate(15);
 
         return response()->json([
-            'data'         => $orders->items(),
+            'data' => $orders->items(),
             'current_page' => $orders->currentPage(),
-            'last_page'    => $orders->lastPage(),
-            'total'        => $orders->total(),
+            'last_page' => $orders->lastPage(),
+            'total' => $orders->total(),
         ]);
     }
 }

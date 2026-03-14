@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Admin\Invitation;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AcceptInvitationRequest;
@@ -24,13 +24,13 @@ class InvitationController extends Controller
 
         if (!$invitation || $invitation->isAccepted() || $invitation->isExpired()) {
             return response()->json([
-                'valid'   => false,
+                'valid' => false,
                 'message' => 'Invitation is invalid or has expired.',
             ], 422);
         }
 
         return response()->json([
-            'valid'      => true,
+            'valid' => true,
             'invitation' => new InvitationResource($invitation->load('inviter')),
         ]);
     }
@@ -50,9 +50,9 @@ class InvitationController extends Controller
 
         $user = User::create([
             'first_name' => $request->first_name,
-            'last_name'  => $request->last_name,
-            'email'      => $invitation->email,
-            'password'   => $request->password,
+            'last_name' => $request->last_name,
+            'email' => $invitation->email,
+            'password' => $request->password,
         ]);
 
         $user->preference()->create();
@@ -68,9 +68,9 @@ class InvitationController extends Controller
 
         return response()->json([
             'access_token' => $token,
-            'token_type'   => 'bearer',
-            'expires_in'   => auth()->factory()->getTTL() * 60,
-            'user'         => $this->formatUser($user),
+            'token_type' => 'bearer',
+            'expires_in' => auth()->factory()->getTTL() * 60,
+            'user' => $this->formatUser($user),
         ]);
     }
 
@@ -102,21 +102,21 @@ class InvitationController extends Controller
         if (User::where('email', $request->email)->exists()) {
             return response()->json([
                 'message' => 'A user with this email address already exists.',
-                'errors'  => ['email' => ['A user with this email address already exists.']],
+                'errors' => ['email' => ['A user with this email address already exists.']],
             ], 422);
         }
 
         if (Invitation::where('email', $request->email)->whereNull('accepted_at')->where('expires_at', '>', now())->exists()) {
             return response()->json([
                 'message' => 'A pending invitation for this email address already exists.',
-                'errors'  => ['email' => ['A pending invitation for this email address already exists.']],
+                'errors' => ['email' => ['A pending invitation for this email address already exists.']],
             ], 422);
         }
 
         $invitation = Invitation::create([
-            'email'      => $request->email,
-            'role'       => $request->role,
-            'token'      => Str::random(64),
+            'email' => $request->email,
+            'role' => $request->role,
+            'token' => Str::random(64),
             'invited_by' => $sender->id,
             'expires_at' => now()->addDays(7),
         ]);
@@ -149,23 +149,23 @@ class InvitationController extends Controller
     private function formatUser(\App\Models\User $user): array
     {
         return [
-            'id'                => $user->id,
-            'first_name'        => $user->first_name,
-            'last_name'         => $user->last_name,
-            'email'             => $user->email,
-            'business_email'    => $user->business_email,
-            'phone'             => $user->phone,
-            'job_title'         => $user->job_title,
+            'id' => $user->id,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
+            'business_email' => $user->business_email,
+            'phone' => $user->phone,
+            'job_title' => $user->job_title,
             'profile_photo_url' => $user->profile_photo_url,
-            'organization_id'   => $user->organization_id,
+            'organization_id' => $user->organization_id,
             'email_verified_at' => $user->email_verified_at,
-            'created_at'        => $user->created_at,
-            'updated_at'        => $user->updated_at,
-            'roles'             => $user->roles->map(fn ($role) => [
-                'id'           => $role->id,
-                'name'         => $role->name,
-                'display_name' => $role->display_name,
-            ])->values(),
+            'created_at' => $user->created_at,
+            'updated_at' => $user->updated_at,
+            'roles' => $user->roles->map(fn($role) => [
+        'id' => $role->id,
+        'name' => $role->name,
+        'display_name' => $role->display_name,
+        ])->values(),
             'organization' => $user->organization,
         ];
     }

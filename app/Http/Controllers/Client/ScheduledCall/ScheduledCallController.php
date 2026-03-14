@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Client;
+namespace App\Http\Controllers\Client\ScheduledCall;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ScheduledCall\StoreScheduledCallRequest;
@@ -39,7 +39,7 @@ class ScheduledCallController extends Controller
         $scheduled_call = ScheduledCall::create($request->validated());
 
         return response()->json([
-            'message'        => 'Scheduled call created successfully.',
+            'message' => 'Scheduled call created successfully.',
             'scheduled_call' => $scheduled_call,
         ], 201);
     }
@@ -56,7 +56,7 @@ class ScheduledCallController extends Controller
         $scheduled_call->update($request->validated());
 
         return response()->json([
-            'message'        => 'Scheduled call updated successfully.',
+            'message' => 'Scheduled call updated successfully.',
             'scheduled_call' => $scheduled_call->fresh(),
         ]);
     }

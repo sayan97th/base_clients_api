@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin;
+namespace App\Http\Controllers\Admin\Organization;
 
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
@@ -17,10 +17,10 @@ class OrganizationController extends Controller
         $organizations = Organization::latest()->paginate(15);
 
         return response()->json([
-            'data'         => $organizations->items(),
+            'data' => $organizations->items(),
             'current_page' => $organizations->currentPage(),
-            'last_page'    => $organizations->lastPage(),
-            'total'        => $organizations->total(),
+            'last_page' => $organizations->lastPage(),
+            'total' => $organizations->total(),
         ]);
     }
 }

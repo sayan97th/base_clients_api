@@ -93,7 +93,7 @@ class InvitationController extends Controller
         $sender = auth()->user();
 
         // Admins can only invite staff, not other admins
-        if ($sender->hasRole('admin') && !$sender->hasRole('super-admin') && $request->role === 'admin') {
+        if ($sender->hasRole('admin') && !$sender->hasRole('super_admin') && $request->role === 'admin') {
             return response()->json([
                 'message' => 'Admins can only invite staff members.',
             ], 403);

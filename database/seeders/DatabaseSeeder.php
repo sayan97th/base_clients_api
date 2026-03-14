@@ -59,6 +59,6 @@ class DatabaseSeeder extends Seeder
             ['company' => 'BASE Search Marketing']
         );
 
-        $admin_user->syncRoles(['super_admin', 'owner', 'super-admin']);
+        $admin_user->syncRoles(['super_admin', 'owner']);
     }
 }

@@ -161,7 +161,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
 
     // ─── Staff / Admin portal routes ──────────────────────────────────────────
-    Route::group(['prefix' => 'staff', 'middleware' => ['role:super-admin,admin,staff']], function () {
+    Route::group(['prefix' => 'staff', 'middleware' => ['role:super_admin,admin,staff']], function () {
         Route::get('users', [StaffUserController::class, 'index']);
         Route::get('organizations', [StaffOrganizationController::class, 'index']);
         Route::get('orders', [StaffOrderController::class, 'index']);
@@ -171,7 +171,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('invitations', [InvitationController::class, 'index']);
 
         // Only super-admin and admin can create or revoke invitations
-        Route::group(['middleware' => ['role:super-admin,admin']], function () {
+        Route::group(['middleware' => ['role:super_admin,admin']], function () {
             Route::post('invitations', [InvitationController::class, 'store']);
             Route::delete('invitations/{id}', [InvitationController::class, 'destroy']);
         });

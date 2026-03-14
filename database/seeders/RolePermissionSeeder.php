@@ -19,7 +19,6 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'owner', 'display_name' => 'Owner', 'description' => 'Organization owner'],
             ['name' => 'user', 'display_name' => 'User', 'description' => 'Standard user'],
             // Portal roles used by the frontend for routing decisions
-            ['name' => 'super-admin', 'display_name' => 'Super Admin', 'description' => 'Full platform access, can invite admins'],
             ['name' => 'admin', 'display_name' => 'Admin', 'description' => 'Manages the platform, can invite staff'],
             ['name' => 'staff', 'display_name' => 'Staff', 'description' => 'Operational team member'],
             ['name' => 'client', 'display_name' => 'Client', 'description' => 'Regular paying user'],
@@ -85,9 +84,7 @@ class RolePermissionSeeder extends Seeder
             ])->pluck('id')
         );
 
-        // Portal role permissions
-        $portalSuperAdmin = Role::where('name', 'super-admin')->first();
-        $portalSuperAdmin->permissions()->sync(Permission::pluck('id'));
+        // super_admin already has all permissions (synced above)
 
         $admin = Role::where('name', 'admin')->first();
         $admin->permissions()->sync(

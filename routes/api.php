@@ -15,8 +15,10 @@ use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrde
 use App\Http\Controllers\Client\Notification\NotificationController;
 use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Client\Organization\OrganizationController;
-use App\Http\Controllers\Client\Profile\ProfileController;
 use App\Http\Controllers\Client\ScheduledCall\ScheduledCallController;
+use App\Http\Controllers\Profile\PasswordController;
+use App\Http\Controllers\Profile\ProfileController;
+use App\Http\Controllers\Profile\ProfilePhotoController;
 use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
@@ -71,7 +73,8 @@ Route::middleware('auth:api')->group(function () {
         Route::middleware('role:super_admin,admin,staff')->group(function () {
             Route::get('users', [AdminUserController::class, 'index']);
             Route::get('organizations', [AdminOrganizationController::class, 'index']);
-            Route::get('orders', [AdminOrderController::class, 'index']);
+            Route::get('orders',       [AdminOrderController::class, 'index']);
+            Route::get('orders/{id}',  [AdminOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 
@@ -180,12 +183,13 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
     });
 
-    // Profile
+    // Profile — available to all authenticated users (admin, staff, client)
     Route::prefix('profile')->group(function () {
-        Route::get('/', [ProfileController::class, 'show']);
-        Route::put('/', [ProfileController::class, 'update']);
-        Route::post('/photo', [ProfileController::class, 'uploadPhoto']);
-        Route::delete('/photo', [ProfileController::class, 'deletePhoto']);
+        Route::get('/',        [ProfileController::class,      'show']);
+        Route::put('/',        [ProfileController::class,      'update']);
+        Route::post('/photo',  [ProfilePhotoController::class, 'store']);
+        Route::delete('/photo',[ProfilePhotoController::class, 'destroy']);
+        Route::put('/password',[PasswordController::class,     'update']);
     });
 
     // Broadcasting auth (JWT-based)

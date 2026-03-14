@@ -76,6 +76,7 @@ Route::middleware('auth:api')->group(function () {
             Route::get('orders',       [AdminOrderController::class, 'index']);
             Route::get('orders/{id}',  [AdminOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
+            Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 
             // Invitation management — super_admin and admin only

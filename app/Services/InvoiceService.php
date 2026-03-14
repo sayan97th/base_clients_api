@@ -92,6 +92,7 @@ class InvoiceService
                         $total_amount,
                         $invoice->invoice_number,
                         '/invoices/' . $invoice->unique_id,
+                        $invoice,
                     ));
                 });
         }

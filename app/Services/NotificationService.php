@@ -13,13 +13,12 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class NotificationService
 {
     /**
-     * Return all non-archived, non-snoozed notifications for a user as a flat collection.
-     * Used by the frontend for client-side pagination.
+     * Return all notifications for a user as a flat collection, including archived ones.
+     * Used by the frontend for client-side tab separation (Active vs Archived).
      */
     public function getAllNotifications(User $user, array $filters = []): Collection
     {
         $query = Notification::forUser($user->id)
-            ->notArchived()
             ->notSnoozed();
 
         $this->applyFilters($query, $filters);
@@ -28,12 +27,11 @@ class NotificationService
     }
 
     /**
-     * Return paginated notifications — used when the caller passes a per_page param.
+     * Return paginated notifications including archived — used when the caller passes a per_page param.
      */
     public function getNotifications(User $user, array $filters = [], int $per_page = 15): LengthAwarePaginator
     {
         $query = Notification::forUser($user->id)
-            ->notArchived()
             ->notSnoozed();
 
         $this->applyFilters($query, $filters);
@@ -86,6 +84,11 @@ class NotificationService
         $notification->archive();
     }
 
+    public function unarchive(Notification $notification): void
+    {
+        $notification->unarchive();
+    }
+
     public function snooze(Notification $notification, \DateTimeInterface $until): void
     {
         $notification->update([
@@ -97,12 +100,12 @@ class NotificationService
     }
 
     /**
-     * Return paginated platform notifications for admin — across all users.
+     * Return paginated platform notifications for admin — across all users, including archived.
+     * Frontend separates Active and Archived tabs using is_archived.
      */
     public function getAdminNotifications(array $filters = [], int $per_page = 15): LengthAwarePaginator
     {
         $query = Notification::with('user:id,first_name,last_name,email')
-            ->notArchived()
             ->orderByDesc('created_at');
 
         $this->applyFilters($query, $filters);

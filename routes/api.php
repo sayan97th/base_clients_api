@@ -77,6 +77,7 @@ Route::middleware('auth:api')->group(function () {
             Route::patch('/read-all', [AdminNotificationController::class, 'markAllAsRead']);
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
+            Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
         });
 
         // Staff portal — super_admin, admin, staff
@@ -173,6 +174,7 @@ Route::middleware('auth:api')->group(function () {
         Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
         Route::patch('/{notification}/read', [NotificationController::class, 'markAsRead']);
         Route::patch('/{notification}/archive', [NotificationController::class, 'archive']);
+        Route::patch('/{notification}/unarchive', [NotificationController::class, 'unarchive']);
         Route::patch('/{notification}/snooze', [NotificationController::class, 'snooze']);
     });
 

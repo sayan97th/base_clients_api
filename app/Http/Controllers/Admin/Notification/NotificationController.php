@@ -111,4 +111,20 @@ class NotificationController extends Controller
             ],
         ]);
     }
+
+    /**
+     * PATCH /api/admin/notifications/{id}/unarchive
+     * Restores an archived notification back to the Active tab.
+     */
+    public function unarchive(Notification $notification): JsonResponse
+    {
+        $this->notificationService->unarchive($notification);
+
+        return response()->json([
+            'data' => [
+                'id'          => $notification->id,
+                'is_archived' => false,
+            ],
+        ]);
+    }
 }

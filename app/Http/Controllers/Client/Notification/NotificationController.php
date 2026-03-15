@@ -113,6 +113,24 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function unarchive(Notification $notification): JsonResponse
+    {
+        $user = auth()->user();
+
+        if ($notification->user_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $this->notificationService->unarchive($notification);
+
+        return response()->json([
+            'data' => [
+                'id'          => $notification->id,
+                'is_archived' => false,
+            ],
+        ]);
+    }
+
     public function snooze(SnoozeNotificationRequest $request, Notification $notification): JsonResponse
     {
         $user = auth()->user();
@@ -123,7 +141,7 @@ class NotificationController extends Controller
 
         $snooze_until = $request->validated('snooze_until')
             ? new \DateTime($request->validated('snooze_until'))
-            : (new \DateTime())->modify('+24 hours');
+            : (new \DateTime())->modify('+1 hour');
 
         $this->notificationService->snooze($notification, $snooze_until);
 

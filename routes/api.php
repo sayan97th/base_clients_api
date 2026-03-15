@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitatio
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
+use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Client\Coupon\CouponValidationController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
+use App\Http\Controllers\Client\LinkBuilding\OrderUpdateController as ClientOrderUpdateController;
 use App\Http\Controllers\Client\Notification\NotificationController;
 use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Client\Organization\OrganizationController;
@@ -126,10 +128,18 @@ Route::middleware('auth:api')->group(function () {
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 
+            // Order tracking — list updates, create update, update status
+            Route::get('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'index']);
+            Route::post('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'store']);
+            Route::patch('orders/{order_id}/status', [AdminOrderUpdateController::class, 'updateStatus']);
+
             // Invitation management — super_admin and admin only
             Route::middleware('role:super_admin,admin')->group(function () {
                 Route::post('invitations', [AdminInvitationController::class, 'store']);
                 Route::delete('invitations/{id}', [AdminInvitationController::class, 'destroy']);
+
+                // Order update delete — super_admin and admin only
+                Route::delete('orders/{order_id}/updates/{update_id}', [AdminOrderUpdateController::class, 'destroy']);
             });
         });
     });
@@ -226,6 +236,7 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/orders', [LinkBuildingOrderController::class, 'index']);
         Route::post('/orders', [LinkBuildingOrderController::class, 'store']);
         Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
+        Route::get('/orders/{order_id}/updates', [ClientOrderUpdateController::class, 'index']);
     });
 
     // Invoices

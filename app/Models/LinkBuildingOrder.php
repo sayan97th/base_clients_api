@@ -59,4 +59,9 @@ class LinkBuildingOrder extends Model
     {
         return $this->belongsTo(Coupon::class, 'coupon_id');
     }
+
+    public function updates(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderUpdate::class, 'order_id');
+    }
 }

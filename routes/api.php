@@ -72,6 +72,8 @@ Route::middleware('auth:api')->group(function () {
         // Staff portal — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->group(function () {
             Route::get('users', [AdminUserController::class, 'index']);
+            Route::get('users/{user_id}', [AdminUserController::class, 'show']);
+            Route::get('users/{user_id}/orders', [AdminUserController::class, 'orders']);
             Route::get('organizations', [AdminOrganizationController::class, 'index']);
             Route::get('orders',       [AdminOrderController::class, 'index']);
             Route::get('orders/{id}',  [AdminOrderController::class, 'show']);

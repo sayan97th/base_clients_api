@@ -11,7 +11,8 @@ class OrderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = LinkBuildingOrder::with('user:id,first_name,last_name,email')
+        $query = LinkBuildingOrder::where('is_hidden', false)
+            ->with('user:id,first_name,last_name,email')
             ->withCount(['items as items_count' => function ($query) {
                 $query->selectRaw('sum(quantity)');
             }]);

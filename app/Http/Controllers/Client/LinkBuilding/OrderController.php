@@ -29,6 +29,7 @@ class OrderController extends Controller
         $user = auth()->user();
 
         $orders = LinkBuildingOrder::where('user_id', $user->id)
+            ->where('is_hidden', false)
             ->withCount(['items as items_count' => function ($query) {
                 $query->selectRaw('sum(quantity)');
             }])
@@ -162,6 +163,7 @@ class OrderController extends Controller
 
         $order = LinkBuildingOrder::where('id', $id)
             ->where('user_id', $user->id)
+            ->where('is_hidden', false)
             ->with([
                 'items.drTier',
                 'items.placements',

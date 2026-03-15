@@ -23,6 +23,7 @@ class LinkBuildingOrder extends Model
         'payment_intent_id',
         'coupon_id',
         'coupon_discount_amount',
+        'is_hidden',
     ];
 
     protected function casts(): array
@@ -30,6 +31,7 @@ class LinkBuildingOrder extends Model
         return [
             'total_amount'           => 'float',
             'coupon_discount_amount' => 'float',
+            'is_hidden'              => 'boolean',
         ];
     }
 

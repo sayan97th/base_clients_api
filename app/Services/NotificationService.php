@@ -96,6 +96,43 @@ class NotificationService
         ]);
     }
 
+    /**
+     * Return paginated platform notifications for admin — across all users.
+     */
+    public function getAdminNotifications(array $filters = [], int $per_page = 15): LengthAwarePaginator
+    {
+        $query = Notification::with('user:id,first_name,last_name,email')
+            ->notArchived()
+            ->orderByDesc('created_at');
+
+        $this->applyFilters($query, $filters);
+
+        return $query->paginate($per_page);
+    }
+
+    /**
+     * Return count of all unread, non-archived platform notifications.
+     */
+    public function getAdminUnreadCount(): int
+    {
+        return Notification::unread()
+            ->notArchived()
+            ->count();
+    }
+
+    /**
+     * Mark all non-archived platform notifications as read.
+     */
+    public function markAdminAllAsRead(): int
+    {
+        return Notification::unread()
+            ->notArchived()
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
+    }
+
     public function unsnoozeExpired(): int
     {
         return Notification::where('is_snoozed', true)

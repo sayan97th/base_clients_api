@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
+use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
@@ -67,6 +68,15 @@ Route::middleware('auth:api')->group(function () {
         // Link building orders — super_admin only
         Route::middleware('role:super_admin')->prefix('link-building')->group(function () {
             Route::get('orders', [AdminLinkBuildingOrderController::class, 'index']);
+        });
+
+        // Admin notifications — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('notifications')->group(function () {
+            Route::get('/', [AdminNotificationController::class, 'index']);
+            Route::get('/unread-count', [AdminNotificationController::class, 'unreadCount']);
+            Route::patch('/read-all', [AdminNotificationController::class, 'markAllAsRead']);
+            Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
+            Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
         });
 
         // Staff portal — super_admin, admin, staff

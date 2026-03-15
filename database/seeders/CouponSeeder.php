@@ -9,9 +9,23 @@ class CouponSeeder extends Seeder
 {
     public function run(): void
     {
+        // Rename legacy codes that contained hyphens (invalid per current validation)
+        $legacy_code_map = [
+            'TEST-WELCOME10' => 'TESTWELCOME10',
+            'TEST-SAVE50'    => 'TESTSAVE50',
+            'TEST-BOOST20'   => 'TESTBOOST20',
+            'TEST-TIER-DR50' => 'TESTTIERDR50',
+            'TEST-LAUNCH100' => 'TESTLAUNCH100',
+            'TEST-ONCE5'     => 'TESTONCE5',
+        ];
+
+        foreach ($legacy_code_map as $old_code => $new_code) {
+            Coupon::where('code', $old_code)->update(['code' => $new_code]);
+        }
+
         $coupons = [
             [
-                'code'                    => 'TEST-WELCOME10',
+                'code'                    => 'TESTWELCOME10',
                 'name'                    => 'Test Welcome Discount',
                 'description'             => 'A 10% welcome discount for testing purposes.',
                 'discount_type'           => 'percentage',
@@ -27,7 +41,7 @@ class CouponSeeder extends Seeder
                 'is_active'               => true,
             ],
             [
-                'code'                    => 'TEST-SAVE50',
+                'code'                    => 'TESTSAVE50',
                 'name'                    => 'Test Flat $50 Off',
                 'description'             => 'Save $50 on any order — testing fixed amount discount.',
                 'discount_type'           => 'fixed_amount',
@@ -43,7 +57,7 @@ class CouponSeeder extends Seeder
                 'is_active'               => true,
             ],
             [
-                'code'                    => 'TEST-BOOST20',
+                'code'                    => 'TESTBOOST20',
                 'name'                    => 'Test Power Boost',
                 'description'             => '20% off for orders that meet the minimum spend — testing minimum purchase threshold.',
                 'discount_type'           => 'percentage',
@@ -59,7 +73,7 @@ class CouponSeeder extends Seeder
                 'is_active'               => true,
             ],
             [
-                'code'                    => 'TEST-TIER-DR50',
+                'code'                    => 'TESTTIERDR50',
                 'name'                    => 'Test DR 50+ Perk',
                 'description'             => '15% off on DR 50+ links — testing tier-specific discount.',
                 'discount_type'           => 'percentage',
@@ -75,7 +89,7 @@ class CouponSeeder extends Seeder
                 'is_active'               => true,
             ],
             [
-                'code'                    => 'TEST-LAUNCH100',
+                'code'                    => 'TESTLAUNCH100',
                 'name'                    => 'Test Launch Special',
                 'description'             => '$100 off flat — testing high-value fixed discount.',
                 'discount_type'           => 'fixed_amount',
@@ -91,7 +105,7 @@ class CouponSeeder extends Seeder
                 'is_active'               => true,
             ],
             [
-                'code'                    => 'TEST-ONCE5',
+                'code'                    => 'TESTONCE5',
                 'name'                    => 'Test One-Time Treat',
                 'description'             => '5% off, single use per user — testing per-user usage limit.',
                 'discount_type'           => 'percentage',

@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 class InvitationController extends Controller
 {
     /**
-     * GET /api/invitations/{token}/validate  (public)
+     * GET /api/admin/invitations/{token}/validate  (public)
      */
     public function validateToken(string $token): JsonResponse
     {
@@ -24,8 +24,7 @@ class InvitationController extends Controller
 
         if (!$invitation || $invitation->isAccepted() || $invitation->isExpired()) {
             return response()->json([
-                'valid' => false,
-                'message' => 'Invitation is invalid or has expired.',
+                'message' => 'This invitation link is invalid or has expired.',
             ], 422);
         }
 
@@ -36,7 +35,7 @@ class InvitationController extends Controller
     }
 
     /**
-     * POST /api/invitations/accept  (public)
+     * POST /api/admin/invitations/accept  (public)
      */
     public function accept(AcceptInvitationRequest $request): JsonResponse
     {
@@ -44,15 +43,18 @@ class InvitationController extends Controller
 
         if (!$invitation || $invitation->isAccepted() || $invitation->isExpired()) {
             return response()->json([
-                'message' => 'Invitation is invalid or has expired.',
+                'message' => 'The given data was invalid.',
+                'errors' => [
+                    'invitation_token' => ['This invitation is invalid or has already been used.'],
+                ],
             ], 422);
         }
 
         $user = User::create([
             'first_name' => $request->first_name,
-            'last_name' => $request->last_name,
-            'email' => $invitation->email,
-            'password' => $request->password,
+            'last_name'  => $request->last_name,
+            'email'      => $invitation->email,
+            'password'   => $request->password,
         ]);
 
         $user->preference()->create();
@@ -64,18 +66,18 @@ class InvitationController extends Controller
         /** @var string $token */
         $token = auth()->login($user);
 
-        $user->load(['roles:id,name,display_name', 'organization']);
+        $user->load('roles.permissions');
 
         return response()->json([
             'access_token' => $token,
-            'token_type' => 'bearer',
-            'expires_in' => auth()->factory()->getTTL() * 60,
-            'user' => $this->formatUser($user),
+            'token_type'   => 'bearer',
+            'expires_in'   => auth()->factory()->getTTL() * 60,
+            'user'         => $this->formatUser($user),
         ]);
     }
 
     /**
-     * GET /api/staff/invitations
+     * GET /api/admin/invitations
      */
     public function index(): JsonResponse
     {
@@ -85,7 +87,7 @@ class InvitationController extends Controller
     }
 
     /**
-     * POST /api/staff/invitations
+     * POST /api/admin/invitations
      */
     public function store(SendInvitationRequest $request): JsonResponse
     {
@@ -101,22 +103,22 @@ class InvitationController extends Controller
 
         if (User::where('email', $request->email)->exists()) {
             return response()->json([
-                'message' => 'A user with this email address already exists.',
-                'errors' => ['email' => ['A user with this email address already exists.']],
+                'message' => 'The given data was invalid.',
+                'errors'  => ['email' => ['A user with this email address already exists.']],
             ], 422);
         }
 
         if (Invitation::where('email', $request->email)->whereNull('accepted_at')->where('expires_at', '>', now())->exists()) {
             return response()->json([
                 'message' => 'A pending invitation for this email address already exists.',
-                'errors' => ['email' => ['A pending invitation for this email address already exists.']],
-            ], 422);
+                'errors'  => ['email' => ['A pending invitation for this email address already exists.']],
+            ], 409);
         }
 
         $invitation = Invitation::create([
-            'email' => $request->email,
-            'role' => $request->role,
-            'token' => Str::random(64),
+            'email'      => $request->email,
+            'role'       => $request->role,
+            'token'      => Str::random(64),
             'invited_by' => $sender->id,
             'expires_at' => now()->addDays(7),
         ]);
@@ -129,11 +131,17 @@ class InvitationController extends Controller
     }
 
     /**
-     * DELETE /api/staff/invitations/{id}
+     * DELETE /api/admin/invitations/{id}
      */
     public function destroy(int $id): JsonResponse
     {
-        $invitation = Invitation::findOrFail($id);
+        $invitation = Invitation::find($id);
+
+        if (!$invitation) {
+            return response()->json([
+                'message' => 'Invitation not found.',
+            ], 404);
+        }
 
         if ($invitation->isAccepted()) {
             return response()->json([
@@ -146,27 +154,17 @@ class InvitationController extends Controller
         return response()->json(null, 204);
     }
 
-    private function formatUser(\App\Models\User $user): array
+    private function formatUser(User $user): array
     {
         return [
-            'id' => $user->id,
+            'id'         => $user->id,
             'first_name' => $user->first_name,
-            'last_name' => $user->last_name,
-            'email' => $user->email,
-            'business_email' => $user->business_email,
-            'phone' => $user->phone,
-            'job_title' => $user->job_title,
-            'profile_photo_url' => $user->profile_photo_url,
-            'organization_id' => $user->organization_id,
-            'email_verified_at' => $user->email_verified_at,
+            'last_name'  => $user->last_name,
+            'email'      => $user->email,
+            'roles'      => $user->roles->pluck('name')->values()->toArray(),
+            'permissions' => $user->getAllPermissions(),
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
-            'roles' => $user->roles->map(fn($role) => [
-        'id' => $role->id,
-        'name' => $role->name,
-        'display_name' => $role->display_name,
-        ])->values(),
-            'organization' => $user->organization,
         ];
     }
 }

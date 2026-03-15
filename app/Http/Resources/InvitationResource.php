@@ -19,12 +19,12 @@ class InvitationResource extends JsonResource
             'expires_at'  => $this->expires_at,
             'created_at'  => $this->created_at,
             'updated_at'  => $this->updated_at,
-            'inviter'     => $this->whenLoaded('inviter', fn () => [
+            'inviter'     => $this->whenLoaded('inviter', fn () => $this->inviter ? [
                 'id'         => $this->inviter->id,
                 'first_name' => $this->inviter->first_name,
                 'last_name'  => $this->inviter->last_name,
                 'email'      => $this->inviter->email,
-            ]),
+            ] : null),
         ];
     }
 }

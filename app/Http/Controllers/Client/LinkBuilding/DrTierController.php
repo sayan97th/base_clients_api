@@ -11,6 +11,7 @@ class DrTierController extends Controller
     public function index(): JsonResponse
     {
         $tiers = DrTier::where('is_active', true)
+            ->where('is_hidden', false)
             ->orderBy('price_per_link')
             ->get();
 

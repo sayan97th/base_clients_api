@@ -95,6 +95,7 @@ Route::middleware('auth:api')->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('dr-tiers')->group(function () {
             Route::get('/', [AdminDrTierController::class, 'index']);
             Route::post('/', [AdminDrTierController::class, 'store']);
+            Route::get('/{id}', [AdminDrTierController::class, 'show']);
             Route::patch('/{id}', [AdminDrTierController::class, 'update']);
             Route::delete('/{id}', [AdminDrTierController::class, 'destroy']);
         });

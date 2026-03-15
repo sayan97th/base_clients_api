@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
@@ -7,6 +8,7 @@ use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuilding
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
+use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\BroadcastAuthController;
@@ -78,6 +80,23 @@ Route::middleware('auth:api')->group(function () {
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
             Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
+        });
+
+        // Services — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('services')->group(function () {
+            Route::get('/', [AdminServiceController::class, 'index']);
+            Route::get('/{id}', [AdminServiceController::class, 'show']);
+            Route::post('/', [AdminServiceController::class, 'store']);
+            Route::patch('/{id}', [AdminServiceController::class, 'update']);
+            Route::delete('/{id}', [AdminServiceController::class, 'destroy']);
+        });
+
+        // DR Tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('dr-tiers')->group(function () {
+            Route::get('/', [AdminDrTierController::class, 'index']);
+            Route::post('/', [AdminDrTierController::class, 'store']);
+            Route::patch('/{id}', [AdminDrTierController::class, 'update']);
+            Route::delete('/{id}', [AdminDrTierController::class, 'destroy']);
         });
 
         // Staff portal — super_admin, admin, staff

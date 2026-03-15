@@ -8,6 +8,7 @@ use App\Http\Requests\SendInvitationRequest;
 use App\Http\Resources\InvitationResource;
 use App\Mail\StaffInvitationMail;
 use App\Models\Invitation;
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
@@ -50,11 +51,14 @@ class InvitationController extends Controller
             ], 422);
         }
 
+        $default_organization = Organization::findDefault();
+
         $user = User::create([
-            'first_name' => $request->first_name,
-            'last_name'  => $request->last_name,
-            'email'      => $invitation->email,
-            'password'   => $request->password,
+            'first_name'      => $request->first_name,
+            'last_name'       => $request->last_name,
+            'email'           => $invitation->email,
+            'password'        => $request->password,
+            'organization_id' => $default_organization?->id,
         ]);
 
         $user->preference()->create();
@@ -66,7 +70,7 @@ class InvitationController extends Controller
         /** @var string $token */
         $token = auth()->login($user);
 
-        $user->load('roles.permissions');
+        $user->load(['roles.permissions', 'organization']);
 
         return response()->json([
             'access_token' => $token,
@@ -157,14 +161,20 @@ class InvitationController extends Controller
     private function formatUser(User $user): array
     {
         return [
-            'id'         => $user->id,
-            'first_name' => $user->first_name,
-            'last_name'  => $user->last_name,
-            'email'      => $user->email,
-            'roles'      => $user->roles->pluck('name')->values()->toArray(),
-            'permissions' => $user->getAllPermissions(),
-            'created_at' => $user->created_at,
-            'updated_at' => $user->updated_at,
+            'id'              => $user->id,
+            'first_name'      => $user->first_name,
+            'last_name'       => $user->last_name,
+            'email'           => $user->email,
+            'organization_id' => $user->organization_id,
+            'organization'    => $user->organization,
+            'roles'           => $user->roles->map(fn ($role) => [
+                'id'           => $role->id,
+                'name'         => $role->name,
+                'display_name' => $role->display_name,
+            ])->values(),
+            'permissions'     => $user->getAllPermissions(),
+            'created_at'      => $user->created_at,
+            'updated_at'      => $user->updated_at,
         ];
     }
 }

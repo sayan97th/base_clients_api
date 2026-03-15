@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Models\Organization;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -15,12 +16,15 @@ class AuthController extends Controller
     {
         $validated_data = $request->validated();
 
+        $default_organization = Organization::findDefault();
+
         $user = User::create([
-            'first_name' => $validated_data['first_name'],
-            'last_name' => $validated_data['last_name'],
-            'email' => $validated_data['email'],
-            'business_email' => $validated_data['business_email'] ?? null,
-            'password' => $validated_data['password'],
+            'first_name'      => $validated_data['first_name'],
+            'last_name'       => $validated_data['last_name'],
+            'email'           => $validated_data['email'],
+            'business_email'  => $validated_data['business_email'] ?? null,
+            'password'        => $validated_data['password'],
+            'organization_id' => $default_organization?->id,
         ]);
 
         $user->preference()->create();

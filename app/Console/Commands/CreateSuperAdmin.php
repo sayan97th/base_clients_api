@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\BillingAddress;
+use App\Models\Organization;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -51,6 +52,10 @@ class CreateSuperAdmin extends Command
                 $this->createUserPreference($user);
                 $this->createBillingAddress($user);
                 $this->assignSuperAdminRole($user);
+
+                if (!$user->organization_id) {
+                    $this->warn('Warning: Default organization not found. Run database seeders first (php artisan db:seed).');
+                }
             });
         } catch (Throwable $e) {
             $this->error('Failed to create super admin: ' . $e->getMessage());
@@ -59,12 +64,15 @@ class CreateSuperAdmin extends Command
 
         $this->newLine();
         $this->info("Super admin account created successfully.");
+        $organization = Organization::findDefault();
+
         $this->table(
             ['Field', 'Value'],
             [
-                ['Email', $email],
-                ['Name', "{$first_name} {$last_name}"],
-                ['Roles', 'super_admin, owner'],
+                ['Email',        $email],
+                ['Name',         "{$first_name} {$last_name}"],
+                ['Roles',        'super_admin, owner'],
+                ['Organization', $organization?->name ?? 'Not assigned (seed the database first)'],
             ]
         );
 
@@ -157,13 +165,16 @@ class CreateSuperAdmin extends Command
 
     private function createUser(string $email, string $password, string $first_name, string $last_name): User
     {
+        $default_organization = Organization::findDefault();
+
         return User::create([
-            'first_name'          => $first_name,
-            'last_name'           => $last_name,
-            'email'               => $email,
-            'business_email'      => $email,
-            'password'            => $password,
-            'email_verified_at'   => now(),
+            'first_name'        => $first_name,
+            'last_name'         => $last_name,
+            'email'             => $email,
+            'business_email'    => $email,
+            'password'          => $password,
+            'email_verified_at' => now(),
+            'organization_id'   => $default_organization?->id,
         ]);
     }
 

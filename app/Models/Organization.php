@@ -8,6 +8,22 @@ use Illuminate\Support\Str;
 
 class Organization extends Model
 {
+    /**
+     * The default organization slug (BASE Search Marketing).
+     * All new users are automatically assigned to this organization.
+     */
+    const DEFAULT_SLUG = 'base-search-marketing';
+
+    /**
+     * Retrieve the default organization.
+     * Returns null if the organization has not been seeded yet.
+     */
+    public static function findDefault(): ?self
+    {
+        return static::where('slug', self::DEFAULT_SLUG)->first();
+    }
+
+
     protected $fillable = [
         'name',
         'slug',

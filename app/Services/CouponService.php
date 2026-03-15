@@ -24,11 +24,11 @@ class CouponService
         array $dr_tier_amounts = []
     ): array {
         if (!$coupon->is_active) {
-            return ['valid' => false, 'message' => 'This coupon is not active.'];
+            return ['valid' => false, 'message' => 'Coupon not found.'];
         }
 
         if ($coupon->starts_at && Carbon::now()->lt($coupon->starts_at)) {
-            return ['valid' => false, 'message' => 'This coupon is not yet valid.'];
+            return ['valid' => false, 'message' => 'This coupon is not yet active.'];
         }
 
         if (Carbon::now()->gt($coupon->expires_at)) {

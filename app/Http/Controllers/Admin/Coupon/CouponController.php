@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\Coupon\StoreCouponRequest;
 use App\Http\Requests\Admin\Coupon\UpdateCouponRequest;
 use App\Models\Coupon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 
 class CouponController extends Controller
 {
@@ -22,6 +23,20 @@ class CouponController extends Controller
         return response()->json([
             'data' => $coupons->map(fn (Coupon $coupon) => $this->formatCoupon($coupon)),
         ]);
+    }
+
+    /**
+     * GET /api/admin/coupons/{id}
+     */
+    public function show(string $id): JsonResponse
+    {
+        $coupon = Coupon::with('drTier')->find($id);
+
+        if (!$coupon) {
+            return response()->json(['message' => 'Coupon not found.'], 404);
+        }
+
+        return response()->json(['data' => $this->formatCoupon($coupon)]);
     }
 
     /**
@@ -57,7 +72,7 @@ class CouponController extends Controller
     /**
      * DELETE /api/admin/coupons/{id}
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(string $id): Response|JsonResponse
     {
         $coupon = Coupon::find($id);
 
@@ -67,7 +82,7 @@ class CouponController extends Controller
 
         $coupon->delete();
 
-        return response()->json(['message' => 'Coupon deleted successfully.']);
+        return response()->noContent();
     }
 
     private function formatCoupon(Coupon $coupon): array
@@ -83,8 +98,8 @@ class CouponController extends Controller
             'dr_tier_id'              => $coupon->dr_tier_id,
             'dr_tier_label'           => $coupon->drTier?->dr_label,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
-            'starts_at'               => $coupon->starts_at?->toIso8601String(),
-            'expires_at'              => $coupon->expires_at->toIso8601String(),
+            'starts_at'               => $coupon->starts_at?->format('Y-m-d'),
+            'expires_at'              => $coupon->expires_at->format('Y-m-d'),
             'usage_limit'             => $coupon->usage_limit,
             'usage_per_user'          => $coupon->usage_per_user,
             'times_used'              => $coupon->times_used,

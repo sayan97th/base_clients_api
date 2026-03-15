@@ -21,24 +21,22 @@ class CouponValidationController extends Controller
      */
     public function validate(ValidateCouponRequest $request): JsonResponse
     {
-        $user        = auth()->user();
-        $code        = strtoupper(trim($request->code));
+        $user         = auth()->user();
+        $code         = strtoupper(trim($request->code));
         $order_amount = (float) $request->order_amount;
         $dr_tier_ids  = $request->dr_tier_ids ?? [];
-        $dr_tier_amounts = $request->dr_tier_amounts ?? [];
 
-        $coupon = Coupon::where('code', $code)->first();
+        $coupon = Coupon::where('code', $code)->where('is_active', true)->first();
 
         if (!$coupon) {
-            return response()->json($this->buildInvalidResponse($code, null, 'Invalid coupon code.'));
+            return response()->json($this->buildInvalidResponse($code, null, 'Coupon not found.'));
         }
 
         $result = $this->couponService->validateAndCalculate(
             $coupon,
             $order_amount,
             $user->id,
-            $dr_tier_ids,
-            $dr_tier_amounts
+            $dr_tier_ids
         );
 
         if (!$result['valid']) {

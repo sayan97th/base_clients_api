@@ -77,6 +77,7 @@ Route::middleware('auth:api')->group(function () {
             Route::get('organizations', [AdminOrganizationController::class, 'index']);
             Route::get('organizations/{id}', [AdminOrganizationController::class, 'show']);
             Route::put('organizations/{id}', [AdminOrganizationController::class, 'update']);
+            Route::post('organizations/{id}/assets', [AdminOrganizationController::class, 'uploadAsset']);
             Route::get('orders',       [AdminOrderController::class, 'index']);
             Route::get('orders/{id}',  [AdminOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);

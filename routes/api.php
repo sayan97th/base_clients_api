@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceControll
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\Tracking\TrackingController as AdminTrackingController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceController;
@@ -74,6 +75,11 @@ Route::middleware('auth:api')->group(function () {
         // Link building orders — super_admin only
         Route::middleware('role:super_admin')->prefix('link-building')->group(function () {
             Route::get('orders', [AdminLinkBuildingOrderController::class, 'index']);
+        });
+
+        // Order tracking dashboard — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('tracking')->group(function () {
+            Route::get('orders', [AdminTrackingController::class, 'orders']);
         });
 
         // Admin notifications — super_admin, admin, staff

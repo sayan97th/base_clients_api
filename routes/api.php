@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceControll
 use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\BroadcastAuthController;
+use App\Http\Controllers\Client\Coupon\CouponValidationController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
@@ -89,6 +91,14 @@ Route::middleware('auth:api')->group(function () {
             Route::post('/', [AdminServiceController::class, 'store']);
             Route::patch('/{id}', [AdminServiceController::class, 'update']);
             Route::delete('/{id}', [AdminServiceController::class, 'destroy']);
+        });
+
+        // Coupons — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('coupons')->group(function () {
+            Route::get('/', [AdminCouponController::class, 'index']);
+            Route::post('/', [AdminCouponController::class, 'store']);
+            Route::patch('/{id}', [AdminCouponController::class, 'update']);
+            Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
         });
 
         // DR Tiers — super_admin, admin, staff
@@ -203,6 +213,9 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
     });
+
+    // Coupon validation
+    Route::post('/coupons/validate', [CouponValidationController::class, 'validate']);
 
     // DR Tiers catalog
     Route::get('/dr-tiers', [DrTierController::class, 'index']);

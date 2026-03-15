@@ -35,6 +35,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'billing.postal_code'                => 'required|string|max:20',
             'payment'                            => 'required|array',
             'payment.payment_method_id'          => 'required|string',
+            'coupon_id'                          => 'sometimes|nullable|uuid|exists:coupons,id',
         ];
     }
 }

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Client\LinkBuilding;
 use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
+use App\Models\Coupon;
 use App\Models\LinkBuildingOrder;
 use App\Models\User;
+use App\Services\CouponService;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +19,8 @@ class OrderController extends Controller
     private const BULK_DISCOUNT_RATE      = 0.10;
 
     public function __construct(
-        protected InvoiceService $invoiceService
+        protected InvoiceService $invoiceService,
+        protected CouponService $couponService
     ) {}
 
     public function index(): JsonResponse
@@ -51,18 +54,52 @@ class OrderController extends Controller
         $total_links = collect($request->items)->sum('quantity');
         $subtotal    = collect($request->items)->sum(fn ($item) => $item['unit_price'] * $item['quantity']);
 
-        $discount_applied = $total_links >= self::BULK_DISCOUNT_THRESHOLD;
-        $total_amount     = $discount_applied
-            ? round($subtotal * (1 - self::BULK_DISCOUNT_RATE), 2)
-            : round($subtotal, 2);
+        $discount_applied        = $total_links >= self::BULK_DISCOUNT_THRESHOLD;
+        $bulk_discount_amount    = $discount_applied ? round($subtotal * self::BULK_DISCOUNT_RATE, 2) : 0;
+        $amount_after_bulk       = round($subtotal - $bulk_discount_amount, 2);
 
-        $order = DB::transaction(function () use ($request, $user, $total_amount) {
+        $coupon                  = null;
+        $coupon_discount_amount  = 0;
+
+        if ($request->coupon_id) {
+            $coupon = Coupon::find($request->coupon_id);
+
+            if (!$coupon) {
+                return response()->json(['message' => 'The coupon is no longer valid.'], 422);
+            }
+
+            $dr_tier_ids     = collect($request->items)->pluck('dr_tier_id')->unique()->values()->all();
+            $dr_tier_amounts = collect($request->items)
+                ->groupBy('dr_tier_id')
+                ->map(fn ($group) => round($group->sum(fn ($i) => $i['unit_price'] * $i['quantity']), 2))
+                ->all();
+
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $amount_after_bulk,
+                $user->id,
+                $dr_tier_ids,
+                $dr_tier_amounts
+            );
+
+            if (!$result['valid']) {
+                return response()->json(['message' => 'The coupon is no longer valid.'], 422);
+            }
+
+            $coupon_discount_amount = $result['discount_amount'];
+        }
+
+        $total_amount = round($amount_after_bulk - $coupon_discount_amount, 2);
+
+        $order = DB::transaction(function () use ($request, $user, $total_amount, $coupon, $coupon_discount_amount) {
             $order = LinkBuildingOrder::create([
-                'user_id'      => $user->id,
-                'order_title'  => $request->order_title,
-                'order_notes'  => $request->order_notes,
-                'total_amount' => $total_amount,
-                'status'       => 'pending',
+                'user_id'                => $user->id,
+                'order_title'            => $request->order_title,
+                'order_notes'            => $request->order_notes,
+                'total_amount'           => $total_amount,
+                'status'                 => 'pending',
+                'coupon_id'              => $coupon?->id,
+                'coupon_discount_amount' => $coupon_discount_amount > 0 ? $coupon_discount_amount : null,
             ]);
 
             foreach ($request->items as $item_data) {
@@ -97,19 +134,24 @@ class OrderController extends Controller
             return $order;
         });
 
+        if ($coupon) {
+            $coupon->increment('times_used');
+        }
+
         $invoice = $this->invoiceService->createForLinkBuildingOrder($user, $order);
 
         event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 
         return response()->json([
             'data' => [
-                'order_id'         => $order->id,
-                'status'           => $order->status,
-                'total_amount'     => $order->total_amount,
-                'discount_applied' => $discount_applied,
-                'created_at'       => $order->created_at,
-                'invoice_number'   => $invoice->invoice_number,
-                'invoice_id'       => $invoice->unique_id,
+                'order_id'               => $order->id,
+                'status'                 => $order->status,
+                'total_amount'           => $order->total_amount,
+                'discount_applied'       => $discount_applied,
+                'coupon_discount_amount' => $order->coupon_discount_amount,
+                'created_at'             => $order->created_at,
+                'invoice_number'         => $invoice->invoice_number,
+                'invoice_id'             => $invoice->unique_id,
             ],
         ], 201);
     }

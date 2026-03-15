@@ -21,12 +21,15 @@ class LinkBuildingOrder extends Model
         'total_amount',
         'status',
         'payment_intent_id',
+        'coupon_id',
+        'coupon_discount_amount',
     ];
 
     protected function casts(): array
     {
         return [
-            'total_amount' => 'float',
+            'total_amount'           => 'float',
+            'coupon_discount_amount' => 'float',
         ];
     }
 
@@ -48,5 +51,10 @@ class LinkBuildingOrder extends Model
     public function invoice(): HasOne
     {
         return $this->hasOne(Invoice::class, 'order_id');
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class, 'coupon_id');
     }
 }

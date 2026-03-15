@@ -20,7 +20,7 @@ class StaffInvitationMail extends Mailable
 
     public function __construct(public readonly Invitation $invitation)
     {
-        $this->accept_url   = rtrim(config('app.url'), '/') . '/accept-invitation/' . $invitation->token;
+        $this->accept_url   = rtrim(config('app.frontend_url'), '/') . '/accept-invitation/' . $invitation->token;
         $this->inviter_name = $invitation->inviter->first_name . ' ' . $invitation->inviter->last_name;
         $this->role_label   = ucfirst($invitation->role);
         $this->expiry_date  = $invitation->expires_at->format('F j, Y');

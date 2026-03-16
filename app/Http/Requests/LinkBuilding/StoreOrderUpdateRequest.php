@@ -15,7 +15,7 @@ class StoreOrderUpdateRequest extends FormRequest
     {
         return [
             'title'         => ['required', 'string', 'max:255'],
-            'message'       => ['required', 'string'],
+            'message'       => ['required', 'string', 'max:5000'],
             'status_change' => ['required', 'nullable', 'string', 'in:pending,processing,completed,cancelled'],
             'send_email'    => ['required', 'boolean'],
         ];

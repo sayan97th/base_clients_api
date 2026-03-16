@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\LinkBuilding;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreOrderUpdateRequest;
 use App\Http\Requests\LinkBuilding\UpdateOrderStatusRequest;
+use App\Mail\OrderStatusChangeMail;
 use App\Mail\OrderUpdateMail;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderUpdate;
@@ -76,9 +77,19 @@ class OrderUpdateController extends Controller
 
     public function updateStatus(UpdateOrderStatusRequest $request, string $order_id): JsonResponse
     {
-        $order = LinkBuildingOrder::findOrFail($order_id);
+        $order = LinkBuildingOrder::with('user')->findOrFail($order_id);
 
         $order->update(['status' => $request->input('status')]);
+
+        if ($request->boolean('notify_user') && $order->user) {
+            Mail::to($order->user->email)->queue(
+                new OrderStatusChangeMail(
+                    user: $order->user,
+                    new_status: $order->status,
+                    order_id: $order->id,
+                )
+            );
+        }
 
         return response()->json([
             'message' => 'Order status updated successfully.',

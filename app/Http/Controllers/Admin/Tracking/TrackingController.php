@@ -29,24 +29,30 @@ class TrackingController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        // needs_update: pending orders that have never received an update
         if ($request->boolean('needs_update')) {
-            $query->whereDoesntHave('updates');
+            $query->where('status', 'pending')
+                ->whereDoesntHave('updates');
         }
 
         $orders = $query
-            ->orderByRaw('updates_count ASC')
-            ->orderBy('last_update_at', 'ASC')
+            // Priority 1: orders with no updates come first (never responded to)
+            ->orderByRaw('CASE WHEN updates_count = 0 THEN 0 ELSE 1 END ASC')
+            // Priority 2: oldest last activity first — falls back to created_at for orders with no updates
+            ->orderByRaw('COALESCE(last_update_at, created_at) ASC')
+            // Priority 3: FIFO tiebreaker by order creation date
+            ->orderBy('created_at', 'ASC')
             ->get()
-            ->map(fn (LinkBuildingOrder $order) => [
-                'id'             => $order->id,
-                'order_title'    => $order->order_title,
-                'total_amount'   => $order->total_amount,
-                'status'         => $order->status,
-                'created_at'     => $order->created_at,
-                'items_count'    => (int) ($order->items_count ?? 0),
-                'updates_count'  => (int) ($order->updates_count ?? 0),
+            ->map(fn(LinkBuildingOrder $order) => [
+                'id' => $order->id,
+                'order_title' => $order->order_title,
+                'total_amount' => $order->total_amount,
+                'status' => $order->status,
+                'created_at' => $order->created_at,
+                'items_count' => (int)($order->items_count ?? 0),
+                'updates_count' => (int)($order->updates_count ?? 0),
                 'last_update_at' => $order->last_update_at,
-                'user'           => $order->user,
+                'user' => $order->user,
             ]);
 
         return response()->json(['data' => $orders]);

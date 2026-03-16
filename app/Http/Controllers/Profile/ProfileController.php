@@ -44,22 +44,22 @@ class ProfileController extends Controller
     public function update(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'first_name'                  => ['sometimes', 'string', 'max:100'],
-            'last_name'                   => ['sometimes', 'string', 'max:100'],
-            'business_email'              => ['sometimes', 'email', 'max:255'],
-            'phone'                       => ['sometimes', 'nullable', 'string', 'max:30'],
-            'timezone'                    => ['sometimes', 'string', 'timezone:all'],
-            'interested_in'               => ['sometimes', 'nullable', Rule::in(['links', 'content', 'both'])],
-            'notification_channel'        => ['sometimes', 'string', Rule::in(['email_and_portal', 'email_only', 'portal_only'])],
+            'first_name'                  => ['sometimes', 'string', 'max:255'],
+            'last_name'                   => ['sometimes', 'string', 'max:255'],
+            'business_email'              => ['sometimes', 'nullable', 'email', 'max:255'],
+            'phone'                       => ['sometimes', 'nullable', 'string', 'max:50'],
+            'timezone'                    => ['sometimes', 'nullable', 'string', 'max:100'],
+            'interested_in'               => ['sometimes', 'nullable', Rule::in(['', 'links', 'content', 'both'])],
+            'notification_channel'        => ['sometimes', 'string', Rule::in(['email_and_portal', 'portal_only'])],
             'team_order_updates'          => ['sometimes', 'boolean'],
             'push_notifications_enabled'  => ['sometimes', 'boolean'],
             'address'                     => ['sometimes', 'nullable', 'string', 'max:255'],
             'city'                        => ['sometimes', 'nullable', 'string', 'max:100'],
-            'country'                     => ['sometimes', 'nullable', 'string', 'max:100'],
+            'country'                     => ['sometimes', 'nullable', 'string', 'max:10'],
             'state_province'              => ['sometimes', 'nullable', 'string', 'max:100'],
             'postal_code'                 => ['sometimes', 'nullable', 'string', 'max:20'],
-            'company'                     => ['sometimes', 'nullable', 'string', 'max:150'],
-            'tax_id'                      => ['sometimes', 'nullable', 'string', 'max:50'],
+            'company'                     => ['sometimes', 'nullable', 'string', 'max:255'],
+            'tax_id'                      => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
         $user = auth()->user();
@@ -78,7 +78,7 @@ class ProfileController extends Controller
         ]));
 
         if (!empty($preferenceFields)) {
-            if (isset($preferenceFields['interested_in'])) {
+            if (array_key_exists('interested_in', $preferenceFields)) {
                 $preferenceFields['interested_in'] = $this->mapInterestedInToDatabase(
                     $preferenceFields['interested_in']
                 );

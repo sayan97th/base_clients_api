@@ -13,7 +13,16 @@ class DrTierController extends Controller
         $tiers = DrTier::where('is_active', true)
             ->where('is_hidden', false)
             ->orderBy('price_per_link')
-            ->get();
+            ->get()
+            ->map(fn (DrTier $tier) => [
+                'id'             => $tier->id,
+                'dr_label'       => $tier->dr_label,
+                'traffic_range'  => $tier->traffic_range,
+                'word_count'     => $tier->word_count,
+                'price_per_link' => $tier->price_per_link,
+                'is_most_popular' => $tier->is_most_popular,
+                'is_active'      => $tier->is_active,
+            ]);
 
         return response()->json(['data' => $tiers]);
     }

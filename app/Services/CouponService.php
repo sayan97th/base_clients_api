@@ -31,7 +31,7 @@ class CouponService
             return ['valid' => false, 'message' => 'This coupon is not yet active.'];
         }
 
-        if (Carbon::now()->gt($coupon->expires_at)) {
+        if ($coupon->expires_at !== null && Carbon::now()->gt($coupon->expires_at)) {
             return ['valid' => false, 'message' => 'This coupon has expired.'];
         }
 

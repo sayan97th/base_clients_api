@@ -22,7 +22,7 @@ class OrderUpdateController extends Controller
         }
 
         $updates = $order->updates()
-            ->orderBy('created_at', 'desc')
+            ->orderBy('created_at', 'asc')
             ->get()
             ->map(fn (LinkBuildingOrderUpdate $update) => [
                 'id'            => $update->id,

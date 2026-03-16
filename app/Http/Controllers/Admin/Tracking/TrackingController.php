@@ -29,6 +29,10 @@ class TrackingController extends Controller
             $query->where('status', $request->input('status'));
         }
 
+        if ($request->boolean('needs_update')) {
+            $query->whereDoesntHave('updates');
+        }
+
         $orders = $query
             ->orderByRaw('updates_count ASC')
             ->orderBy('last_update_at', 'ASC')

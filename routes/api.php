@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
@@ -43,6 +44,8 @@ Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEm
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
+    Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
+    Route::post('reset-password',  [PasswordResetController::class, 'resetPassword']);
 
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);

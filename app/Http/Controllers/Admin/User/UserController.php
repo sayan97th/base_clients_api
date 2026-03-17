@@ -11,20 +11,43 @@ use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
+    private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+
     /**
-     * GET /api/admin/users?page=N
+     * GET /api/admin/users?page=N&type=staff|client
      */
     public function index(Request $request): JsonResponse
     {
-        $users = User::with(['roles:id,name,display_name', 'organization'])
-            ->latest()
-            ->paginate(15);
+        $type = $request->query('type');
+
+        if ($type !== null && !\in_array($type, ['staff', 'client'], true)) {
+            return response()->json([
+                'message' => 'The type field must be staff or client.',
+                'errors'  => [
+                    'type' => ['The selected type is invalid.'],
+                ],
+            ], 422);
+        }
+
+        $query = User::with(['roles:id,name,display_name', 'organization'])->latest();
+
+        if ($type === 'staff') {
+            $query->whereHas('roles', fn ($q) => $q->whereIn('name', self::STAFF_ROLES));
+        } elseif ($type === 'client') {
+            $query->whereHas('roles', fn ($q) => $q->where('name', 'client'))
+                  ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', self::STAFF_ROLES));
+        }
+
+        $users = $query->paginate(15);
 
         return response()->json([
-            'data' => UserWithRolesResource::collection($users->items()),
+            'data'         => UserWithRolesResource::collection($users->items()),
             'current_page' => $users->currentPage(),
-            'last_page' => $users->lastPage(),
-            'total' => $users->total(),
+            'last_page'    => $users->lastPage(),
+            'total'        => $users->total(),
+            'per_page'     => $users->perPage(),
+            'from'         => $users->firstItem(),
+            'to'           => $users->lastItem(),
         ]);
     }
 
@@ -33,8 +56,11 @@ class UserController extends Controller
      */
     public function show(int $user_id): JsonResponse
     {
-        $user = User::with(['roles:id,name,display_name', 'organization'])
-            ->findOrFail($user_id);
+        $user = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
 
         return response()->json(new UserWithRolesResource($user));
     }
@@ -44,12 +70,16 @@ class UserController extends Controller
      */
     public function orders(int $user_id): JsonResponse
     {
-        User::findOrFail($user_id);
+        $user = User::find($user_id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
 
         $orders = LinkBuildingOrder::withCount('items')
             ->where('user_id', $user_id)
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginate(10);
 
         $data = $orders->map(fn (LinkBuildingOrder $order) => [
             'id'           => $order->id,
@@ -65,6 +95,9 @@ class UserController extends Controller
             'current_page' => $orders->currentPage(),
             'last_page'    => $orders->lastPage(),
             'total'        => $orders->total(),
+            'per_page'     => $orders->perPage(),
+            'from'         => $orders->firstItem(),
+            'to'           => $orders->lastItem(),
         ]);
     }
 }

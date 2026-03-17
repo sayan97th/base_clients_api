@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Traits\HasRoles;
+use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -160,5 +161,10 @@ class User extends Authenticatable implements JWTSubject
             'organization_id' => $this->organization_id,
             'team_ids' => $this->teams->pluck('id')->toArray(),
         ];
+    }
+
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

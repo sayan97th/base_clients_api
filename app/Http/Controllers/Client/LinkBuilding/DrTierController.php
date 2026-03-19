@@ -22,6 +22,7 @@ class DrTierController extends Controller
                 'price_per_link'  => $tier->price_per_link,
                 'is_most_popular' => $tier->is_most_popular,
                 'is_active'       => $tier->is_active,
+                'max_quantity'    => $tier->max_quantity,
             ]);
 
         return response()->json(['data' => $tiers]);

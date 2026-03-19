@@ -22,6 +22,7 @@ class DrTier extends Model
         'price_per_link',
         'is_most_popular',
         'is_active',
+        'max_quantity',
         'is_hidden',
     ];
 
@@ -32,6 +33,7 @@ class DrTier extends Model
             'price_per_link'  => 'float',
             'is_most_popular' => 'boolean',
             'is_active'       => 'boolean',
+            'max_quantity'    => 'integer',
             'is_hidden'       => 'boolean',
         ];
     }

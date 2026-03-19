@@ -20,6 +20,7 @@ class UpdateDrTierRequest extends FormRequest
             'price_per_link' => ['sometimes', 'numeric', 'min:0.01'],
             'is_most_popular' => ['sometimes', 'boolean'],
             'is_active'      => ['sometimes', 'boolean'],
+            'max_quantity'   => ['sometimes', 'nullable', 'integer', 'min:1'],
             'is_hidden'      => ['sometimes', 'boolean'],
         ];
     }

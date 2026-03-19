@@ -16,8 +16,10 @@ class ProfileController extends Controller
         $billing    = $user->billingAddress;
 
         return response()->json([
+            'id'                          => $user->id,
             'first_name'                  => $user->first_name,
             'last_name'                   => $user->last_name,
+            'email'                       => $user->email,
             'business_email'              => $user->business_email,
             'phone'                       => $user->phone,
             'timezone'                    => $preference?->timezone ?? null,

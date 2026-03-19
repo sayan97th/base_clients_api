@@ -18,7 +18,8 @@ class PaymentProfileController extends Controller
         $profiles = PaymentProfile::where('user_id', auth()->id())
             ->orderByDesc('is_default')
             ->orderByDesc('created_at')
-            ->get();
+            ->get()
+            ->map(fn ($profile) => $this->formatProfile($profile));
 
         return response()->json(['data' => $profiles]);
     }
@@ -37,10 +38,10 @@ class PaymentProfileController extends Controller
             return response()->json(['message' => $stripe_result['message']], 422);
         }
 
-        $card        = $stripe_result['card'];
-        $user_id     = auth()->id();
-        $has_cards   = PaymentProfile::where('user_id', $user_id)->exists();
-        $is_default  = $has_cards ? (bool) ($request->is_default ?? false) : true;
+        $card       = $stripe_result['card'];
+        $user_id    = auth()->id();
+        $has_cards  = PaymentProfile::where('user_id', $user_id)->exists();
+        $is_default = $has_cards ? (bool) ($request->is_default ?? false) : true;
 
         $profile = DB::transaction(function () use ($user_id, $request, $card, $is_default) {
             if ($is_default) {
@@ -59,7 +60,10 @@ class PaymentProfileController extends Controller
             ]);
         });
 
-        return response()->json(['data' => $profile], 201);
+        return response()->json([
+            'data'    => $this->formatProfile($profile),
+            'message' => 'Payment method saved successfully.',
+        ], 201);
     }
 
     public function destroy(string $id): JsonResponse
@@ -68,7 +72,11 @@ class PaymentProfileController extends Controller
 
         $profile = PaymentProfile::where('id', $id)
             ->where('user_id', $user_id)
-            ->firstOrFail();
+            ->first();
+
+        if (!$profile) {
+            return response()->json(['message' => 'Payment method not found.'], 404);
+        }
 
         $this->stripeService->detachPaymentMethod($profile->stripe_payment_method_id);
 
@@ -95,13 +103,36 @@ class PaymentProfileController extends Controller
 
         $profile = PaymentProfile::where('id', $id)
             ->where('user_id', $user_id)
-            ->firstOrFail();
+            ->first();
+
+        if (!$profile) {
+            return response()->json(['message' => 'Payment method not found.'], 404);
+        }
 
         DB::transaction(function () use ($user_id, $profile) {
             PaymentProfile::where('user_id', $user_id)->update(['is_default' => false]);
             $profile->update(['is_default' => true]);
         });
 
-        return response()->json(['data' => $profile->fresh()]);
+        return response()->json([
+            'data'    => $this->formatProfile($profile->fresh()),
+            'message' => 'Default payment method updated.',
+        ]);
+    }
+
+    private function formatProfile(PaymentProfile $profile): array
+    {
+        return [
+            'id'                       => $profile->id,
+            'stripe_payment_method_id' => $profile->stripe_payment_method_id,
+            'card_brand'               => $profile->card_brand,
+            'last_four'                => $profile->last_four,
+            'expiry_month'             => $profile->expiry_month,
+            'expiry_year'              => $profile->expiry_year,
+            'cardholder_name'          => $profile->cardholder_name,
+            'is_default'               => $profile->is_default,
+            'created_at'               => $profile->created_at,
+            'updated_at'               => $profile->updated_at,
+        ];
     }
 }

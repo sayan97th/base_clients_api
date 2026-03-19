@@ -6,10 +6,12 @@ use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Models\Coupon;
+use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
+use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -20,7 +22,8 @@ class OrderController extends Controller
 
     public function __construct(
         protected InvoiceService $invoiceService,
-        protected CouponService $couponService
+        protected CouponService $couponService,
+        protected StripeService $stripeService
     ) {}
 
     public function index(): JsonResponse
@@ -33,15 +36,21 @@ class OrderController extends Controller
             ->withCount(['items as items_count' => function ($query) {
                 $query->selectRaw('sum(quantity)');
             }])
+            ->withCount('updates as updates_count')
+            ->with(['updates' => function ($query) {
+                $query->latest()->limit(1);
+            }])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(fn ($order) => [
-                'id'           => $order->id,
-                'order_title'  => $order->order_title,
-                'total_amount' => $order->total_amount,
-                'status'       => $order->status,
-                'created_at'   => $order->created_at,
-                'items_count'  => (int) ($order->items_count ?? 0),
+                'id'             => $order->id,
+                'order_title'    => $order->order_title,
+                'total_amount'   => $order->total_amount,
+                'status'         => $order->status,
+                'created_at'     => $order->created_at,
+                'items_count'    => (int) ($order->items_count ?? 0),
+                'updates_count'  => (int) ($order->updates_count ?? 0),
+                'last_update_at' => $order->updates->first()?->created_at,
             ]);
 
         return response()->json(['data' => $orders]);
@@ -52,15 +61,40 @@ class OrderController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        $total_links = collect($request->items)->sum('quantity');
-        $subtotal    = collect($request->items)->sum(fn ($item) => $item['unit_price'] * $item['quantity']);
+        // Fetch DR tier prices from DB — do not trust frontend prices
+        $dr_tier_ids  = collect($request->items)->pluck('dr_tier_id')->unique()->values()->all();
+        $dr_tiers_map = DrTier::whereIn('id', $dr_tier_ids)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('id');
 
-        $discount_applied        = $total_links >= self::BULK_DISCOUNT_THRESHOLD;
-        $bulk_discount_amount    = $discount_applied ? round($subtotal * self::BULK_DISCOUNT_RATE, 2) : 0;
-        $amount_after_bulk       = round($subtotal - $bulk_discount_amount, 2);
+        foreach ($dr_tier_ids as $tier_id) {
+            if (!$dr_tiers_map->has($tier_id)) {
+                return response()->json([
+                    'message' => 'One or more selected DR tiers are not available.',
+                    'errors'  => ['items' => ['One or more selected DR tiers are not available.']],
+                ], 422);
+            }
+        }
 
-        $coupon                  = null;
-        $coupon_discount_amount  = 0;
+        // Recalculate subtotal using DB prices
+        $total_links = 0;
+        $subtotal    = 0.0;
+
+        foreach ($request->items as $item) {
+            $tier         = $dr_tiers_map->get($item['dr_tier_id']);
+            $total_links += $item['quantity'];
+            $subtotal    += $tier->price_per_link * $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
+
+        $discount_applied     = $total_links >= self::BULK_DISCOUNT_THRESHOLD;
+        $bulk_discount_amount = $discount_applied ? round($subtotal * self::BULK_DISCOUNT_RATE, 2) : 0;
+        $amount_after_bulk    = round($subtotal - $bulk_discount_amount, 2);
+
+        $coupon                 = null;
+        $coupon_discount_amount = 0;
 
         if ($request->coupon_id) {
             $coupon = Coupon::find($request->coupon_id);
@@ -69,10 +103,12 @@ class OrderController extends Controller
                 return response()->json(['message' => 'The coupon is no longer valid.'], 422);
             }
 
-            $dr_tier_ids     = collect($request->items)->pluck('dr_tier_id')->unique()->values()->all();
             $dr_tier_amounts = collect($request->items)
                 ->groupBy('dr_tier_id')
-                ->map(fn ($group) => round($group->sum(fn ($i) => $i['unit_price'] * $i['quantity']), 2))
+                ->map(fn ($group) => round(
+                    $group->sum(fn ($i) => $dr_tiers_map->get($i['dr_tier_id'])->price_per_link * $i['quantity']),
+                    2
+                ))
                 ->all();
 
             $result = $this->couponService->validateAndCalculate(
@@ -90,26 +126,47 @@ class OrderController extends Controller
             $coupon_discount_amount = $result['discount_amount'];
         }
 
-        $total_amount = round($amount_after_bulk - $coupon_discount_amount, 2);
+        $calculated_total = round($amount_after_bulk - $coupon_discount_amount, 2);
 
-        $order = DB::transaction(function () use ($request, $user, $total_amount, $coupon, $coupon_discount_amount) {
+        // Verify total matches frontend-submitted amount (±$0.01 tolerance for rounding)
+        if (abs($calculated_total - (float) $request->total_amount) > 0.01) {
+            return response()->json([
+                'message' => 'Order total does not match the expected amount.',
+                'errors'  => ['total_amount' => ['The submitted total does not match the calculated order total.']],
+            ], 422);
+        }
+
+        // Verify PaymentIntent with Stripe before persisting anything
+        $payment_intent_id = $request->payment['payment_method_id'];
+        $stripe_result     = $this->stripeService->verifyPaymentIntent($payment_intent_id);
+
+        if (!$stripe_result['verified']) {
+            return response()->json([
+                'message' => 'Payment verification failed. The payment was not completed successfully.',
+                'errors'  => ['payment.payment_method_id' => ['The provided payment could not be verified.']],
+            ], 422);
+        }
+
+        $order = DB::transaction(function () use ($request, $user, $calculated_total, $coupon, $coupon_discount_amount, $payment_intent_id, $dr_tiers_map) {
             $order = LinkBuildingOrder::create([
                 'user_id'                => $user->id,
                 'order_title'            => $request->order_title,
                 'order_notes'            => $request->order_notes,
-                'total_amount'           => $total_amount,
+                'total_amount'           => $calculated_total,
                 'status'                 => 'pending',
+                'payment_intent_id'      => $payment_intent_id,
                 'coupon_id'              => $coupon?->id,
                 'coupon_discount_amount' => $coupon_discount_amount > 0 ? $coupon_discount_amount : null,
             ]);
 
             foreach ($request->items as $item_data) {
-                $subtotal = round($item_data['unit_price'] * $item_data['quantity'], 2);
+                $tier     = $dr_tiers_map->get($item_data['dr_tier_id']);
+                $subtotal = round($tier->price_per_link * $item_data['quantity'], 2);
 
                 $item = $order->items()->create([
                     'dr_tier_id' => $item_data['dr_tier_id'],
                     'quantity'   => $item_data['quantity'],
-                    'unit_price' => $item_data['unit_price'],
+                    'unit_price' => $tier->price_per_link,
                     'subtotal'   => $subtotal,
                 ]);
 
@@ -139,20 +196,16 @@ class OrderController extends Controller
             $coupon->increment('times_used');
         }
 
-        $invoice = $this->invoiceService->createForLinkBuildingOrder($user, $order);
+        $this->invoiceService->createForLinkBuildingOrder($user, $order);
 
         event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 
         return response()->json([
             'data' => [
-                'order_id'               => $order->id,
-                'status'                 => $order->status,
-                'total_amount'           => $order->total_amount,
-                'discount_applied'       => $discount_applied,
-                'coupon_discount_amount' => $order->coupon_discount_amount,
-                'created_at'             => $order->created_at,
-                'invoice_number'         => $invoice->invoice_number,
-                'invoice_id'             => $invoice->unique_id,
+                'order_id'     => $order->id,
+                'status'       => $order->status,
+                'total_amount' => $order->total_amount,
+                'created_at'   => $order->created_at,
             ],
         ], 201);
     }
@@ -162,14 +215,11 @@ class OrderController extends Controller
         $user = auth()->user();
 
         $order = LinkBuildingOrder::where('id', $id)
-            ->where('user_id', $user->id)
             ->where('is_hidden', false)
             ->with([
                 'items.drTier',
                 'items.placements',
                 'billing',
-                'invoice.lineItems',
-                'invoice.billedTo',
             ])
             ->first();
 
@@ -177,73 +227,55 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
+        if ($order->user_id !== $user->id) {
+            return response()->json(['message' => 'You do not have permission to view this order.'], 403);
+        }
+
         return response()->json(['data' => $this->buildOrderDetail($order)]);
     }
 
     private function buildOrderDetail(LinkBuildingOrder $order): array
     {
-        $invoice = $order->invoice;
-
         return [
-            'id'           => $order->id,
-            'order_title'  => $order->order_title,
-            'order_notes'  => $order->order_notes,
-            'status'       => $order->status,
-            'total_amount' => $order->total_amount,
-            'created_at'   => $order->created_at?->format('F j, Y'),
-            'billing'      => $order->billing ? [
-                'company'     => $order->billing->company,
-                'address'     => $order->billing->address,
-                'city'        => $order->billing->city,
-                'state'       => $order->billing->state,
-                'country'     => $order->billing->country,
-                'postal_code' => $order->billing->postal_code,
-            ] : null,
-            'items'   => $order->items->map(fn ($item) => [
-                'id'       => $item->id,
-                'dr_tier'  => $item->drTier ? [
-                    'id'             => $item->drTier->id,
-                    'dr_label'       => $item->drTier->dr_label,
-                    'traffic_range'  => $item->drTier->traffic_range,
-                    'word_count'     => $item->drTier->word_count,
-                    'price_per_link' => $item->drTier->price_per_link,
-                ] : null,
+            'id'                => $order->id,
+            'order_title'       => $order->order_title,
+            'order_notes'       => $order->order_notes,
+            'total_amount'      => $order->total_amount,
+            'status'            => $order->status,
+            'payment_intent_id' => $order->payment_intent_id,
+            'created_at'        => $order->created_at,
+            'updated_at'        => $order->updated_at,
+            'items'             => $order->items->map(fn ($item) => [
+                'id'         => $item->id,
+                'dr_tier_id' => $item->dr_tier_id,
                 'quantity'   => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'subtotal'   => $item->subtotal,
+                'dr_tier'    => $item->drTier ? [
+                    'id'              => $item->drTier->id,
+                    'dr_label'        => $item->drTier->dr_label,
+                    'traffic_range'   => $item->drTier->traffic_range,
+                    'word_count'      => $item->drTier->word_count,
+                    'price_per_link'  => $item->drTier->price_per_link,
+                    'is_most_popular' => $item->drTier->is_most_popular,
+                    'is_active'       => $item->drTier->is_active,
+                ] : null,
                 'placements' => $item->placements->map(fn ($placement) => [
+                    'id'           => $placement->id,
                     'row_index'    => $placement->row_index,
                     'keyword'      => $placement->keyword,
                     'landing_page' => $placement->landing_page,
                     'exact_match'  => $placement->exact_match,
                 ]),
             ]),
-            'invoice' => $invoice ? [
-                'unique_id'       => $invoice->unique_id,
-                'invoice_number'  => $invoice->invoice_number,
-                'status'          => $invoice->status,
-                'payment_method'  => $invoice->payment_method,
-                'currency_type'   => $invoice->currency_type,
-                'subtotal_amount' => $invoice->subtotal_amount,
-                'total_amount'    => $invoice->total_amount,
-                'credit_amount'   => $invoice->credit_amount,
-                'date_issued'     => $invoice->date_issued?->format('F j, Y'),
-                'date_due'        => $invoice->date_due?->format('F j, Y'),
-                'date_paid'       => $invoice->date_paid?->format('F j, Y'),
-                'billed_to'       => $invoice->billedTo ? [
-                    'company_name'        => $invoice->billedTo->company_name,
-                    'company_description' => $invoice->billedTo->company_description,
-                    'address_line_1'      => $invoice->billedTo->address_line_1,
-                    'address_line_2'      => $invoice->billedTo->address_line_2,
-                    'state'               => $invoice->billedTo->state,
-                    'country'             => $invoice->billedTo->country,
-                ] : null,
-                'line_items' => $invoice->lineItems->map(fn ($li) => [
-                    'item_name'  => $li->item_name,
-                    'price'      => $li->price,
-                    'quantity'   => $li->quantity,
-                    'item_total' => $li->item_total,
-                ]),
+            'billing' => $order->billing ? [
+                'id'          => $order->billing->id,
+                'company'     => $order->billing->company,
+                'address'     => $order->billing->address,
+                'city'        => $order->billing->city,
+                'state'       => $order->billing->state,
+                'country'     => $order->billing->country,
+                'postal_code' => $order->billing->postal_code,
             ] : null,
         ];
     }

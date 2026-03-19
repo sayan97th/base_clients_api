@@ -15,6 +15,45 @@ class StripeService
     }
 
     /**
+     * Retrieve a PaymentMethod from Stripe and return its card details.
+     *
+     * Returns ['success' => true, 'card' => [...]] or ['success' => false, 'message' => '...']
+     */
+    public function retrievePaymentMethod(string $payment_method_id): array
+    {
+        try {
+            $payment_method = $this->client->paymentMethods->retrieve($payment_method_id);
+
+            return [
+                'success' => true,
+                'card'    => [
+                    'brand'     => $payment_method->card->brand,
+                    'last4'     => $payment_method->card->last4,
+                    'exp_month' => str_pad((string) $payment_method->card->exp_month, 2, '0', STR_PAD_LEFT),
+                    'exp_year'  => (string) $payment_method->card->exp_year,
+                ],
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => 'Invalid payment method: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Detach a PaymentMethod from its Stripe customer. Failures are silenced.
+     */
+    public function detachPaymentMethod(string $payment_method_id): void
+    {
+        try {
+            $this->client->paymentMethods->detach($payment_method_id);
+        } catch (ApiErrorException) {
+            // Silently ignore — PM may already be detached
+        }
+    }
+
+    /**
      * Verify that a PaymentIntent exists and has status 'succeeded'.
      *
      * Returns ['verified' => true] or ['verified' => false, 'message' => '...']

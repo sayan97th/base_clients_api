@@ -17,6 +17,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
+use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
@@ -253,6 +254,14 @@ Route::middleware('auth:api')->group(function () {
         Route::get('/', [InvoiceController::class, 'index']);
         Route::post('/', [InvoiceController::class, 'store']);
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
+    });
+
+    // Payment profiles
+    Route::prefix('payment-profiles')->group(function () {
+        Route::get('/',               [PaymentProfileController::class, 'index']);
+        Route::post('/',              [PaymentProfileController::class, 'store']);
+        Route::delete('/{id}',        [PaymentProfileController::class, 'destroy']);
+        Route::patch('/{id}/default', [PaymentProfileController::class, 'setDefault']);
     });
 
     // Profile — available to all authenticated users (admin, staff, client)

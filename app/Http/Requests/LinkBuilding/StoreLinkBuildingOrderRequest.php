@@ -11,6 +11,23 @@ class StoreLinkBuildingOrderRequest extends FormRequest
         return true;
     }
 
+    public function withValidator(\Illuminate\Contracts\Validation\Validator $validator): void
+    {
+        $validator->after(function ($validator) {
+            foreach ($this->input('items', []) as $index => $item) {
+                $quantity   = (int) ($item['quantity'] ?? 0);
+                $placements = $item['placements'] ?? [];
+
+                if (count($placements) !== $quantity) {
+                    $validator->errors()->add(
+                        "items.{$index}.placements",
+                        "The number of placements must equal the quantity ({$quantity})."
+                    );
+                }
+            }
+        });
+    }
+
     public function rules(): array
     {
         return [

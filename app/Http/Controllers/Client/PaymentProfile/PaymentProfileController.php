@@ -76,7 +76,7 @@ class PaymentProfileController extends Controller
 
         return response()->json([
             'data'    => $this->formatProfile($profile),
-            'message' => 'Payment method saved successfully.',
+            'message' => 'Payment profile saved successfully.',
         ], 201);
     }
 

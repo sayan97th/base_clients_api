@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Coupon;
-use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderCoupon;
 use Illuminate\Support\Carbon;
 
 class CouponService
@@ -40,8 +40,8 @@ class CouponService
         }
 
         if ($coupon->usage_per_user !== null) {
-            $user_usage = LinkBuildingOrder::where('coupon_id', $coupon->id)
-                ->where('user_id', $user_id)
+            $user_usage = LinkBuildingOrderCoupon::where('coupon_id', $coupon->id)
+                ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
                 ->count();
 
             if ($user_usage >= $coupon->usage_per_user) {

@@ -17,27 +17,32 @@ class ProfileController extends Controller
         $billing    = $user->billingAddress;
 
         return response()->json([
-            'first_name'                  => $user->first_name,
-            'last_name'                   => $user->last_name,
-            'business_email'              => $user->business_email,
-            'phone'                       => $user->phone,
-            'timezone'                    => $preference?->timezone ?? null,
-            'interested_in'               => $this->mapInterestedIn($preference?->interested_in),
-            'notification_channel'        => $preference?->notification_channel ?? null,
-            'team_order_updates'          => isset($preference->team_order_updates)
-                                                ? (bool) $preference->team_order_updates
-                                                : null,
-            'push_notifications_enabled'  => isset($preference->push_notifications_enabled)
-                                                ? (bool) $preference->push_notifications_enabled
-                                                : null,
-            'address'                     => $billing?->address,
-            'city'                        => $billing?->city,
-            'country'                     => $billing?->country,
-            'state_province'              => $billing?->state_province,
-            'postal_code'                 => $billing?->postal_code,
-            'company'                     => $billing?->company,
-            'profile_photo_path'          => $user->profile_photo_path,
-            'profile_photo_url'           => $user->profile_photo_url,
+            'data' => [
+                'id'                          => $user->id,
+                'name'                        => $user->full_name,
+                'email'                       => $user->email,
+                'first_name'                  => $user->first_name,
+                'last_name'                   => $user->last_name,
+                'business_email'              => $user->business_email,
+                'phone'                       => $user->phone,
+                'timezone'                    => $preference?->timezone ?? null,
+                'interested_in'               => $this->mapInterestedIn($preference?->interested_in),
+                'notification_channel'        => $preference?->notification_channel ?? null,
+                'team_order_updates'          => isset($preference->team_order_updates)
+                                                    ? (bool) $preference->team_order_updates
+                                                    : null,
+                'push_notifications_enabled'  => isset($preference->push_notifications_enabled)
+                                                    ? (bool) $preference->push_notifications_enabled
+                                                    : null,
+                'address'                     => $billing?->address,
+                'city'                        => $billing?->city,
+                'country'                     => $billing?->country,
+                'state_province'              => $billing?->state_province,
+                'postal_code'                 => $billing?->postal_code,
+                'company'                     => $billing?->company,
+                'profile_photo_path'          => $user->profile_photo_path,
+                'profile_photo_url'           => $user->profile_photo_url,
+            ],
         ]);
     }
 

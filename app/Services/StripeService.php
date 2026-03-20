@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
@@ -82,19 +83,52 @@ class StripeService
     }
 
     /**
+     * Find an existing Stripe Customer for the user or create a new one.
+     * Persists the stripe_customer_id back to the user record.
+     *
+     * Returns the Stripe Customer ID (cus_...) on success.
+     * Returns ['success' => false, 'message' => '...'] on failure.
+     */
+    public function findOrCreateCustomer(User $user): array
+    {
+        if ($user->stripe_customer_id) {
+            return ['success' => true, 'customer_id' => $user->stripe_customer_id];
+        }
+
+        try {
+            $customer = $this->client->customers->create([
+                'email' => $user->email,
+                'name'  => $user->full_name,
+            ]);
+
+            $user->update(['stripe_customer_id' => $customer->id]);
+
+            return ['success' => true, 'customer_id' => $customer->id];
+        } catch (ApiErrorException $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Create a Stripe PaymentIntent and return the client_secret and payment_intent_id.
      *
      * If stripe_payment_method_id is provided, it will be attached to the intent (saved card flow).
+     * If stripe_customer_id is provided, it will be attached so saved cards can be charged.
      *
      * Returns ['success' => true, 'client_secret' => '...', 'payment_intent_id' => '...']
      *      or ['success' => false, 'message' => '...']
      */
-    public function createPaymentIntent(int $amount_cents, ?string $stripe_payment_method_id = null, array $metadata = []): array
-    {
+    public function createPaymentIntent(
+        int $amount_cents,
+        ?string $stripe_payment_method_id = null,
+        ?string $stripe_customer_id = null,
+        array $metadata = []
+    ): array {
         try {
             $params = [
-                'amount'   => $amount_cents,
-                'currency' => 'usd',
+                'amount'         => $amount_cents,
+                'currency'       => 'usd',
+                'capture_method' => 'automatic',
             ];
 
             if (!empty($metadata)) {
@@ -103,6 +137,10 @@ class StripeService
 
             if ($stripe_payment_method_id !== null) {
                 $params['payment_method'] = $stripe_payment_method_id;
+            }
+
+            if ($stripe_customer_id !== null) {
+                $params['customer'] = $stripe_customer_id;
             }
 
             $intent = $this->client->paymentIntents->create($params);

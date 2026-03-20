@@ -93,40 +93,45 @@ class OrderController extends Controller
         $bulk_discount_amount = $discount_applied ? round($subtotal * self::BULK_DISCOUNT_RATE, 2) : 0;
         $amount_after_bulk    = round($subtotal - $bulk_discount_amount, 2);
 
-        $coupon                 = null;
-        $coupon_discount_amount = 0;
+        // Build per-tier subtotals for specific_product coupon calculations
+        $dr_tier_amounts = collect($request->items)
+            ->groupBy('dr_tier_id')
+            ->map(fn ($group) => round(
+                $group->sum(fn ($i) => $dr_tiers_map->get($i['dr_tier_id'])->price_per_link * $i['quantity']),
+                2
+            ))
+            ->all();
 
-        if ($request->coupon_id) {
-            $coupon = Coupon::find($request->coupon_id);
+        // Validate and calculate discounts for each coupon sequentially
+        $coupon_ids    = $request->coupon_ids ?? [];
+        $applied_coupons = [];  // [['coupon' => Coupon, 'discount_amount' => float]]
+        $current_amount  = $amount_after_bulk;
+
+        foreach ($coupon_ids as $coupon_id) {
+            $coupon = Coupon::find($coupon_id);
 
             if (!$coupon) {
-                return response()->json(['message' => 'The coupon is no longer valid.'], 422);
+                return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
             }
-
-            $dr_tier_amounts = collect($request->items)
-                ->groupBy('dr_tier_id')
-                ->map(fn ($group) => round(
-                    $group->sum(fn ($i) => $dr_tiers_map->get($i['dr_tier_id'])->price_per_link * $i['quantity']),
-                    2
-                ))
-                ->all();
 
             $result = $this->couponService->validateAndCalculate(
                 $coupon,
-                $amount_after_bulk,
+                $current_amount,
                 $user->id,
                 $dr_tier_ids,
                 $dr_tier_amounts
             );
 
             if (!$result['valid']) {
-                return response()->json(['message' => 'The coupon is no longer valid.'], 422);
+                return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
             }
 
-            $coupon_discount_amount = $result['discount_amount'];
+            $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+            $current_amount    = round($current_amount - $result['discount_amount'], 2);
         }
 
-        $calculated_total = round($amount_after_bulk - $coupon_discount_amount, 2);
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $calculated_total      = round($amount_after_bulk - $total_coupon_discount, 2);
 
         // Verify total matches frontend-submitted amount (±$0.01 tolerance for rounding)
         if (abs($calculated_total - (float) $request->total_amount) > 0.01) {
@@ -147,17 +152,22 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $user, $calculated_total, $coupon, $coupon_discount_amount, $payment_intent_id, $dr_tiers_map) {
+        $order = DB::transaction(function () use ($request, $user, $calculated_total, $applied_coupons, $payment_intent_id, $dr_tiers_map) {
             $order = LinkBuildingOrder::create([
-                'user_id'                => $user->id,
-                'order_title'            => $request->order_title,
-                'order_notes'            => $request->order_notes,
-                'total_amount'           => $calculated_total,
-                'status'                 => 'pending',
-                'payment_intent_id'      => $payment_intent_id,
-                'coupon_id'              => $coupon?->id,
-                'coupon_discount_amount' => $coupon_discount_amount > 0 ? $coupon_discount_amount : null,
+                'user_id'           => $user->id,
+                'order_title'       => $request->order_title,
+                'order_notes'       => $request->order_notes,
+                'total_amount'      => $calculated_total,
+                'status'            => 'pending',
+                'payment_intent_id' => $payment_intent_id,
             ]);
+
+            foreach ($applied_coupons as $entry) {
+                $order->orderCoupons()->create([
+                    'coupon_id'       => $entry['coupon']->id,
+                    'discount_amount' => $entry['discount_amount'],
+                ]);
+            }
 
             foreach ($request->items as $item_data) {
                 $tier     = $dr_tiers_map->get($item_data['dr_tier_id']);
@@ -192,8 +202,8 @@ class OrderController extends Controller
             return $order;
         });
 
-        if ($coupon) {
-            $coupon->increment('times_used');
+        foreach ($applied_coupons as $entry) {
+            $entry['coupon']->increment('times_used');
         }
 
         $this->invoiceService->createForLinkBuildingOrder($user, $order);

@@ -62,12 +62,12 @@ class CouponValidationController extends Controller
     {
         return [
             'valid'                   => false,
-            'coupon_id'               => null,
+            'coupon_id'               => '',
             'code'                    => $code,
-            'name'                    => null,
-            'discount_type'           => null,
+            'name'                    => '',
+            'discount_type'           => 'percentage',
             'discount_value'          => 0,
-            'applies_to'              => null,
+            'applies_to'              => 'all',
             'dr_tier_id'              => null,
             'minimum_purchase_amount' => null,
             'discount_amount'         => 0,

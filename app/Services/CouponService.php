@@ -51,7 +51,7 @@ class CouponService
 
         if ($coupon->applies_to === 'specific_product') {
             if (!in_array($coupon->dr_tier_id, $dr_tier_ids, strict: true)) {
-                return ['valid' => false, 'message' => 'This coupon does not apply to the selected products.'];
+                return ['valid' => false, 'message' => 'This coupon is not valid for the selected products.'];
             }
         }
 
@@ -59,7 +59,7 @@ class CouponService
             if ($order_amount < $coupon->minimum_purchase_amount) {
                 $min = number_format($coupon->minimum_purchase_amount, 2);
 
-                return ['valid' => false, 'message' => "Your order total does not meet the minimum purchase requirement of \${$min}."];
+                return ['valid' => false, 'message' => "This coupon requires a minimum purchase of \${$min}."];
             }
         }
 

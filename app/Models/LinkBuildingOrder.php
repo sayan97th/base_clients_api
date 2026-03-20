@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
@@ -58,6 +59,18 @@ class LinkBuildingOrder extends Model
     public function coupon(): BelongsTo
     {
         return $this->belongsTo(Coupon::class, 'coupon_id');
+    }
+
+    public function orderCoupons(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderCoupon::class, 'order_id');
+    }
+
+    public function coupons(): BelongsToMany
+    {
+        return $this->belongsToMany(Coupon::class, 'link_building_order_coupons', 'order_id', 'coupon_id')
+            ->withPivot('discount_amount')
+            ->withTimestamps();
     }
 
     public function updates(): HasMany

@@ -181,12 +181,12 @@ class OrderController extends Controller
             }
 
             $order->billing()->create([
-                'company'     => $request->billing['company'] ?? null,
-                'address'     => $request->billing['address'],
-                'city'        => $request->billing['city'],
-                'state'       => $request->billing['state'],
-                'country'     => $request->billing['country'],
-                'postal_code' => $request->billing['postal_code'],
+                'company'     => $request->billing['company'] ?: null,
+                'address'     => $request->billing['address'] ?: null,
+                'city'        => $request->billing['city'] ?: null,
+                'state'       => $request->billing['state'] ?: null,
+                'country'     => $request->billing['country'] ?: null,
+                'postal_code' => $request->billing['postal_code'] ?: null,
             ]);
 
             return $order;

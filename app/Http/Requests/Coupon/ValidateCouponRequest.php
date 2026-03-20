@@ -14,10 +14,12 @@ class ValidateCouponRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code'          => 'required|string|max:32',
-            'order_amount'  => 'required|numeric|min:0',
-            'dr_tier_ids'   => 'nullable|array',
-            'dr_tier_ids.*' => 'string',
+            'code'              => 'required|string|max:32',
+            'order_amount'      => 'required|numeric|min:0',
+            'dr_tier_ids'       => 'nullable|array',
+            'dr_tier_ids.*'     => 'string',
+            'dr_tier_amounts'   => 'nullable|array',
+            'dr_tier_amounts.*' => 'numeric|min:0',
         ];
     }
 }

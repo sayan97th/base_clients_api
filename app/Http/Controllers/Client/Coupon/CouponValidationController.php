@@ -21,10 +21,11 @@ class CouponValidationController extends Controller
      */
     public function validate(ValidateCouponRequest $request): JsonResponse
     {
-        $user         = auth()->user();
-        $code         = strtoupper(trim($request->code));
-        $order_amount = (float) $request->order_amount;
-        $dr_tier_ids  = $request->dr_tier_ids ?? [];
+        $user            = auth()->user();
+        $code            = strtoupper(trim($request->code));
+        $order_amount    = (float) $request->order_amount;
+        $dr_tier_ids     = $request->dr_tier_ids ?? [];
+        $dr_tier_amounts = $request->dr_tier_amounts ?? [];
 
         $coupon = Coupon::where('code', $code)->where('is_active', true)->first();
 
@@ -36,7 +37,8 @@ class CouponValidationController extends Controller
             $coupon,
             $order_amount,
             $user->id,
-            $dr_tier_ids
+            $dr_tier_ids,
+            $dr_tier_amounts
         );
 
         if (!$result['valid']) {

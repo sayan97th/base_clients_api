@@ -43,7 +43,7 @@ class InvoiceController extends Controller
 
         $invoice = Invoice::where('unique_id', $unique_id)
             ->where('user_id', $user->id)
-            ->with(['lineItems', 'billedTo', 'order.items.drTier', 'order.items.placements', 'order.billing'])
+            ->with(['lineItems', 'billedTo', 'order.orderCoupons.coupon'])
             ->first();
 
         if (!$invoice) {
@@ -86,7 +86,7 @@ class InvoiceController extends Controller
             credit_amount:  (float) ($request->credit_amount ?? 0),
         );
 
-        $invoice->load(['lineItems', 'billedTo']);
+        $invoice->load(['lineItems', 'billedTo', 'order.orderCoupons.coupon']);
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)], 201);
     }
@@ -96,15 +96,31 @@ class InvoiceController extends Controller
         $billed_to = $invoice->billedTo;
         $order     = $invoice->order;
 
+        $coupon_discounts = [];
+        $total_discount   = 0.0;
+
+        if ($order && $order->orderCoupons->isNotEmpty()) {
+            $coupon_discounts = $order->orderCoupons->map(fn ($oc) => [
+                'code'            => $oc->coupon?->code ?? '',
+                'name'            => $oc->coupon?->name ?? '',
+                'discount_type'   => $oc->coupon?->discount_type ?? 'percentage',
+                'discount_value'  => $oc->coupon?->discount_value ?? 0,
+                'discount_amount' => '$' . number_format((float) $oc->discount_amount, 2),
+            ])->values()->all();
+
+            $total_discount = (float) $order->orderCoupons->sum('discount_amount');
+        }
+
         return [
             'invoice_number' => $invoice->invoice_number,
             'unique_id'      => $invoice->unique_id,
-            'date_issued'    => $invoice->date_issued?->format('F j, Y'),
-            'date_paid'      => $invoice->date_paid?->format('F j, Y'),
-            'date_due'       => $invoice->date_due?->format('F j, Y'),
+            'date_issued'    => $invoice->date_issued?->format('M j, Y'),
+            'date_paid'      => $invoice->date_paid?->format('M j, Y'),
+            'date_due'       => $invoice->date_due?->format('M j, Y'),
             'payment_method' => $invoice->payment_method,
             'status'         => $invoice->status,
             'subtotal'       => $this->formatAmount($invoice->subtotal_amount, $invoice->currency_type),
+            'discount'       => $total_discount > 0 ? '$' . number_format($total_discount, 2) : '$0.00',
             'total'          => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
             'credit'         => $this->formatCredit($invoice->credit_amount, $invoice->currency_type),
             'billed_to'      => $billed_to ? [
@@ -115,45 +131,13 @@ class InvoiceController extends Controller
                 'state'               => $billed_to->state,
                 'country'             => $billed_to->country,
             ] : null,
-            'line_items' => $invoice->lineItems->map(fn ($item) => [
+            'line_items'       => $invoice->lineItems->map(fn ($item) => [
                 'item_name'  => $item->item_name,
                 'price'      => $this->formatAmount($item->price, $invoice->currency_type),
                 'quantity'   => $item->quantity,
                 'item_total' => $this->formatAmount($item->item_total, $invoice->currency_type),
-            ]),
-            'order' => $order ? [
-                'id'          => $order->id,
-                'order_title' => $order->order_title,
-                'order_notes' => $order->order_notes,
-                'status'      => $order->status,
-                'created_at'  => $order->created_at?->format('F j, Y'),
-                'billing'     => $order->billing ? [
-                    'company'     => $order->billing->company,
-                    'address'     => $order->billing->address,
-                    'city'        => $order->billing->city,
-                    'state'       => $order->billing->state,
-                    'country'     => $order->billing->country,
-                    'postal_code' => $order->billing->postal_code,
-                ] : null,
-                'items' => $order->items->map(fn ($item) => [
-                    'dr_tier'    => $item->drTier ? [
-                        'id'             => $item->drTier->id,
-                        'dr_label'       => $item->drTier->dr_label,
-                        'traffic_range'  => $item->drTier->traffic_range,
-                        'word_count'     => $item->drTier->word_count,
-                        'price_per_link' => $item->drTier->price_per_link,
-                    ] : null,
-                    'quantity'   => $item->quantity,
-                    'unit_price' => $item->unit_price,
-                    'subtotal'   => $item->subtotal,
-                    'placements' => $item->placements->map(fn ($placement) => [
-                        'row_index'    => $placement->row_index,
-                        'keyword'      => $placement->keyword,
-                        'landing_page' => $placement->landing_page,
-                        'exact_match'  => $placement->exact_match,
-                    ]),
-                ]),
-            ] : null,
+            ])->values(),
+            'coupon_discounts' => $coupon_discounts,
         ];
     }
 

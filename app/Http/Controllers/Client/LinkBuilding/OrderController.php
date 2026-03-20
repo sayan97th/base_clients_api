@@ -230,6 +230,7 @@ class OrderController extends Controller
                 'items.drTier',
                 'items.placements',
                 'billing',
+                'orderCoupons.coupon',
             ])
             ->first();
 
@@ -238,7 +239,7 @@ class OrderController extends Controller
         }
 
         if ($order->user_id !== $user->id) {
-            return response()->json(['message' => 'You do not have permission to view this order.'], 403);
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
         }
 
         return response()->json(['data' => $this->buildOrderDetail($order)]);
@@ -246,16 +247,19 @@ class OrderController extends Controller
 
     private function buildOrderDetail(LinkBuildingOrder $order): array
     {
+        $subtotal_before_discount = $order->items->sum('subtotal');
+
         return [
-            'id'                => $order->id,
-            'order_title'       => $order->order_title,
-            'order_notes'       => $order->order_notes,
-            'total_amount'      => $order->total_amount,
-            'status'            => $order->status,
-            'payment_intent_id' => $order->payment_intent_id,
-            'created_at'        => $order->created_at,
-            'updated_at'        => $order->updated_at,
-            'items'             => $order->items->map(fn ($item) => [
+            'id'                       => $order->id,
+            'order_title'              => $order->order_title,
+            'order_notes'              => $order->order_notes,
+            'subtotal_before_discount' => round((float) $subtotal_before_discount, 2),
+            'total_amount'             => $order->total_amount,
+            'status'                   => $order->status,
+            'payment_intent_id'        => $order->payment_intent_id,
+            'created_at'               => $order->created_at,
+            'updated_at'               => $order->updated_at,
+            'items'                    => $order->items->map(fn ($item) => [
                 'id'         => $item->id,
                 'dr_tier_id' => $item->dr_tier_id,
                 'quantity'   => $item->quantity,
@@ -276,8 +280,8 @@ class OrderController extends Controller
                     'keyword'      => $placement->keyword,
                     'landing_page' => $placement->landing_page,
                     'exact_match'  => $placement->exact_match,
-                ]),
-            ]),
+                ])->values(),
+            ])->values(),
             'billing' => $order->billing ? [
                 'id'          => $order->billing->id,
                 'company'     => $order->billing->company,
@@ -287,6 +291,14 @@ class OrderController extends Controller
                 'country'     => $order->billing->country,
                 'postal_code' => $order->billing->postal_code,
             ] : null,
+            'coupons' => $order->orderCoupons->map(fn ($oc) => [
+                'coupon_id'       => $oc->coupon_id,
+                'code'            => $oc->coupon?->code ?? '',
+                'name'            => $oc->coupon?->name ?? '',
+                'discount_type'   => $oc->coupon?->discount_type ?? 'percentage',
+                'discount_value'  => $oc->coupon?->discount_value ?? 0,
+                'discount_amount' => round((float) $oc->discount_amount, 2),
+            ])->values(),
         ];
     }
 }

@@ -18,7 +18,18 @@ class SendPaymentNotification implements ShouldQueue
         $mail_data = [];
 
         if ($event->invoice) {
-            $invoice = $event->invoice->loadMissing(['lineItems', 'billedTo']);
+            $invoice = $event->invoice->loadMissing(['lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+
+            $coupon_discounts = [];
+            if ($invoice->order && $invoice->order->orderCoupons->isNotEmpty()) {
+                $coupon_discounts = $invoice->order->orderCoupons->map(fn ($oc) => [
+                    'code'            => $oc->coupon?->code ?? '',
+                    'name'            => $oc->coupon?->name ?? '',
+                    'discount_type'   => $oc->coupon?->discount_type ?? 'percentage',
+                    'discount_value'  => $oc->coupon?->discount_value ?? 0,
+                    'discount_amount' => (float) $oc->discount_amount,
+                ])->toArray();
+            }
 
             $mail_data = [
                 'invoice_number'  => $invoice->invoice_number,
@@ -40,6 +51,7 @@ class SendPaymentNotification implements ShouldQueue
                     'state'          => $invoice->billedTo->state,
                     'country'        => $invoice->billedTo->country,
                 ] : null,
+                'coupon_discounts' => $coupon_discounts,
             ];
         }
 

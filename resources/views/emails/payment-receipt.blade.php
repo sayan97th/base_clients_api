@@ -91,6 +91,27 @@
                                             @endforeach
                                         </tbody>
                                         <tfoot>
+                                            @if (!empty($coupon_discounts))
+                                                @foreach ($coupon_discounts as $coupon)
+                                                    <tr>
+                                                        <td style="padding:6px 4px 2px;border-top:1px dashed #e5e7eb;" colspan="2">
+                                                            <span style="font-size:12px;color:#6b7280;">
+                                                                {{ $coupon['name'] }}
+                                                                @if ($coupon['discount_type'] === 'percentage')
+                                                                    ({{ $coupon['discount_value'] }}% off)
+                                                                @endif
+                                                            </span><br>
+                                                            <span style="font-size:11px;color:#9ca3af;letter-spacing:0.05em;">{{ $coupon['code'] }}</span>
+                                                        </td>
+                                                        <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#6b7280;font-size:13px;font-weight:normal;">
+                                                            Discount
+                                                        </td>
+                                                        <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#10b981;font-size:13px;white-space:nowrap;">
+                                                            &minus;${{ number_format($coupon['discount_amount'], 2) }}
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            @endif
                                             <tr>
                                                 <td style="padding:10px 4px 4px;border-top:1px dashed #e5e7eb;">&nbsp;</td>
                                                 <td style="padding:10px 4px 4px;border-top:1px dashed #e5e7eb;">&nbsp;</td>

@@ -88,6 +88,7 @@ class NotificationEmail extends Mailable
             'credit_amount'        => $this->mail_data['credit_amount'] ?? 0,
             'line_items'           => $this->mail_data['line_items'],
             'billed_to'            => $this->mail_data['billed_to'] ?? null,
+            'coupon_discounts'     => $this->mail_data['coupon_discounts'] ?? [],
             'preferences_url'      => config('app.frontend_url') . '/settings/notifications',
             'app_name'             => config('app.name'),
         ];

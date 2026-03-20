@@ -17,6 +17,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
+use App\Http\Controllers\Client\Stripe\StripeController;
 use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
@@ -233,6 +234,11 @@ Route::middleware('auth:api')->group(function () {
     Route::prefix('notification-preferences')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
+    });
+
+    // Stripe
+    Route::prefix('stripe')->group(function () {
+        Route::post('/create-payment-intent', [StripeController::class, 'createPaymentIntent']);
     });
 
     // Coupon validation

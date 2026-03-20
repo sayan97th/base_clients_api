@@ -24,7 +24,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'items.*.placements'                 => 'required|array|min:1',
             'items.*.placements.*.row_index'     => 'required|integer|min:0',
             'items.*.placements.*.keyword'       => 'nullable|string|max:255',
-            'items.*.placements.*.landing_page'  => 'nullable|string|max:2048',
+            'items.*.placements.*.landing_page'  => 'nullable|url|max:2048',
             'items.*.placements.*.exact_match'   => 'required|boolean',
             'billing'                            => 'required|array',
             'billing.company'                    => 'nullable|string|max:255',
@@ -34,8 +34,8 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'billing.country'                    => 'required|string|max:100',
             'billing.postal_code'                => 'required|string|max:20',
             'payment'                            => 'required|array',
-            'payment.payment_method_id'          => 'required|string',
-            'coupon_id'                          => 'sometimes|nullable|uuid|exists:coupons,id',
+            'payment.payment_method_id'          => 'required|string|starts_with:pi_',
+            'coupon_id'                          => 'nullable|string|exists:coupons,id',
         ];
     }
 }

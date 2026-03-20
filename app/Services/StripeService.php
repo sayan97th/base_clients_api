@@ -54,7 +54,7 @@ class StripeService
     }
 
     /**
-     * Verify that a PaymentIntent exists and has status 'succeeded'.
+     * Verify that a PaymentIntent exists and has status 'succeeded' or 'requires_capture'.
      *
      * Returns ['verified' => true] or ['verified' => false, 'message' => '...']
      */
@@ -63,7 +63,9 @@ class StripeService
         try {
             $intent = $this->client->paymentIntents->retrieve($payment_intent_id);
 
-            if ($intent->status !== 'succeeded') {
+            $valid_statuses = ['succeeded', 'requires_capture'];
+
+            if (!in_array($intent->status, $valid_statuses, strict: true)) {
                 return [
                     'verified' => false,
                     'message'  => 'Payment verification failed. The payment was not completed successfully.',
@@ -75,6 +77,45 @@ class StripeService
             return [
                 'verified' => false,
                 'message'  => 'Payment verification failed. The payment could not be verified.',
+            ];
+        }
+    }
+
+    /**
+     * Create a Stripe PaymentIntent and return the client_secret and payment_intent_id.
+     *
+     * If stripe_payment_method_id is provided, it will be attached to the intent (saved card flow).
+     *
+     * Returns ['success' => true, 'client_secret' => '...', 'payment_intent_id' => '...']
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function createPaymentIntent(int $amount_cents, ?string $stripe_payment_method_id = null, array $metadata = []): array
+    {
+        try {
+            $params = [
+                'amount'   => $amount_cents,
+                'currency' => 'usd',
+            ];
+
+            if (!empty($metadata)) {
+                $params['metadata'] = $metadata;
+            }
+
+            if ($stripe_payment_method_id !== null) {
+                $params['payment_method'] = $stripe_payment_method_id;
+            }
+
+            $intent = $this->client->paymentIntents->create($params);
+
+            return [
+                'success'           => true,
+                'client_secret'     => $intent->client_secret,
+                'payment_intent_id' => $intent->id,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
             ];
         }
     }

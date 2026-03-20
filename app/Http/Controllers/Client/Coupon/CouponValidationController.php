@@ -29,7 +29,7 @@ class CouponValidationController extends Controller
         $coupon = Coupon::where('code', $code)->where('is_active', true)->first();
 
         if (!$coupon) {
-            return response()->json($this->buildInvalidResponse($code, null, 'Coupon not found.'));
+            return response()->json($this->buildInvalidResponse($code, 'Coupon not found.'));
         }
 
         $result = $this->couponService->validateAndCalculate(
@@ -40,7 +40,7 @@ class CouponValidationController extends Controller
         );
 
         if (!$result['valid']) {
-            return response()->json($this->buildInvalidResponse($code, $coupon, $result['message']));
+            return response()->json($this->buildInvalidResponse($code, $result['message']));
         }
 
         return response()->json([
@@ -58,18 +58,18 @@ class CouponValidationController extends Controller
         ]);
     }
 
-    private function buildInvalidResponse(string $code, ?Coupon $coupon, string $message): array
+    private function buildInvalidResponse(string $code, string $message): array
     {
         return [
             'valid'                   => false,
-            'coupon_id'               => '',
+            'coupon_id'               => null,
             'code'                    => $code,
-            'name'                    => '',
-            'discount_type'           => $coupon?->discount_type ?? 'percentage',
+            'name'                    => null,
+            'discount_type'           => null,
             'discount_value'          => 0,
-            'applies_to'              => $coupon?->applies_to ?? 'all',
-            'dr_tier_id'              => $coupon?->dr_tier_id,
-            'minimum_purchase_amount' => $coupon?->minimum_purchase_amount,
+            'applies_to'              => null,
+            'dr_tier_id'              => null,
+            'minimum_purchase_amount' => null,
             'discount_amount'         => 0,
             'message'                 => $message,
         ];

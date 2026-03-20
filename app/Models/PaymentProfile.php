@@ -18,6 +18,12 @@ class PaymentProfile extends Model
         'expiry_month',
         'expiry_year',
         'cardholder_name',
+        'billing_address_line1',
+        'billing_address_city',
+        'billing_address_state',
+        'billing_address_postal',
+        'billing_address_country',
+        'billing_address_company',
         'is_default',
     ];
 

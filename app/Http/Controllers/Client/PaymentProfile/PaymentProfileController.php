@@ -27,23 +27,31 @@ class PaymentProfileController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'stripe_payment_method_id' => ['required', 'string'],
-            'cardholder_name'          => ['nullable', 'string', 'max:255'],
-            'is_default'               => ['nullable', 'boolean'],
+            'stripe_payment_method_id'        => ['required', 'string', 'unique:payment_profiles,stripe_payment_method_id'],
+            'cardholder_name'                 => ['nullable', 'string', 'max:255'],
+            'is_default'                      => ['required', 'boolean'],
+            'billing_address'                 => ['nullable', 'array'],
+            'billing_address.address_line1'   => ['nullable', 'string', 'max:255'],
+            'billing_address.city'            => ['nullable', 'string', 'max:255'],
+            'billing_address.state'           => ['nullable', 'string', 'max:255'],
+            'billing_address.postal_code'     => ['nullable', 'string', 'max:20'],
+            'billing_address.country'         => ['nullable', 'string', 'size:2'],
+            'billing_address.company'         => ['nullable', 'string', 'max:255'],
         ]);
 
         $stripe_result = $this->stripeService->retrievePaymentMethod($request->stripe_payment_method_id);
 
         if (!$stripe_result['success']) {
-            return response()->json(['message' => $stripe_result['message']], 422);
+            return response()->json(['message' => 'Failed to retrieve card details from Stripe.'], 500);
         }
 
         $card       = $stripe_result['card'];
         $user_id    = auth()->id();
         $has_cards  = PaymentProfile::where('user_id', $user_id)->exists();
-        $is_default = $has_cards ? (bool) ($request->is_default ?? false) : true;
+        $is_default = $has_cards ? (bool) $request->is_default : true;
+        $billing    = $request->billing_address ?? [];
 
-        $profile = DB::transaction(function () use ($user_id, $request, $card, $is_default) {
+        $profile = DB::transaction(function () use ($user_id, $request, $card, $is_default, $billing) {
             if ($is_default) {
                 PaymentProfile::where('user_id', $user_id)->update(['is_default' => false]);
             }
@@ -56,6 +64,12 @@ class PaymentProfileController extends Controller
                 'expiry_month'             => $card['exp_month'],
                 'expiry_year'              => $card['exp_year'],
                 'cardholder_name'          => $request->cardholder_name,
+                'billing_address_line1'    => $billing['address_line1'] ?? null,
+                'billing_address_city'     => $billing['city'] ?? null,
+                'billing_address_state'    => $billing['state'] ?? null,
+                'billing_address_postal'   => $billing['postal_code'] ?? null,
+                'billing_address_country'  => $billing['country'] ?? null,
+                'billing_address_company'  => $billing['company'] ?? null,
                 'is_default'               => $is_default,
             ]);
         });
@@ -122,6 +136,14 @@ class PaymentProfileController extends Controller
 
     private function formatProfile(PaymentProfile $profile): array
     {
+        $has_billing_address =
+            $profile->billing_address_line1 !== null ||
+            $profile->billing_address_city !== null ||
+            $profile->billing_address_state !== null ||
+            $profile->billing_address_postal !== null ||
+            $profile->billing_address_country !== null ||
+            $profile->billing_address_company !== null;
+
         return [
             'id'                       => $profile->id,
             'stripe_payment_method_id' => $profile->stripe_payment_method_id,
@@ -130,6 +152,14 @@ class PaymentProfileController extends Controller
             'expiry_month'             => $profile->expiry_month,
             'expiry_year'              => $profile->expiry_year,
             'cardholder_name'          => $profile->cardholder_name,
+            'billing_address'          => $has_billing_address ? [
+                'address_line1' => $profile->billing_address_line1,
+                'city'          => $profile->billing_address_city,
+                'state'         => $profile->billing_address_state,
+                'postal_code'   => $profile->billing_address_postal,
+                'country'       => $profile->billing_address_country,
+                'company'       => $profile->billing_address_company,
+            ] : null,
             'is_default'               => $profile->is_default,
             'created_at'               => $profile->created_at,
             'updated_at'               => $profile->updated_at,

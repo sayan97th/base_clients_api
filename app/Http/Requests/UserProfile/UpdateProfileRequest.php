@@ -26,7 +26,7 @@ class UpdateProfileRequest extends FormRequest
         return [
             'first_name'                 => ['required', 'string', 'max:100'],
             'last_name'                  => ['required', 'string', 'max:100'],
-            'business_email'             => ['required', 'email', 'max:255'],
+            'business_email'             => ['nullable', 'email', 'max:255'],
             'phone'                      => ['nullable', 'string'],
             'timezone'                   => ['nullable', 'string'],
             'interested_in'              => ['nullable', 'string', Rule::in(['', 'links', 'content', 'both'])],

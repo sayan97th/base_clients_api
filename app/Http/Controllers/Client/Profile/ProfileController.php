@@ -47,7 +47,7 @@ class ProfileController extends Controller
         $user->update([
             'first_name'     => $validated['first_name'],
             'last_name'      => $validated['last_name'],
-            'business_email' => $validated['business_email'],
+            'business_email' => $validated['business_email'] ?? null,
             'phone'          => $validated['phone'] ?? null,
         ]);
 

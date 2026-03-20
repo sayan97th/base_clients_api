@@ -26,7 +26,7 @@ class PatchProfileRequest extends FormRequest
         return [
             'first_name'                 => ['sometimes', 'required', 'string', 'max:100'],
             'last_name'                  => ['sometimes', 'required', 'string', 'max:100'],
-            'business_email'             => ['sometimes', 'required', 'email', 'max:255'],
+            'business_email'             => ['sometimes', 'nullable', 'email', 'max:255'],
             'phone'                      => ['sometimes', 'nullable', 'string'],
             'timezone'                   => ['sometimes', 'nullable', 'string'],
             'interested_in'              => ['sometimes', 'nullable', 'string', Rule::in(['', 'links', 'content', 'both'])],

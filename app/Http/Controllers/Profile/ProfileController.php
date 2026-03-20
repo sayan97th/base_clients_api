@@ -46,7 +46,7 @@ class ProfileController extends Controller
         $validated = $request->validate([
             'first_name'                  => ['required', 'string', 'max:100'],
             'last_name'                   => ['required', 'string', 'max:100'],
-            'business_email'              => ['required', 'email', 'max:255'],
+            'business_email'              => ['nullable', 'email', 'max:255'],
             'phone'                       => ['nullable', 'string'],
             'timezone'                    => ['nullable', 'string'],
             'interested_in'               => ['nullable', 'string', Rule::in(['', 'links', 'content', 'both'])],
@@ -66,7 +66,7 @@ class ProfileController extends Controller
         $user->update([
             'first_name'     => $validated['first_name'],
             'last_name'      => $validated['last_name'],
-            'business_email' => $validated['business_email'],
+            'business_email' => $validated['business_email'] ?? null,
             'phone'          => $validated['phone'] ?? null,
         ]);
 

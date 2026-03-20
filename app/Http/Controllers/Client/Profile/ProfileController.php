@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Client\Profile;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\UpdateProfileRequest;
-use App\Http\Requests\UploadProfilePhotoRequest;
+use App\Http\Requests\UserProfile\UpdateProfileRequest;
+use App\Http\Requests\UserProfile\UploadProfilePhotoRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;

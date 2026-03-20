@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Admin\Invitation;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\AcceptInvitationRequest;
-use App\Http\Requests\SendInvitationRequest;
+use App\Http\Requests\Invitation\AcceptInvitationRequest;
+use App\Http\Requests\Invitation\SendInvitationRequest;
 use App\Http\Resources\InvitationResource;
 use App\Mail\StaffInvitationMail;
 use App\Models\Invitation;

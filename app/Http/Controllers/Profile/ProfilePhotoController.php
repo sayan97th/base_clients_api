@@ -29,11 +29,17 @@ class ProfilePhotoController extends Controller
 
         $user->update(['profile_photo_path' => $path]);
 
-        $user->load(['roles:id,name,display_name', 'organization']);
+        $user->refresh();
 
         return response()->json([
             'message' => 'Profile photo updated successfully.',
-            'user'    => $user,
+            'user'    => [
+                'id'                => $user->id,
+                'first_name'        => $user->first_name,
+                'last_name'         => $user->last_name,
+                'email'             => $user->email,
+                'profile_photo_url' => $user->profile_photo_url,
+            ],
         ]);
     }
 
@@ -47,11 +53,15 @@ class ProfilePhotoController extends Controller
 
         $user->update(['profile_photo_path' => null]);
 
-        $user->load(['roles:id,name,display_name', 'organization']);
-
         return response()->json([
             'message' => 'Profile photo removed successfully.',
-            'user'    => $user,
+            'user'    => [
+                'id'                => $user->id,
+                'first_name'        => $user->first_name,
+                'last_name'         => $user->last_name,
+                'email'             => $user->email,
+                'profile_photo_url' => null,
+            ],
         ]);
     }
 }

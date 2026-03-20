@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Requests;
+namespace App\Http\Requests\Invitation;
 
 use App\Models\Invitation;
 use Illuminate\Foundation\Http\FormRequest;

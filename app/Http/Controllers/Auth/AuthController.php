@@ -5,10 +5,14 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\TwoFactorChallengeRequest;
 use App\Models\Organization;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
+use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
 {
@@ -48,13 +52,71 @@ class AuthController extends Controller
 
         $token = auth()->attempt($credentials);
 
-        if (!$token) {
+        if (! $token) {
             return response()->json([
                 'message' => 'Invalid credentials.',
             ], 401);
         }
 
-        return $this->respondWithToken($token, auth()->user());
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        if ($user->two_factor_enabled) {
+            auth()->logout();
+
+            $two_factor_token = Str::uuid()->toString();
+
+            Cache::put(
+                'two_factor_pending:' . $two_factor_token,
+                $user->id,
+                now()->addMinutes(10)
+            );
+
+            return response()->json([
+                'requires_two_factor' => true,
+                'two_factor_token'    => $two_factor_token,
+            ]);
+        }
+
+        return $this->respondWithToken($token, $user);
+    }
+
+    public function twoFactorChallenge(TwoFactorChallengeRequest $request, Google2FA $google2fa): JsonResponse
+    {
+        $cache_key = 'two_factor_pending:' . $request->two_factor_token;
+        $user_id   = Cache::get($cache_key);
+
+        if (! $user_id) {
+            return response()->json([
+                'message' => 'The verification session has expired or is invalid. Please sign in again.',
+            ], 422);
+        }
+
+        $user = User::find($user_id);
+
+        if (! $user || ! $user->two_factor_enabled) {
+            Cache::forget($cache_key);
+
+            return response()->json([
+                'message' => 'The verification session has expired or is invalid. Please sign in again.',
+            ], 422);
+        }
+
+        if (! $google2fa->verifyKey($user->two_factor_secret, $request->code)) {
+            return response()->json([
+                'message' => 'The verification code is invalid or has expired. Please try again.',
+                'errors'  => [
+                    'code' => ['The verification code is invalid or has expired. Please try again.'],
+                ],
+            ], 422);
+        }
+
+        Cache::forget($cache_key);
+
+        /** @var string $token */
+        $token = auth()->login($user);
+
+        return $this->respondWithToken($token, $user);
     }
 
     public function me(): JsonResponse

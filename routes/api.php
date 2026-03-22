@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceControll
 use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
+use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
 use App\Http\Controllers\Client\Stripe\StripeController;
@@ -46,6 +47,7 @@ Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEm
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
+    Route::post('2fa-challenge', [AuthController::class, 'twoFactorChallenge']);
     Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
     Route::post('reset-password',  [PasswordResetController::class, 'resetPassword']);
 
@@ -282,4 +284,12 @@ Route::middleware('auth:api')->group(function () {
 
     // Broadcasting auth (JWT-based)
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
+
+    // Two-factor authentication
+    Route::prefix('2fa')->group(function () {
+        Route::get('/status',  [TwoFactorController::class, 'status']);
+        Route::post('/setup',  [TwoFactorController::class, 'setup']);
+        Route::post('/verify', [TwoFactorController::class, 'verify']);
+        Route::post('/disable',[TwoFactorController::class, 'disable']);
+    });
 });

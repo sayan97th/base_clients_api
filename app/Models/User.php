@@ -31,11 +31,17 @@ class User extends Authenticatable implements JWTSubject
         'profile_photo_path',
         'organization_id',
         'stripe_customer_id',
+        'two_factor_secret',
+        'two_factor_enabled',
+        'two_factor_enabled_at',
+        'two_factor_recovery_codes',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
+        'two_factor_recovery_codes',
     ];
 
     protected $appends = [
@@ -45,8 +51,11 @@ class User extends Authenticatable implements JWTSubject
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'email_verified_at'     => 'datetime',
+            'password'              => 'hashed',
+            'two_factor_enabled'    => 'boolean',
+            'two_factor_enabled_at' => 'datetime',
+            'two_factor_secret'     => 'encrypted',
         ];
     }
 

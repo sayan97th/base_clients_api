@@ -15,7 +15,13 @@ class OrderController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $orders = LinkBuildingOrder::with(['user', 'items', 'billing', 'invoice', 'orderCoupons.coupon'])
+        $orders = LinkBuildingOrder::with([
+            'user:id,first_name,last_name,email',
+            'items',
+            'billing',
+            'invoice',
+            'orderCoupons.coupon',
+        ])
             ->latest()
             ->paginate(15);
 
@@ -44,7 +50,6 @@ class OrderController extends Controller
             'invoice.user:id,first_name,last_name,email',
             'invoice.lineItems',
             'invoice.billedTo',
-            'invoice.order.orderCoupons.coupon',
         ])->find($id);
 
         if (! $order) {
@@ -56,30 +61,7 @@ class OrderController extends Controller
 
     private function formatOrderSummary(LinkBuildingOrder $order): array
     {
-        $subtotal_before_discount = $order->items->sum('subtotal');
-
-        return [
-            'id'                       => $order->id,
-            'user_id'                  => $order->user_id,
-            'order_title'              => $order->order_title,
-            'order_notes'              => $order->order_notes,
-            'subtotal_before_discount' => $subtotal_before_discount,
-            'total_amount'             => $order->total_amount,
-            'status'                   => $order->status,
-            'payment_intent_id'        => $order->payment_intent_id,
-            'created_at'               => $order->created_at,
-            'updated_at'               => $order->updated_at,
-            'user'                     => $order->user,
-            'items'                    => $order->items,
-            'billing'                  => $order->billing,
-            'invoice'                  => $order->invoice,
-            'coupons'                  => $this->buildOrderCoupons($order),
-        ];
-    }
-
-    private function formatOrderDetail(LinkBuildingOrder $order): array
-    {
-        $subtotal_before_discount = $order->items->sum('subtotal');
+        $subtotal_before_discount = $order->subtotal_before_discount ?? $order->items->sum('subtotal');
 
         $user    = $order->user;
         $billing = $order->billing;
@@ -90,7 +72,7 @@ class OrderController extends Controller
             'user_id'                  => $order->user_id,
             'order_title'              => $order->order_title,
             'order_notes'              => $order->order_notes,
-            'subtotal_before_discount' => $subtotal_before_discount,
+            'subtotal_before_discount' => (float) $subtotal_before_discount,
             'total_amount'             => $order->total_amount,
             'status'                   => $order->status,
             'payment_intent_id'        => $order->payment_intent_id,
@@ -117,12 +99,63 @@ class OrderController extends Controller
                 'country'     => $billing->country,
                 'postal_code' => $billing->postal_code,
             ] : null,
-            'invoice'  => $invoice ? $this->formatInvoiceForOrder($invoice) : null,
-            'coupons'  => $this->buildOrderCoupons($order),
+            'invoice' => $invoice ? [
+                'id'             => $invoice->id,
+                'unique_id'      => $invoice->unique_id,
+                'invoice_number' => $invoice->invoice_number,
+                'status'         => $invoice->status,
+                'total_amount'   => $invoice->total_amount,
+            ] : null,
+            'coupons' => $this->buildOrderCoupons($order),
         ];
     }
 
-    private function formatInvoiceForOrder(Invoice $invoice): array
+    private function formatOrderDetail(LinkBuildingOrder $order): array
+    {
+        $subtotal_before_discount = $order->subtotal_before_discount ?? $order->items->sum('subtotal');
+
+        $user    = $order->user;
+        $billing = $order->billing;
+        $invoice = $order->invoice;
+
+        return [
+            'id'                       => $order->id,
+            'user_id'                  => $order->user_id,
+            'order_title'              => $order->order_title,
+            'order_notes'              => $order->order_notes,
+            'subtotal_before_discount' => (float) $subtotal_before_discount,
+            'total_amount'             => $order->total_amount,
+            'status'                   => $order->status,
+            'payment_intent_id'        => $order->payment_intent_id,
+            'created_at'               => $order->created_at,
+            'updated_at'               => $order->updated_at,
+            'user' => $user ? [
+                'id'         => $user->id,
+                'first_name' => $user->first_name,
+                'last_name'  => $user->last_name,
+                'email'      => $user->email,
+            ] : null,
+            'items' => $order->items->map(fn ($item) => [
+                'id'         => $item->id,
+                'dr_tier_id' => $item->dr_tier_id,
+                'quantity'   => $item->quantity,
+                'unit_price' => $item->unit_price,
+                'subtotal'   => $item->subtotal,
+            ])->values(),
+            'billing' => $billing ? [
+                'company'     => $billing->company,
+                'address'     => $billing->address,
+                'city'        => $billing->city,
+                'state'       => $billing->state,
+                'country'     => $billing->country,
+                'postal_code' => $billing->postal_code,
+            ] : null,
+            'invoice' => $invoice ? $this->formatInvoiceForOrder($invoice, $order) : null,
+            'coupons' => $this->buildOrderCoupons($order),
+        ];
+    }
+
+    private function formatInvoiceForOrder(Invoice $invoice, LinkBuildingOrder $order): array
     {
         $billed_to = $invoice->billedTo;
         $inv_user  = $invoice->user;
@@ -166,7 +199,7 @@ class OrderController extends Controller
                 'state'               => $billed_to->state,
                 'country'             => $billed_to->country,
             ] : null,
-            'coupon_discounts' => $this->buildCouponDiscountsFromOrder($invoice->order),
+            'coupon_discounts' => $this->buildCouponDiscountsFromOrder($order),
         ];
     }
 

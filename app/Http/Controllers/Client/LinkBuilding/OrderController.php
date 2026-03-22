@@ -152,14 +152,15 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $user, $calculated_total, $applied_coupons, $payment_intent_id, $dr_tiers_map) {
+        $order = DB::transaction(function () use ($request, $user, $subtotal, $calculated_total, $applied_coupons, $payment_intent_id, $dr_tiers_map) {
             $order = LinkBuildingOrder::create([
-                'user_id'           => $user->id,
-                'order_title'       => $request->order_title,
-                'order_notes'       => $request->order_notes,
-                'total_amount'      => $calculated_total,
-                'status'            => 'pending',
-                'payment_intent_id' => $payment_intent_id,
+                'user_id'                  => $user->id,
+                'order_title'              => $request->order_title,
+                'order_notes'              => $request->order_notes,
+                'subtotal_before_discount' => $subtotal,
+                'total_amount'             => $calculated_total,
+                'status'                   => 'pending',
+                'payment_intent_id'        => $payment_intent_id,
             ]);
 
             foreach ($applied_coupons as $entry) {

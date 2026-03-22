@@ -19,6 +19,7 @@ class LinkBuildingOrder extends Model
         'user_id',
         'order_title',
         'order_notes',
+        'subtotal_before_discount',
         'total_amount',
         'status',
         'payment_intent_id',
@@ -30,9 +31,10 @@ class LinkBuildingOrder extends Model
     protected function casts(): array
     {
         return [
-            'total_amount'           => 'float',
-            'coupon_discount_amount' => 'float',
-            'is_hidden'              => 'boolean',
+            'subtotal_before_discount' => 'float',
+            'total_amount'             => 'float',
+            'coupon_discount_amount'   => 'float',
+            'is_hidden'                => 'boolean',
         ];
     }
 

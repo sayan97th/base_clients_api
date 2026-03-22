@@ -25,6 +25,7 @@ class Invoice extends Model
         'payment_method',
         'currency_type',
         'subtotal_amount',
+        'discount_amount',
         'total_amount',
         'credit_amount',
         'date_issued',
@@ -36,6 +37,7 @@ class Invoice extends Model
     {
         return [
             'subtotal_amount' => 'float',
+            'discount_amount' => 'float',
             'total_amount'    => 'float',
             'credit_amount'   => 'float',
             'date_issued'     => 'datetime',

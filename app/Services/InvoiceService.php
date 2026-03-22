@@ -21,14 +21,15 @@ class InvoiceService
         string $currency_type = 'usd',
         float $credit_amount = 0.0
     ): Invoice {
-        $order->loadMissing(['items.drTier', 'billing']);
+        $order->loadMissing(['items.drTier', 'billing', 'orderCoupons']);
 
-        $subtotal_amount = $order->items->sum('subtotal');
-        $total_amount    = $order->total_amount;
+        $subtotal_amount  = $order->items->sum('subtotal');
+        $discount_amount  = $order->orderCoupons->sum('discount_amount');
+        $total_amount     = $order->total_amount;
 
         $invoice = DB::transaction(function () use (
             $user, $order, $payment_method, $currency_type,
-            $subtotal_amount, $total_amount, $credit_amount
+            $subtotal_amount, $discount_amount, $total_amount, $credit_amount
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
@@ -41,8 +42,9 @@ class InvoiceService
                 'status'          => 'paid',
                 'payment_method'  => $payment_method,
                 'currency_type'   => $currency_type,
-                'subtotal_amount' => $subtotal_amount,
-                'total_amount'    => $total_amount,
+                'subtotal_amount'  => $subtotal_amount,
+                'discount_amount'  => $discount_amount,
+                'total_amount'     => $total_amount,
                 'credit_amount'   => $credit_amount,
                 'date_issued'     => now(),
                 'date_due'        => now()->addDays(30),

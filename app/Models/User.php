@@ -31,6 +31,7 @@ class User extends Authenticatable implements JWTSubject
         'profile_photo_path',
         'organization_id',
         'stripe_customer_id',
+        'is_active',
         'two_factor_secret',
         'two_factor_enabled',
         'two_factor_enabled_at',
@@ -53,10 +54,16 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at'     => 'datetime',
             'password'              => 'hashed',
+            'is_active'             => 'boolean',
             'two_factor_enabled'    => 'boolean',
             'two_factor_enabled_at' => 'datetime',
             'two_factor_secret'     => 'encrypted',
         ];
+    }
+
+    public function bans(): HasMany
+    {
+        return $this->hasMany(UserBan::class);
     }
 
     public function organization(): BelongsTo

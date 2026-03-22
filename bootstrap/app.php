@@ -14,9 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'role' => \App\Http\Middleware\CheckRole::class,
-            'permission' => \App\Http\Middleware\CheckPermission::class,
+            'role'            => \App\Http\Middleware\CheckRole::class,
+            'permission'      => \App\Http\Middleware\CheckPermission::class,
             'team.permission' => \App\Http\Middleware\CheckTeamPermission::class,
+            'active'          => \App\Http\Middleware\EnsureUserIsActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

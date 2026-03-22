@@ -50,12 +50,24 @@ class AuthController extends Controller
     {
         $credentials = $request->validated();
 
+        $existing_user = User::where('email', $credentials['email'])->first();
+
+        if ($existing_user && ! $existing_user->is_active) {
+            return response()->json([
+                'message' => 'Your account has been disabled. Please contact support if you believe this is a mistake.',
+                'code'    => 'account_disabled',
+            ], 403);
+        }
+
         $token = auth()->attempt($credentials);
 
         if (! $token) {
             return response()->json([
-                'message' => 'Invalid credentials.',
-            ], 401);
+                'message' => 'The provided credentials are incorrect.',
+                'errors'  => [
+                    'email' => ['The provided credentials are incorrect.'],
+                ],
+            ], 422);
         }
 
         /** @var \App\Models\User $user */
@@ -204,6 +216,7 @@ class AuthController extends Controller
             'profile_photo_url' => $user->profile_photo_url,
             'organization_id' => $user->organization_id,
             'email_verified_at' => $user->email_verified_at,
+            'is_active' => $user->is_active,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,
             'roles' => $user->roles->map(fn ($role) => [

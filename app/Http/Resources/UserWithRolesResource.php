@@ -20,6 +20,7 @@ class UserWithRolesResource extends JsonResource
             'profile_photo_url' => $this->profile_photo_url,
             'organization_id'   => $this->organization_id,
             'email_verified_at' => $this->email_verified_at,
+            'is_active'         => $this->is_active,
             'created_at'        => $this->created_at,
             'updated_at'        => $this->updated_at,
             'roles'             => $this->roles->map(fn ($role) => [

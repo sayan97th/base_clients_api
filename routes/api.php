@@ -51,7 +51,7 @@ Route::prefix('auth')->group(function () {
     Route::post('forgot-password', [PasswordResetController::class, 'forgotPassword']);
     Route::post('reset-password',  [PasswordResetController::class, 'resetPassword']);
 
-    Route::middleware('auth:api')->group(function () {
+    Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('refresh', [AuthController::class, 'refresh']);
@@ -67,7 +67,7 @@ Route::prefix('admin')->group(function () {
 });
 
 // ─── Authenticated routes ─────────────────────────────────────────────────────
-Route::middleware('auth:api')->group(function () {
+Route::middleware(['auth:api', 'active'])->group(function () {
 
     // ── Admin routes (/admin/*) ────────────────────────────────────────────────
     Route::prefix('admin')->group(function () {
@@ -131,6 +131,12 @@ Route::middleware('auth:api')->group(function () {
             Route::get('users', [AdminUserController::class, 'index']);
             Route::get('users/{user_id}', [AdminUserController::class, 'show']);
             Route::get('users/{user_id}/orders', [AdminUserController::class, 'orders']);
+
+            // Ban / unban — super_admin and admin only
+            Route::middleware('role:super_admin,admin')->group(function () {
+                Route::patch('users/{user_id}/ban',   [AdminUserController::class, 'ban']);
+                Route::patch('users/{user_id}/unban', [AdminUserController::class, 'unban']);
+            });
             Route::get('organizations', [AdminOrganizationController::class, 'index']);
             Route::get('organizations/{id}', [AdminOrganizationController::class, 'show']);
             Route::put('organizations/{id}', [AdminOrganizationController::class, 'update']);

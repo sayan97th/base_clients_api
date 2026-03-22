@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\UserWithRolesResource;
 use App\Models\LinkBuildingOrder;
 use App\Models\User;
+use App\Models\UserBan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -63,6 +64,100 @@ class UserController extends Controller
         }
 
         return response()->json(new UserWithRolesResource($user));
+    }
+
+    /**
+     * PATCH /api/admin/users/{user_id}/ban
+     */
+    public function ban(Request $request, int $user_id): JsonResponse
+    {
+        $request->validate([
+            'reason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        /** @var \App\Models\User $actor */
+        $actor = auth()->user();
+
+        $user = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
+
+        if (! $user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        if ($actor->id === $user->id) {
+            return response()->json(['message' => 'You cannot disable your own account.'], 422);
+        }
+
+        if (! $user->is_active) {
+            return response()->json(['message' => 'This account is already disabled.'], 422);
+        }
+
+        $user_roles = $user->roles->pluck('name');
+
+        if ($actor->hasRole('admin')) {
+            $is_client_only = $user_roles->contains('client') && $user_roles->intersect(self::STAFF_ROLES)->isEmpty();
+
+            if (! $is_client_only) {
+                return response()->json(['message' => 'You do not have permission to disable this account.'], 403);
+            }
+        }
+
+        $user->update(['is_active' => false]);
+
+        UserBan::create([
+            'user_id'   => $user->id,
+            'banned_by' => $actor->id,
+            'reason'    => $request->input('reason'),
+            'action'    => 'ban',
+        ]);
+
+        return response()->json([
+            'message' => 'Account has been disabled successfully.',
+            'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
+        ]);
+    }
+
+    /**
+     * PATCH /api/admin/users/{user_id}/unban
+     */
+    public function unban(int $user_id): JsonResponse
+    {
+        /** @var \App\Models\User $actor */
+        $actor = auth()->user();
+
+        $user = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
+
+        if (! $user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        if ($user->is_active) {
+            return response()->json(['message' => 'This account is already active.'], 422);
+        }
+
+        $user_roles = $user->roles->pluck('name');
+
+        if ($actor->hasRole('admin')) {
+            $is_client_only = $user_roles->contains('client') && $user_roles->intersect(self::STAFF_ROLES)->isEmpty();
+
+            if (! $is_client_only) {
+                return response()->json(['message' => 'You do not have permission to re-enable this account.'], 403);
+            }
+        }
+
+        $user->update(['is_active' => true]);
+
+        UserBan::create([
+            'user_id'   => $user->id,
+            'banned_by' => $actor->id,
+            'reason'    => null,
+            'action'    => 'unban',
+        ]);
+
+        return response()->json([
+            'message' => 'Account has been re-enabled successfully.',
+            'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
+        ]);
     }
 
     /**

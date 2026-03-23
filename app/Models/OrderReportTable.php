@@ -13,6 +13,7 @@ class OrderReportTable extends Model
 
     protected $fillable = [
         'report_id',
+        'order_item_id',
         'title',
         'description',
     ];

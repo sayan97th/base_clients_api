@@ -15,6 +15,7 @@ class OrderReportRow extends Model
     protected $fillable = [
         'table_id',
         'order_placement_id',
+        'position_index',
         'order_number',
         'link_type',
         'keyword',
@@ -30,6 +31,7 @@ class OrderReportRow extends Model
     protected function casts(): array
     {
         return [
+            'position_index' => 'integer',
             'exact_match'    => 'boolean',
             'request_date'   => 'date',
             'live_link_date' => 'date',

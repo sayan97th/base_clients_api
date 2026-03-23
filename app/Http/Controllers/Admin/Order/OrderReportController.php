@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Order;
 use App\Http\Controllers\Controller;
 use App\Mail\OrderReportMail;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderItem;
 use App\Models\OrderReport;
 use App\Models\OrderReportRow;
 use App\Models\OrderReportTable;
@@ -274,6 +275,102 @@ class OrderReportController extends Controller
         return response()->json([
             'message' => 'Report sent successfully.',
             'sent_at' => $report->fresh()->sent_at,
+        ]);
+    }
+
+    /**
+     * POST /api/admin/orders/{order_id}/report/import
+     *
+     * Imports (or re-imports) report tables and rows from the order's original
+     * LinkBuildingOrderItems using a createOrUpdate pattern.
+     *
+     * - If a table for the item already exists it is reused.
+     * - If a row for a given position already exists and its status is "live",
+     *   it is left untouched. Otherwise the base fields are updated.
+     * - No existing data is ever deleted.
+     */
+    public function importItems(Request $request, string $order_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::with(['items.drTier'])->find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'item_ids'   => ['required', 'array', 'min:1'],
+            'item_ids.*' => ['string', 'exists:link_building_order_items,id'],
+        ]);
+
+        // Ensure every requested item belongs to this order
+        $order_item_ids = $order->items->pluck('id')->all();
+        $invalid_ids    = array_diff($validated['item_ids'], $order_item_ids);
+
+        if (! empty($invalid_ids)) {
+            return response()->json([
+                'message' => 'One or more item IDs do not belong to this order.',
+                'errors'  => [
+                    'item_ids' => array_values(array_map(
+                        fn ($id) => "Item ID {$id} does not belong to order {$order_id}.",
+                        $invalid_ids
+                    )),
+                ],
+            ], 422);
+        }
+
+        $report         = OrderReport::firstOrCreate(['order_id' => $order->id]);
+        $imported_count = 0;
+        $order_number   = 'ORD-' . strtoupper(substr($order->id, 0, 8));
+
+        foreach ($validated['item_ids'] as $item_id) {
+            /** @var LinkBuildingOrderItem $item */
+            $item = $order->items->firstWhere('id', $item_id);
+            $tier = $item->drTier;
+
+            $table_title = $tier?->dr_label ?? 'Links';
+
+            $table = OrderReportTable::firstOrCreate(
+                ['report_id' => $report->id, 'order_item_id' => $item->id],
+                ['title' => $table_title]
+            );
+
+            for ($position = 1; $position <= $item->quantity; $position++) {
+                $row = OrderReportRow::firstOrCreate(
+                    ['table_id' => $table->id, 'position_index' => $position],
+                    [
+                        'order_number' => $order_number,
+                        'link_type'    => $table_title,
+                        'keyword'      => '',
+                        'landing_page' => '',
+                        'exact_match'  => false,
+                        'request_date' => $order->created_at->toDateString(),
+                        'status'       => 'pending',
+                        'live_link'    => null,
+                        'live_link_date' => null,
+                        'dr'           => null,
+                    ]
+                );
+
+                if ($row->wasRecentlyCreated) {
+                    $imported_count++;
+                } elseif ($row->status !== 'live') {
+                    // Update base fields only, leave delivery fields intact
+                    $row->update([
+                        'order_number' => $order_number,
+                        'link_type'    => $table_title,
+                        'request_date' => $order->created_at->toDateString(),
+                    ]);
+                    $imported_count++;
+                }
+            }
+        }
+
+        $report->load('tables.rows');
+
+        return response()->json([
+            'message'        => 'Import completed successfully.',
+            'imported_count' => $imported_count,
+            'report'         => $this->buildReportResponse($report),
         ]);
     }
 

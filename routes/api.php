@@ -154,8 +154,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('orders/{order_id}/status', [AdminOrderUpdateController::class, 'updateStatus']);
 
             // Order reports
-            Route::get('orders/{order_id}/report',         [AdminOrderReportController::class, 'show']);
-            Route::post('orders/{order_id}/report/send',   [AdminOrderReportController::class, 'send']);
+            Route::get('orders/{order_id}/report',          [AdminOrderReportController::class, 'show']);
+            Route::post('orders/{order_id}/report/send',    [AdminOrderReportController::class, 'send']);
+            Route::post('orders/{order_id}/report/import',  [AdminOrderReportController::class, 'importItems']);
 
             // Report tables
             Route::post('orders/{order_id}/report/tables',                [AdminOrderReportController::class, 'createTable']);

@@ -154,10 +154,18 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('orders/{order_id}/status', [AdminOrderUpdateController::class, 'updateStatus']);
 
             // Order reports
-            Route::get('orders/{order}/report', [AdminOrderReportController::class, 'show']);
-            Route::patch('orders/{order}/report/rows/{row}', [AdminOrderReportController::class, 'updateRow']);
-            Route::patch('orders/{order}/report/tables/{table}/rows/{row}', [AdminOrderReportController::class, 'updateRow']);
-            Route::post('orders/{order}/report/send', [AdminOrderReportController::class, 'send']);
+            Route::get('orders/{order_id}/report',         [AdminOrderReportController::class, 'show']);
+            Route::post('orders/{order_id}/report/send',   [AdminOrderReportController::class, 'send']);
+
+            // Report tables
+            Route::post('orders/{order_id}/report/tables',                [AdminOrderReportController::class, 'createTable']);
+            Route::patch('orders/{order_id}/report/tables/{table_id}',    [AdminOrderReportController::class, 'updateTable']);
+            Route::delete('orders/{order_id}/report/tables/{table_id}',   [AdminOrderReportController::class, 'deleteTable']);
+
+            // Report rows
+            Route::post('orders/{order_id}/report/tables/{table_id}/rows',               [AdminOrderReportController::class, 'createRow']);
+            Route::patch('orders/{order_id}/report/tables/{table_id}/rows/{row_id}',     [AdminOrderReportController::class, 'updateRow']);
+            Route::delete('orders/{order_id}/report/tables/{table_id}/rows/{row_id}',    [AdminOrderReportController::class, 'deleteRow']);
 
             // Invitation management — super_admin and admin only
             Route::middleware('role:super_admin,admin')->group(function () {

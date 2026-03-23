@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Admin\Order;
 use App\Http\Controllers\Controller;
 use App\Mail\OrderReportMail;
 use App\Models\LinkBuildingOrder;
-use App\Models\LinkBuildingOrderItem;
-use App\Models\LinkBuildingOrderPlacement;
 use App\Models\OrderReport;
 use App\Models\OrderReportRow;
+use App\Models\OrderReportTable;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -16,104 +16,235 @@ use Illuminate\Support\Facades\Mail;
 class OrderReportController extends Controller
 {
     /**
-     * GET /api/admin/orders/{order}/report
+     * GET /api/admin/orders/{order_id}/report
      *
-     * Fetch the full report for a given order. Tables are virtual (derived from
-     * order items + dr_tiers). Rows are auto-created for every placement that
-     * does not yet have an order_report_rows record.
+     * Returns the full report for a given order including all tables and rows.
+     * Auto-creates an empty report record if none exists yet.
      */
-    public function show(string $order): JsonResponse
+    public function show(string $order_id): JsonResponse
     {
-        $link_building_order = LinkBuildingOrder::with([
-            'items.drTier',
-            'items.placements.reportRow',
-        ])->find($order);
+        $order = LinkBuildingOrder::find($order_id);
 
-        if (! $link_building_order) {
+        if (! $order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
-        $report = OrderReport::firstOrCreate(['order_id' => $link_building_order->id]);
+        $report = OrderReport::with('tables.rows')
+            ->firstOrCreate(['order_id' => $order->id]);
 
-        // Auto-create a report row for every placement that doesn't have one yet
-        foreach ($link_building_order->items as $item) {
-            foreach ($item->placements as $placement) {
-                if (! $placement->reportRow) {
-                    $row = OrderReportRow::create(['order_placement_id' => $placement->id]);
-                    $placement->setRelation('reportRow', $row);
-                }
-            }
-        }
-
-        return response()->json(
-            $this->buildReportResponse($report, $link_building_order)
-        );
+        return response()->json($this->buildReportResponse($report));
     }
 
     /**
-     * PATCH /api/admin/orders/{order}/report/rows/{row}
+     * POST /api/admin/orders/{order_id}/report/tables
      *
-     * Update the delivery details (status, live_link, live_link_date, dr) of a
-     * single report row. Read-only fields come from the linked placement.
+     * Adds a new empty table to the order report.
      */
-    public function updateRow(Request $request, string $order, string $row_or_table, string $row = ''): JsonResponse
+    public function createTable(Request $request, string $order_id): JsonResponse
     {
-        // Supports both URL patterns:
-        //   PATCH orders/{order}/report/rows/{row}          → $row_or_table = row_id, $row = ''
-        //   PATCH orders/{order}/report/tables/{table}/rows/{row} → $row_or_table = table_id, $row = row_id
-        $row_id = $row !== '' ? $row : $row_or_table;
+        $order = LinkBuildingOrder::find($order_id);
 
-        $link_building_order = LinkBuildingOrder::with(['items.placements'])->find($order);
-
-        if (! $link_building_order) {
+        if (! $order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
-        $report_row = OrderReportRow::with([
-            'placement.orderItem.drTier',
-        ])->find($row_id);
+        $report = OrderReport::firstOrCreate(['order_id' => $order->id]);
 
-        if (! $report_row) {
-            return response()->json(['message' => 'Row not found.'], 404);
+        $validated = $request->validate([
+            'title'       => ['required', 'string', 'max:500'],
+            'description' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $table = OrderReportTable::create([
+            'report_id'   => $report->id,
+            'title'       => $validated['title'],
+            'description' => $validated['description'] ?? null,
+        ]);
+
+        $table->load('rows');
+
+        return response()->json($this->buildTableResponse($table), 201);
+    }
+
+    /**
+     * PATCH /api/admin/orders/{order_id}/report/tables/{table_id}
+     *
+     * Updates the title and/or description of an existing report table.
+     */
+    public function updateTable(Request $request, string $order_id, string $table_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
         }
 
-        // Ownership check: row → placement → order_item → order
-        if ($report_row->placement->orderItem->order_id !== $link_building_order->id) {
-            return response()->json(['message' => 'This row does not belong to this order.'], 403);
+        $table = $this->findTableForOrder($order_id, $table_id);
+
+        if (! $table) {
+            return response()->json(['message' => 'Table not found.'], 404);
         }
 
         $validated = $request->validate([
-            'status'         => ['sometimes', 'in:pending,live,rejected'],
+            'title'       => ['sometimes', 'string', 'max:500'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ]);
+
+        $table->update($validated);
+        $table->load('rows');
+
+        return response()->json($this->buildTableResponse($table));
+    }
+
+    /**
+     * DELETE /api/admin/orders/{order_id}/report/tables/{table_id}
+     *
+     * Permanently deletes a report table and all its rows.
+     */
+    public function deleteTable(string $order_id, string $table_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $table = $this->findTableForOrder($order_id, $table_id);
+
+        if (! $table) {
+            return response()->json(['message' => 'Table not found.'], 404);
+        }
+
+        $table->delete();
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * POST /api/admin/orders/{order_id}/report/tables/{table_id}/rows
+     *
+     * Creates a new row inside a specific report table.
+     */
+    public function createRow(Request $request, string $order_id, string $table_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $table = $this->findTableForOrder($order_id, $table_id);
+
+        if (! $table) {
+            return response()->json(['message' => 'Table not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'order_number'   => ['required', 'string', 'max:100'],
+            'link_type'      => ['required', 'string', 'max:200'],
+            'keyword'        => ['required', 'string', 'max:500'],
+            'landing_page'   => ['required', 'url', 'max:2048'],
+            'exact_match'    => ['required', 'boolean'],
+            'request_date'   => ['required', 'date_format:Y-m-d'],
+            'status'         => ['required', 'in:' . implode(',', OrderReportRow::STATUSES)],
+            'live_link'      => ['nullable', 'url', 'max:2048'],
+            'live_link_date' => ['nullable', 'date_format:Y-m-d'],
+            'dr'             => ['nullable', 'integer', 'between:0,100'],
+        ]);
+
+        $row = OrderReportRow::create(array_merge($validated, ['table_id' => $table->id]));
+
+        return response()->json($this->buildRowResponse($row), 201);
+    }
+
+    /**
+     * PATCH /api/admin/orders/{order_id}/report/tables/{table_id}/rows/{row_id}
+     *
+     * Updates one or more fields of an existing report row.
+     */
+    public function updateRow(Request $request, string $order_id, string $table_id, string $row_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $table = $this->findTableForOrder($order_id, $table_id);
+
+        if (! $table) {
+            return response()->json(['message' => 'Table not found.'], 404);
+        }
+
+        $row = OrderReportRow::where('id', $row_id)
+            ->where('table_id', $table->id)
+            ->first();
+
+        if (! $row) {
+            return response()->json(['message' => 'Row not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'order_number'   => ['sometimes', 'string', 'max:100'],
+            'link_type'      => ['sometimes', 'string', 'max:200'],
+            'keyword'        => ['sometimes', 'string', 'max:500'],
+            'landing_page'   => ['sometimes', 'url', 'max:2048'],
+            'exact_match'    => ['sometimes', 'boolean'],
+            'request_date'   => ['sometimes', 'date_format:Y-m-d'],
+            'status'         => ['sometimes', 'in:' . implode(',', OrderReportRow::STATUSES)],
             'live_link'      => ['sometimes', 'nullable', 'url', 'max:2048'],
             'live_link_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'dr'             => ['sometimes', 'nullable', 'integer', 'between:0,100'],
         ]);
 
-        $report_row->update($validated);
+        $row->update($validated);
 
-        $placement = $report_row->placement;
-        $link_type = $placement->orderItem->drTier?->dr_label ?? '';
-
-        return response()->json(
-            $this->buildRowResponse($report_row, $placement, $link_type, $link_building_order)
-        );
+        return response()->json($this->buildRowResponse($row->fresh()));
     }
 
     /**
-     * POST /api/admin/orders/{order}/report/send
+     * DELETE /api/admin/orders/{order_id}/report/tables/{table_id}/rows/{row_id}
      *
-     * Send the report email to the client and update sent_at.
+     * Permanently removes a single row from a report table.
+     */
+    public function deleteRow(string $order_id, string $table_id, string $row_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $table = $this->findTableForOrder($order_id, $table_id);
+
+        if (! $table) {
+            return response()->json(['message' => 'Table not found.'], 404);
+        }
+
+        $row = OrderReportRow::where('id', $row_id)
+            ->where('table_id', $table->id)
+            ->first();
+
+        if (! $row) {
+            return response()->json(['message' => 'Row not found.'], 404);
+        }
+
+        $row->delete();
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * POST /api/admin/orders/{order_id}/report/send
+     *
+     * Sends the completed order report to the client via email and records sent_at.
      * Can be called multiple times (resend).
      */
-    public function send(Request $request, string $order): JsonResponse
+    public function send(Request $request, string $order_id): JsonResponse
     {
-        $link_building_order = LinkBuildingOrder::with([
-            'user',
-            'items.drTier',
-            'items.placements.reportRow',
-        ])->find($order);
+        $order = LinkBuildingOrder::with('user')->find($order_id);
 
-        if (! $link_building_order) {
+        if (! $order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
@@ -121,25 +252,16 @@ class OrderReportController extends Controller
             'message' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $report = OrderReport::firstOrCreate(['order_id' => $link_building_order->id]);
+        $report = OrderReport::with('tables.rows')
+            ->firstOrCreate(['order_id' => $order->id]);
 
-        // Ensure all rows exist before sending
-        foreach ($link_building_order->items as $item) {
-            foreach ($item->placements as $placement) {
-                if (! $placement->reportRow) {
-                    $row = OrderReportRow::create(['order_placement_id' => $placement->id]);
-                    $placement->setRelation('reportRow', $row);
-                }
-            }
-        }
-
-        $report_data    = $this->buildReportResponse($report, $link_building_order);
+        $report_data    = $this->buildReportResponse($report);
         $custom_message = $validated['message'] ?? null;
-        $client         = $link_building_order->user;
+        $client         = $order->user;
 
         try {
             Mail::to($client->email)->send(
-                new OrderReportMail($report_data, $link_building_order, $custom_message)
+                new OrderReportMail($report_data, $order, $custom_message)
             );
         } catch (\Throwable $e) {
             return response()->json([
@@ -158,41 +280,25 @@ class OrderReportController extends Controller
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     /**
-     * Assemble the full report payload used by both show() and send().
+     * Find a report table that belongs to the given order (via the order's report).
      */
-    private function buildReportResponse(OrderReport $report, LinkBuildingOrder $order): array
+    private function findTableForOrder(string $order_id, string $table_id): ?OrderReportTable
     {
-        $global_row_number = 1;
+        return OrderReportTable::whereHas('report', function ($query) use ($order_id) {
+            $query->where('order_id', $order_id);
+        })->where('id', $table_id)->first();
+    }
 
-        $tables = $order->items->map(
-            function (LinkBuildingOrderItem $item) use (&$global_row_number, $order) {
-                $link_type = $item->drTier?->dr_label ?? '';
-
-                $rows = $item->placements->map(
-                    function (LinkBuildingOrderPlacement $placement) use ($link_type, &$global_row_number, $order) {
-                        $order_number = 'BL-' . str_pad($global_row_number, 5, '0', STR_PAD_LEFT);
-                        $global_row_number++;
-
-                        return $this->buildRowResponse(
-                            $placement->reportRow,
-                            $placement,
-                            $link_type,
-                            $order,
-                            $order_number
-                        );
-                    }
-                )->values()->all();
-
-                return [
-                    'id'          => $item->id,
-                    'title'       => $link_type,
-                    'description' => null,
-                    'rows'        => $rows,
-                    'created_at'  => $item->created_at,
-                    'updated_at'  => $item->updated_at,
-                ];
-            }
-        )->values()->all();
+    /**
+     * Assemble the full report payload (report meta + tables + rows).
+     * The report must have the tables.rows relation loaded.
+     */
+    private function buildReportResponse(OrderReport $report): array
+    {
+        $tables = ($report->relationLoaded('tables') ? $report->tables : $report->tables()->with('rows')->get())
+            ->map(fn (OrderReportTable $table) => $this->buildTableResponse($table))
+            ->values()
+            ->all();
 
         return [
             'id'         => $report->id,
@@ -205,59 +311,45 @@ class OrderReportController extends Controller
     }
 
     /**
-     * Build the JSON shape for a single row, combining placement (read-only)
-     * and report_row (editable) data.
-     *
-     * When called from buildReportResponse(), $order_number is already computed.
-     * When called from updateRow(), we derive it from the placement's position in the order.
+     * Assemble the JSON shape for a single table (including its rows).
+     * The table must have the rows relation loaded.
      */
-    private function buildRowResponse(
-        OrderReportRow $report_row,
-        LinkBuildingOrderPlacement $placement,
-        string $link_type,
-        LinkBuildingOrder $order,
-        ?string $order_number = null
-    ): array {
-        if ($order_number === null) {
-            $order_number = $this->deriveOrderNumber($order, $placement->id);
-        }
+    private function buildTableResponse(OrderReportTable $table): array
+    {
+        $rows = ($table->relationLoaded('rows') ? $table->rows : $table->rows()->get())
+            ->map(fn (OrderReportRow $row) => $this->buildRowResponse($row))
+            ->values()
+            ->all();
 
         return [
-            'id'             => $report_row->id,
-            'placement_id'   => $placement->id,
-            'order_number'   => $order_number,
-            'link_type'      => $link_type,
-            'keyword'        => $placement->keyword,
-            'landing_page'   => $placement->landing_page,
-            'exact_match'    => $placement->exact_match,
-            'request_date'   => $placement->created_at->format('Y-m-d'),
-            'status'         => $report_row->status,
-            'live_link'      => $report_row->live_link,
-            'live_link_date' => $report_row->live_link_date?->format('Y-m-d'),
-            'dr'             => $report_row->dr,
-            'created_at'     => $report_row->created_at,
-            'updated_at'     => $report_row->updated_at,
+            'id'          => $table->id,
+            'title'       => $table->title,
+            'description' => $table->description,
+            'rows'        => $rows,
+            'created_at'  => $table->created_at,
+            'updated_at'  => $table->updated_at,
         ];
     }
 
     /**
-     * Compute the human-readable order number for a placement by finding its
-     * global sequential position across all items of the order.
-     * The order must have items.placements already loaded.
+     * Assemble the JSON shape for a single row.
      */
-    private function deriveOrderNumber(LinkBuildingOrder $order, string $placement_id): string
+    private function buildRowResponse(OrderReportRow $row): array
     {
-        $counter = 1;
-
-        foreach ($order->items as $item) {
-            foreach ($item->placements as $placement) {
-                if ($placement->id === $placement_id) {
-                    return 'BL-' . str_pad($counter, 5, '0', STR_PAD_LEFT);
-                }
-                $counter++;
-            }
-        }
-
-        return 'BL-00000';
+        return [
+            'id'             => $row->id,
+            'order_number'   => $row->order_number,
+            'link_type'      => $row->link_type,
+            'keyword'        => $row->keyword,
+            'landing_page'   => $row->landing_page,
+            'exact_match'    => $row->exact_match,
+            'request_date'   => $row->request_date ? Carbon::parse($row->request_date)->format('Y-m-d\TH:i:s.000000\Z') : null,
+            'status'         => $row->status,
+            'live_link'      => $row->live_link,
+            'live_link_date' => $row->live_link_date ? Carbon::parse($row->live_link_date)->format('Y-m-d\TH:i:s.000000\Z') : null,
+            'dr'             => $row->dr,
+            'created_at'     => $row->created_at,
+            'updated_at'     => $row->updated_at,
+        ];
     }
 }

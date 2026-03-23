@@ -79,7 +79,19 @@ class OrderUpdateController extends Controller
     {
         $order = LinkBuildingOrder::with('user')->findOrFail($order_id);
 
-        $order->update(['status' => $request->input('status')]);
+        $new_status = $request->input('status');
+
+        $order->update(['status' => $new_status]);
+
+        // Record the status change as a timeline entry
+        LinkBuildingOrderUpdate::create([
+            'order_id'      => $order->id,
+            'created_by_id' => auth()->id(),
+            'title'         => 'Order status changed to ' . ucfirst($new_status),
+            'message'       => $this->statusChangeMessage($new_status),
+            'status_change' => $new_status,
+            'send_email'    => false,
+        ]);
 
         if ($request->boolean('notify_user') && $order->user) {
             Mail::to($order->user->email)->queue(
@@ -95,6 +107,17 @@ class OrderUpdateController extends Controller
             'message' => 'Order status updated successfully.',
             'status'  => $order->status,
         ]);
+    }
+
+    private function statusChangeMessage(string $status): string
+    {
+        return match ($status) {
+            'completed'  => 'Your order has been completed. Thank you for your business!',
+            'processing' => 'Great news — your order is now being actively processed.',
+            'cancelled'  => 'Your order has been cancelled. Please contact support if you have questions.',
+            'pending'    => 'Your order has been placed back in the pending queue.',
+            default      => 'Your order status has been updated to ' . ucfirst($status) . '.',
+        };
     }
 
     private function formatUpdate(LinkBuildingOrderUpdate $update): array

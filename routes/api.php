@@ -156,6 +156,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             // Order reports
             Route::get('orders/{order}/report', [AdminOrderReportController::class, 'show']);
             Route::patch('orders/{order}/report/rows/{row}', [AdminOrderReportController::class, 'updateRow']);
+            Route::patch('orders/{order}/report/tables/{table}/rows/{row}', [AdminOrderReportController::class, 'updateRow']);
             Route::post('orders/{order}/report/send', [AdminOrderReportController::class, 'send']);
 
             // Invitation management — super_admin and admin only

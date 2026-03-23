@@ -56,8 +56,13 @@ class OrderReportController extends Controller
      * Update the delivery details (status, live_link, live_link_date, dr) of a
      * single report row. Read-only fields come from the linked placement.
      */
-    public function updateRow(Request $request, string $order, string $row): JsonResponse
+    public function updateRow(Request $request, string $order, string $row_or_table, string $row = ''): JsonResponse
     {
+        // Supports both URL patterns:
+        //   PATCH orders/{order}/report/rows/{row}          → $row_or_table = row_id, $row = ''
+        //   PATCH orders/{order}/report/tables/{table}/rows/{row} → $row_or_table = table_id, $row = row_id
+        $row_id = $row !== '' ? $row : $row_or_table;
+
         $link_building_order = LinkBuildingOrder::with(['items.placements'])->find($order);
 
         if (! $link_building_order) {
@@ -66,7 +71,7 @@ class OrderReportController extends Controller
 
         $report_row = OrderReportRow::with([
             'placement.orderItem.drTier',
-        ])->find($row);
+        ])->find($row_id);
 
         if (! $report_row) {
             return response()->json(['message' => 'Row not found.'], 404);

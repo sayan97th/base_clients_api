@@ -104,7 +104,7 @@ class OrderUpdateController extends Controller
         }
 
         return response()->json([
-            'message' => 'Order status updated successfully.',
+            'message' => 'Order status updated to ' . $new_status . '.',
             'status'  => $order->status,
         ]);
     }

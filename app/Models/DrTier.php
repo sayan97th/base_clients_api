@@ -17,6 +17,8 @@ class DrTier extends Model
     protected $fillable = [
         'id',
         'dr_label',
+        'min_dr',
+        'max_dr',
         'traffic_range',
         'word_count',
         'price_per_link',
@@ -29,6 +31,8 @@ class DrTier extends Model
     protected function casts(): array
     {
         return [
+            'min_dr'          => 'integer',
+            'max_dr'          => 'integer',
             'word_count'      => 'integer',
             'price_per_link'  => 'float',
             'is_most_popular' => 'boolean',

@@ -53,8 +53,8 @@ class OrderReportController extends Controller
         $report = OrderReport::firstOrCreate(['order_id' => $order->id]);
 
         $validated = $request->validate([
-            'title'       => ['required', 'string', 'max:500'],
-            'description' => ['nullable', 'string', 'max:2000'],
+            'title'       => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $table = OrderReportTable::create([
@@ -88,8 +88,8 @@ class OrderReportController extends Controller
         }
 
         $validated = $request->validate([
-            'title'       => ['sometimes', 'string', 'max:500'],
-            'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'title'       => ['sometimes', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ]);
 
         $table->update($validated);
@@ -143,13 +143,13 @@ class OrderReportController extends Controller
 
         $validated = $request->validate([
             'order_number'   => ['required', 'string', 'max:100'],
-            'link_type'      => ['required', 'string', 'max:200'],
-            'keyword'        => ['required', 'string', 'max:500'],
-            'landing_page'   => ['required', 'url', 'max:2048'],
+            'link_type'      => ['required', 'string', 'max:100'],
+            'keyword'        => ['required', 'string', 'max:255'],
+            'landing_page'   => ['required', 'url', 'max:500'],
             'exact_match'    => ['required', 'boolean'],
             'request_date'   => ['required', 'date_format:Y-m-d'],
             'status'         => ['required', 'in:' . implode(',', OrderReportRow::STATUSES)],
-            'live_link'      => ['nullable', 'url', 'max:2048'],
+            'live_link'      => ['nullable', 'url', 'max:500'],
             'live_link_date' => ['nullable', 'date_format:Y-m-d'],
             'dr'             => ['nullable', 'integer', 'between:0,100'],
         ]);
@@ -188,13 +188,13 @@ class OrderReportController extends Controller
 
         $validated = $request->validate([
             'order_number'   => ['sometimes', 'string', 'max:100'],
-            'link_type'      => ['sometimes', 'string', 'max:200'],
-            'keyword'        => ['sometimes', 'string', 'max:500'],
-            'landing_page'   => ['sometimes', 'url', 'max:2048'],
+            'link_type'      => ['sometimes', 'string', 'max:100'],
+            'keyword'        => ['sometimes', 'string', 'max:255'],
+            'landing_page'   => ['sometimes', 'url', 'max:500'],
             'exact_match'    => ['sometimes', 'boolean'],
             'request_date'   => ['sometimes', 'date_format:Y-m-d'],
             'status'         => ['sometimes', 'in:' . implode(',', OrderReportRow::STATUSES)],
-            'live_link'      => ['sometimes', 'nullable', 'url', 'max:2048'],
+            'live_link'      => ['sometimes', 'nullable', 'url', 'max:500'],
             'live_link_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'dr'             => ['sometimes', 'nullable', 'integer', 'between:0,100'],
         ]);
@@ -341,10 +341,10 @@ class OrderReportController extends Controller
                 ['title' => $table_title]
             );
 
-            // Reuse or create the row for this specific placement
-            $row = OrderReportRow::where('order_placement_id', $placement->id)->first();
+            // Create row only if no row exists for this placement (idempotent)
+            $exists = OrderReportRow::where('order_placement_id', $placement->id)->exists();
 
-            if (! $row) {
+            if (! $exists) {
                 OrderReportRow::create([
                     'table_id'           => $table->id,
                     'order_placement_id' => $placement->id,
@@ -360,24 +360,14 @@ class OrderReportController extends Controller
                     'dr'                 => null,
                 ]);
                 $imported_count++;
-            } elseif ($row->status !== 'live') {
-                // Refresh placement data; never touch delivery fields
-                $row->update([
-                    'keyword'      => $placement->keyword ?? $row->keyword,
-                    'landing_page' => $placement->landing_page ?? $row->landing_page,
-                    'exact_match'  => $placement->exact_match,
-                    'link_type'    => $table_title,
-                    'order_number' => $order_number,
-                ]);
-                $imported_count++;
             }
-            // status === 'live': leave completely untouched
+            // Row already exists for this placement: skip (idempotent)
         }
 
         $report->load('tables.rows');
 
         return response()->json([
-            'message'        => 'Import completed successfully.',
+            'message'        => 'Successfully imported ' . $imported_count . ' rows.',
             'imported_count' => $imported_count,
             'report'         => $this->buildReportResponse($report),
         ]);

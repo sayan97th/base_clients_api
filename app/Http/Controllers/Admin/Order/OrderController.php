@@ -143,11 +143,10 @@ class OrderController extends Controller
                 'unit_price' => $item->unit_price,
                 'subtotal'   => $item->subtotal,
                 'dr_tier'    => $item->drTier ? [
-                    'id'             => $item->drTier->id,
-                    'dr_label'       => $item->drTier->dr_label,
-                    'traffic_range'  => $item->drTier->traffic_range,
-                    'word_count'     => $item->drTier->word_count,
-                    'price_per_link' => $item->drTier->price_per_link,
+                    'id'     => $item->drTier->id,
+                    'label'  => $item->drTier->dr_label,
+                    'min_dr' => $item->drTier->min_dr,
+                    'max_dr' => $item->drTier->max_dr,
                 ] : null,
                 'placements' => $item->placements->map(fn ($placement) => [
                     'id'           => $placement->id,

@@ -15,7 +15,7 @@ class UpdateOrderStatusRequest extends FormRequest
     {
         return [
             'status'      => ['required', 'string', 'in:pending,processing,completed,cancelled'],
-            'notify_user' => ['required', 'boolean'],
+            'notify_user' => ['sometimes', 'nullable', 'boolean'],
         ];
     }
 }

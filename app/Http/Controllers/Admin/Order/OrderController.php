@@ -44,7 +44,8 @@ class OrderController extends Controller
     {
         $order = LinkBuildingOrder::with([
             'user:id,first_name,last_name,email',
-            'items',
+            'items.drTier',
+            'items.placements',
             'billing',
             'orderCoupons.coupon',
             'invoice.user:id,first_name,last_name,email',
@@ -141,6 +142,20 @@ class OrderController extends Controller
                 'quantity'   => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'subtotal'   => $item->subtotal,
+                'dr_tier'    => $item->drTier ? [
+                    'id'             => $item->drTier->id,
+                    'dr_label'       => $item->drTier->dr_label,
+                    'traffic_range'  => $item->drTier->traffic_range,
+                    'word_count'     => $item->drTier->word_count,
+                    'price_per_link' => $item->drTier->price_per_link,
+                ] : null,
+                'placements' => $item->placements->map(fn ($placement) => [
+                    'id'           => $placement->id,
+                    'row_index'    => $placement->row_index,
+                    'keyword'      => $placement->keyword,
+                    'landing_page' => $placement->landing_page,
+                    'exact_match'  => $placement->exact_match,
+                ])->values(),
             ])->values(),
             'billing' => $billing ? [
                 'company'     => $billing->company,

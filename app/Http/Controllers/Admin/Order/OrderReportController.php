@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\OrderReportMail;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
+use App\Models\LinkBuildingOrderPlacement;
 use App\Models\OrderReport;
 use App\Models\OrderReportRow;
 use App\Models\OrderReportTable;
@@ -281,37 +282,41 @@ class OrderReportController extends Controller
     /**
      * POST /api/admin/orders/{order_id}/report/import
      *
-     * Imports (or re-imports) report tables and rows from the order's original
-     * LinkBuildingOrderItems using a createOrUpdate pattern.
+     * Imports (or re-imports) report rows from the order's original placements,
+     * pulling keyword, landing_page and exact_match from the purchase data.
      *
-     * - If a table for the item already exists it is reused.
-     * - If a row for a given position already exists and its status is "live",
-     *   it is left untouched. Otherwise the base fields are updated.
+     * - Selection is per-placement (not per-item), so the admin can choose a subset.
+     * - A ReportTable is created/reused per order item (grouped by dr_tier).
+     * - A ReportRow is created/reused per placement (keyed by order_placement_id).
+     * - Rows with status "live" are never modified.
      * - No existing data is ever deleted.
      */
     public function importItems(Request $request, string $order_id): JsonResponse
     {
-        $order = LinkBuildingOrder::with(['items.drTier'])->find($order_id);
+        $order = LinkBuildingOrder::with(['items.placements', 'items.drTier'])->find($order_id);
 
         if (! $order) {
             return response()->json(['message' => 'Order not found.'], 404);
         }
 
         $validated = $request->validate([
-            'item_ids'   => ['required', 'array', 'min:1'],
-            'item_ids.*' => ['string', 'exists:link_building_order_items,id'],
+            'placement_ids'   => ['required', 'array', 'min:1'],
+            'placement_ids.*' => ['string', 'exists:link_building_order_placements,id'],
         ]);
 
-        // Ensure every requested item belongs to this order
-        $order_item_ids = $order->items->pluck('id')->all();
-        $invalid_ids    = array_diff($validated['item_ids'], $order_item_ids);
+        // Collect all placement IDs that belong to this order
+        $valid_placement_ids = $order->items
+            ->flatMap(fn (LinkBuildingOrderItem $item) => $item->placements->pluck('id'))
+            ->all();
+
+        $invalid_ids = array_diff($validated['placement_ids'], $valid_placement_ids);
 
         if (! empty($invalid_ids)) {
             return response()->json([
-                'message' => 'One or more item IDs do not belong to this order.',
+                'message' => 'One or more placement IDs do not belong to this order.',
                 'errors'  => [
-                    'item_ids' => array_values(array_map(
-                        fn ($id) => "Item ID {$id} does not belong to order {$order_id}.",
+                    'placement_ids' => array_values(array_map(
+                        fn ($id) => "Placement {$id} does not belong to order {$order_id}.",
                         $invalid_ids
                     )),
                 ],
@@ -322,47 +327,51 @@ class OrderReportController extends Controller
         $imported_count = 0;
         $order_number   = 'ORD-' . strtoupper(substr($order->id, 0, 8));
 
-        foreach ($validated['item_ids'] as $item_id) {
-            /** @var LinkBuildingOrderItem $item */
-            $item = $order->items->firstWhere('id', $item_id);
-            $tier = $item->drTier;
+        foreach ($validated['placement_ids'] as $placement_id) {
+            /** @var LinkBuildingOrderPlacement $placement */
+            $placement = LinkBuildingOrderPlacement::with('orderItem.drTier')->find($placement_id);
+            $item      = $placement->orderItem;
+            $tier      = $item->drTier;
 
             $table_title = $tier?->dr_label ?? 'Links';
 
+            // Reuse or create the table for this order item
             $table = OrderReportTable::firstOrCreate(
                 ['report_id' => $report->id, 'order_item_id' => $item->id],
                 ['title' => $table_title]
             );
 
-            for ($position = 1; $position <= $item->quantity; $position++) {
-                $row = OrderReportRow::firstOrCreate(
-                    ['table_id' => $table->id, 'position_index' => $position],
-                    [
-                        'order_number' => $order_number,
-                        'link_type'    => $table_title,
-                        'keyword'      => '',
-                        'landing_page' => '',
-                        'exact_match'  => false,
-                        'request_date' => $order->created_at->toDateString(),
-                        'status'       => 'pending',
-                        'live_link'    => null,
-                        'live_link_date' => null,
-                        'dr'           => null,
-                    ]
-                );
+            // Reuse or create the row for this specific placement
+            $row = OrderReportRow::where('order_placement_id', $placement->id)->first();
 
-                if ($row->wasRecentlyCreated) {
-                    $imported_count++;
-                } elseif ($row->status !== 'live') {
-                    // Update base fields only, leave delivery fields intact
-                    $row->update([
-                        'order_number' => $order_number,
-                        'link_type'    => $table_title,
-                        'request_date' => $order->created_at->toDateString(),
-                    ]);
-                    $imported_count++;
-                }
+            if (! $row) {
+                OrderReportRow::create([
+                    'table_id'           => $table->id,
+                    'order_placement_id' => $placement->id,
+                    'order_number'       => $order_number,
+                    'link_type'          => $table_title,
+                    'keyword'            => $placement->keyword ?? '',
+                    'landing_page'       => $placement->landing_page ?? '',
+                    'exact_match'        => $placement->exact_match,
+                    'request_date'       => $order->created_at->toDateString(),
+                    'status'             => 'pending',
+                    'live_link'          => null,
+                    'live_link_date'     => null,
+                    'dr'                 => null,
+                ]);
+                $imported_count++;
+            } elseif ($row->status !== 'live') {
+                // Refresh placement data; never touch delivery fields
+                $row->update([
+                    'keyword'      => $placement->keyword ?? $row->keyword,
+                    'landing_page' => $placement->landing_page ?? $row->landing_page,
+                    'exact_match'  => $placement->exact_match,
+                    'link_type'    => $table_title,
+                    'order_number' => $order_number,
+                ]);
+                $imported_count++;
             }
+            // status === 'live': leave completely untouched
         }
 
         $report->load('tables.rows');

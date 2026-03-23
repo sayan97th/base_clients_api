@@ -142,19 +142,22 @@ class OrderReportController extends Controller
         }
 
         $validated = $request->validate([
-            'order_number'   => ['required', 'string', 'max:100'],
-            'link_type'      => ['required', 'string', 'max:100'],
-            'keyword'        => ['required', 'string', 'max:255'],
-            'landing_page'   => ['required', 'url', 'max:500'],
-            'exact_match'    => ['required', 'boolean'],
-            'request_date'   => ['required', 'date_format:Y-m-d'],
-            'status'         => ['required', 'in:' . implode(',', OrderReportRow::STATUSES)],
-            'live_link'      => ['nullable', 'url', 'max:500'],
+            'order_number'   => ['nullable', 'string', 'max:100'],
+            'link_type'      => ['nullable', 'string', 'max:200'],
+            'keyword'        => ['nullable', 'string', 'max:500'],
+            'landing_page'   => ['nullable', 'url', 'max:2048'],
+            'exact_match'    => ['nullable', 'boolean'],
+            'request_date'   => ['nullable', 'date_format:Y-m-d'],
+            'status'         => ['nullable', 'in:' . implode(',', OrderReportRow::STATUSES)],
+            'live_link'      => ['nullable', 'url', 'max:2048'],
             'live_link_date' => ['nullable', 'date_format:Y-m-d'],
             'dr'             => ['nullable', 'integer', 'between:0,100'],
         ]);
 
-        $row = OrderReportRow::create(array_merge($validated, ['table_id' => $table->id]));
+        $row = OrderReportRow::create(array_merge($validated, [
+            'table_id' => $table->id,
+            'status'   => $validated['status'] ?? 'pending',
+        ]));
 
         return response()->json($this->buildRowResponse($row), 201);
     }
@@ -439,10 +442,10 @@ class OrderReportController extends Controller
             'keyword'        => $row->keyword,
             'landing_page'   => $row->landing_page,
             'exact_match'    => $row->exact_match,
-            'request_date'   => $row->request_date ? Carbon::parse($row->request_date)->format('Y-m-d\TH:i:s.000000\Z') : null,
+            'request_date'   => $row->request_date ? Carbon::parse($row->request_date)->format('Y-m-d') : null,
             'status'         => $row->status,
             'live_link'      => $row->live_link,
-            'live_link_date' => $row->live_link_date ? Carbon::parse($row->live_link_date)->format('Y-m-d\TH:i:s.000000\Z') : null,
+            'live_link_date' => $row->live_link_date ? Carbon::parse($row->live_link_date)->format('Y-m-d') : null,
             'dr'             => $row->dr,
             'created_at'     => $row->created_at,
             'updated_at'     => $row->updated_at,

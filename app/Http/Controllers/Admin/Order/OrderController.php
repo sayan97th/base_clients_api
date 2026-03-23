@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin\Order;
 
 use App\Http\Controllers\Controller;
+use App\Mail\OrderStatusChangeMail;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 
 class OrderController extends Controller
 {
@@ -58,6 +60,43 @@ class OrderController extends Controller
         }
 
         return response()->json($this->formatOrderDetail($order));
+    }
+
+    /**
+     * PATCH /api/admin/orders/{order_id}/status
+     *
+     * Updates the order status directly without creating a tracking entry.
+     * Optionally sends an email notification to the client.
+     */
+    public function updateStatus(Request $request, string $order_id): JsonResponse
+    {
+        $order = LinkBuildingOrder::with('user')->find($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'status'      => ['required', 'string', 'in:' . implode(',', LinkBuildingOrder::STATUSES)],
+            'notify_user' => ['nullable', 'boolean'],
+        ]);
+
+        $order->update(['status' => $validated['status']]);
+
+        if (($validated['notify_user'] ?? false) && $order->user) {
+            Mail::to($order->user->email)->queue(
+                new OrderStatusChangeMail(
+                    user: $order->user,
+                    new_status: $order->status,
+                    order_id: $order->id,
+                )
+            );
+        }
+
+        return response()->json([
+            'message' => 'Order status updated to ' . $validated['status'] . '.',
+            'status'  => $order->status,
+        ]);
     }
 
     private function formatOrderSummary(LinkBuildingOrder $order): array
@@ -143,10 +182,11 @@ class OrderController extends Controller
                 'unit_price' => $item->unit_price,
                 'subtotal'   => $item->subtotal,
                 'dr_tier'    => $item->drTier ? [
-                    'id'     => $item->drTier->id,
-                    'label'  => $item->drTier->dr_label,
-                    'min_dr' => $item->drTier->min_dr,
-                    'max_dr' => $item->drTier->max_dr,
+                    'id'             => $item->drTier->id,
+                    'dr_label'       => $item->drTier->dr_label,
+                    'traffic_range'  => $item->drTier->traffic_range,
+                    'word_count'     => $item->drTier->word_count,
+                    'price_per_link' => $item->drTier->price_per_link,
                 ] : null,
                 'placements' => $item->placements->map(fn ($placement) => [
                     'id'           => $placement->id,

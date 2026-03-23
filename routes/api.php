@@ -148,10 +148,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 
-            // Order tracking — list updates, create update, update status
+            // Order tracking — list updates, create update
             Route::get('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'index']);
             Route::post('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'store']);
-            Route::patch('orders/{order_id}/status', [AdminOrderUpdateController::class, 'updateStatus']);
+
+            // Order status — direct update without creating a tracking entry
+            Route::patch('orders/{order_id}/status', [AdminOrderController::class, 'updateStatus']);
 
             // Order reports
             Route::get('orders/{order_id}/report',          [AdminOrderReportController::class, 'show']);

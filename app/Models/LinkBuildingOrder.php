@@ -79,4 +79,9 @@ class LinkBuildingOrder extends Model
     {
         return $this->hasMany(LinkBuildingOrderUpdate::class, 'order_id');
     }
+
+    public function report(): HasOne
+    {
+        return $this->hasOne(OrderReport::class, 'order_id');
+    }
 }

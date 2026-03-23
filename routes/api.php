@@ -9,6 +9,8 @@ use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuilding
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
+use App\Http\Controllers\Admin\Order\ReportTableController as AdminReportTableController;
+use App\Http\Controllers\Admin\Order\ReportRowController as AdminReportRowController;
 use App\Http\Controllers\Admin\Tracking\TrackingController as AdminTrackingController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
@@ -142,8 +144,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('organizations/{id}', [AdminOrganizationController::class, 'show']);
             Route::put('organizations/{id}', [AdminOrganizationController::class, 'update']);
             Route::post('organizations/{id}/assets', [AdminOrganizationController::class, 'uploadAsset']);
-            Route::get('orders',       [AdminOrderController::class, 'index']);
-            Route::get('orders/{id}',  [AdminOrderController::class, 'show']);
+            Route::get('orders',          [AdminOrderController::class, 'index']);
+            Route::get('orders/{order}',  [AdminOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
@@ -153,22 +155,22 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'store']);
 
             // Order status — direct update without creating a tracking entry
-            Route::patch('orders/{order_id}/status', [AdminOrderController::class, 'updateStatus']);
+            Route::patch('orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
 
             // Order reports
-            Route::get('orders/{order_id}/report',          [AdminOrderReportController::class, 'show']);
-            Route::post('orders/{order_id}/report/send',    [AdminOrderReportController::class, 'send']);
-            Route::post('orders/{order_id}/report/import',  [AdminOrderReportController::class, 'importItems']);
+            Route::get('orders/{order}/report',          [AdminOrderReportController::class, 'show']);
+            Route::post('orders/{order}/report/send',    [AdminOrderReportController::class, 'send']);
+            Route::post('orders/{order}/report/import',  [AdminOrderReportController::class, 'importItems']);
 
             // Report tables
-            Route::post('orders/{order_id}/report/tables',                [AdminOrderReportController::class, 'createTable']);
-            Route::patch('orders/{order_id}/report/tables/{table_id}',    [AdminOrderReportController::class, 'updateTable']);
-            Route::delete('orders/{order_id}/report/tables/{table_id}',   [AdminOrderReportController::class, 'deleteTable']);
+            Route::post('orders/{order}/report/tables',                [AdminReportTableController::class, 'store']);
+            Route::patch('orders/{order}/report/tables/{table}',       [AdminReportTableController::class, 'update']);
+            Route::delete('orders/{order}/report/tables/{table}',      [AdminReportTableController::class, 'destroy']);
 
             // Report rows
-            Route::post('orders/{order_id}/report/tables/{table_id}/rows',               [AdminOrderReportController::class, 'createRow']);
-            Route::patch('orders/{order_id}/report/tables/{table_id}/rows/{row_id}',     [AdminOrderReportController::class, 'updateRow']);
-            Route::delete('orders/{order_id}/report/tables/{table_id}/rows/{row_id}',    [AdminOrderReportController::class, 'deleteRow']);
+            Route::post('orders/{order}/report/tables/{table}/rows',                [AdminReportRowController::class, 'store']);
+            Route::patch('orders/{order}/report/tables/{table}/rows/{row}',         [AdminReportRowController::class, 'update']);
+            Route::delete('orders/{order}/report/tables/{table}/rows/{row}',        [AdminReportRowController::class, 'destroy']);
 
             // Invitation management — super_admin and admin only
             Route::middleware('role:super_admin,admin')->group(function () {

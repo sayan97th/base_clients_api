@@ -42,9 +42,9 @@ class OrderController extends Controller
     /**
      * GET /api/admin/orders/{order}
      */
-    public function show(string $id): JsonResponse
+    public function show(LinkBuildingOrder $order): JsonResponse
     {
-        $order = LinkBuildingOrder::with([
+        $order->load([
             'user:id,first_name,last_name,email',
             'items.drTier',
             'items.placements',
@@ -53,11 +53,7 @@ class OrderController extends Controller
             'invoice.user:id,first_name,last_name,email',
             'invoice.lineItems',
             'invoice.billedTo',
-        ])->find($id);
-
-        if (! $order) {
-            return response()->json(['message' => 'Order not found.'], 404);
-        }
+        ]);
 
         return response()->json($this->formatOrderDetail($order));
     }
@@ -68,13 +64,9 @@ class OrderController extends Controller
      * Updates the order status directly without creating a tracking entry.
      * Optionally sends an email notification to the client.
      */
-    public function updateStatus(Request $request, string $order_id): JsonResponse
+    public function updateStatus(Request $request, LinkBuildingOrder $order): JsonResponse
     {
-        $order = LinkBuildingOrder::with('user')->find($order_id);
-
-        if (! $order) {
-            return response()->json(['message' => 'Order not found.'], 404);
-        }
+        $order->load('user');
 
         $validated = $request->validate([
             'status'      => ['required', 'string', 'in:' . implode(',', LinkBuildingOrder::STATUSES)],

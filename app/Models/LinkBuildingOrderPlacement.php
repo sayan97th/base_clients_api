@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class LinkBuildingOrderPlacement extends Model
 {
@@ -29,5 +30,10 @@ class LinkBuildingOrderPlacement extends Model
     public function orderItem(): BelongsTo
     {
         return $this->belongsTo(LinkBuildingOrderItem::class, 'order_item_id');
+    }
+
+    public function reportRow(): HasOne
+    {
+        return $this->hasOne(OrderReportRow::class, 'order_placement_id');
     }
 }

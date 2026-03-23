@@ -18,9 +18,9 @@
         style="margin:0;box-sizing:border-box;width:100%;background-color:#f9f0f5;">
         <tr>
             <td style="box-sizing:border-box;vertical-align:top;">&nbsp;</td>
-            <td width="640"
-                style="box-sizing:border-box;vertical-align:top;display:block;max-width:640px;margin:0 auto;clear:both;">
-                <div style="box-sizing:border-box;max-width:640px;margin:0 auto;display:block;padding:24px;">
+            <td width="680"
+                style="box-sizing:border-box;vertical-align:top;display:block;max-width:680px;margin:0 auto;clear:both;">
+                <div style="box-sizing:border-box;max-width:680px;margin:0 auto;display:block;padding:24px;">
 
                     {{-- ── Logo ──────────────────────────────────────────── --}}
                     <div style="margin:0;box-sizing:border-box;padding:0 20px 20px;text-align:center;">
@@ -65,7 +65,7 @@
 
                                 {{-- Intro --}}
                                 <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
-                                    We have prepared your link building report. Please find the details of your completed links below.
+                                    We have prepared your link building report. Please find the delivery details for each of your placements below.
                                 </p>
 
                                 {{-- Custom message --}}
@@ -77,28 +77,26 @@
                                     </div>
                                 @endif
 
-                                {{-- Tables --}}
-                                @forelse ($report->tables as $table)
+                                {{-- Tables (virtual — derived from order items) --}}
+                                @forelse ($report_data['tables'] as $table)
                                     {{-- Table title --}}
-                                    <div style="margin:0 0 8px;">
+                                    <div style="margin:0 0 10px;">
                                         <p style="margin:0;font-size:15px;font-weight:700;color:#111827;">
-                                            {{ $table->title }}
+                                            {{ $table['title'] }}
                                         </p>
-                                        @if ($table->description)
+                                        @if (!empty($table['description']))
                                             <p style="margin:4px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
-                                                {{ $table->description }}
+                                                {{ $table['description'] }}
                                             </p>
                                         @endif
                                     </div>
 
-                                    {{-- Rows table --}}
-                                    @if ($table->rows->isNotEmpty())
+                                    @if (!empty($table['rows']))
                                         <table width="100%" cellpadding="0" cellspacing="0" border="0"
                                             style="margin:0 0 28px;border-collapse:collapse;font-size:12px;width:100%;">
                                             <thead>
                                                 <tr style="background-color:#fdf2f8;">
                                                     <th style="padding:8px 10px;text-align:left;color:{{ $brand_color }};font-weight:700;border-bottom:2px solid #f3e8ef;white-space:nowrap;">Order #</th>
-                                                    <th style="padding:8px 10px;text-align:left;color:{{ $brand_color }};font-weight:700;border-bottom:2px solid #f3e8ef;white-space:nowrap;">Link Type</th>
                                                     <th style="padding:8px 10px;text-align:left;color:{{ $brand_color }};font-weight:700;border-bottom:2px solid #f3e8ef;">Keyword</th>
                                                     <th style="padding:8px 10px;text-align:left;color:{{ $brand_color }};font-weight:700;border-bottom:2px solid #f3e8ef;">Landing Page</th>
                                                     <th style="padding:8px 10px;text-align:center;color:{{ $brand_color }};font-weight:700;border-bottom:2px solid #f3e8ef;white-space:nowrap;">Exact Match</th>
@@ -109,51 +107,50 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                @foreach ($table->rows as $index => $row)
+                                                @foreach ($table['rows'] as $index => $row)
                                                     @php
                                                         $row_bg = $index % 2 === 0 ? '#ffffff' : '#fdf9fb';
-                                                        $status_color = match($row->status) {
+                                                        $status_color = match($row['status']) {
                                                             'live'     => '#059669',
                                                             'rejected' => '#dc2626',
                                                             default    => '#d97706',
                                                         };
-                                                        $status_bg = match($row->status) {
+                                                        $status_bg = match($row['status']) {
                                                             'live'     => '#d1fae5',
                                                             'rejected' => '#fee2e2',
                                                             default    => '#fef3c7',
                                                         };
                                                     @endphp
                                                     <tr style="background-color:{{ $row_bg }};">
-                                                        <td style="padding:8px 10px;color:#374151;border-bottom:1px solid #f3e8ef;white-space:nowrap;">{{ $row->order_number }}</td>
-                                                        <td style="padding:8px 10px;color:#374151;border-bottom:1px solid #f3e8ef;white-space:nowrap;">{{ $row->link_type }}</td>
-                                                        <td style="padding:8px 10px;color:#374151;border-bottom:1px solid #f3e8ef;">{{ $row->keyword }}</td>
-                                                        <td style="padding:8px 10px;border-bottom:1px solid #f3e8ef;max-width:120px;overflow:hidden;">
-                                                            <a href="{{ $row->landing_page }}" style="color:{{ $brand_color }};text-decoration:none;font-size:11px;" target="_blank">
-                                                                {{ $row->landing_page }}
+                                                        <td style="padding:8px 10px;color:#374151;border-bottom:1px solid #f3e8ef;white-space:nowrap;">{{ $row['order_number'] }}</td>
+                                                        <td style="padding:8px 10px;color:#374151;border-bottom:1px solid #f3e8ef;">{{ $row['keyword'] }}</td>
+                                                        <td style="padding:8px 10px;border-bottom:1px solid #f3e8ef;max-width:130px;overflow:hidden;">
+                                                            <a href="{{ $row['landing_page'] }}" style="color:{{ $brand_color }};text-decoration:none;font-size:11px;" target="_blank">
+                                                                {{ $row['landing_page'] }}
                                                             </a>
                                                         </td>
                                                         <td style="padding:8px 10px;text-align:center;color:#374151;border-bottom:1px solid #f3e8ef;">
-                                                            {{ $row->exact_match ? 'Yes' : 'No' }}
+                                                            {{ $row['exact_match'] ? 'Yes' : 'No' }}
                                                         </td>
                                                         <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #f3e8ef;">
                                                             <span style="display:inline-block;background-color:{{ $status_bg }};color:{{ $status_color }};font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;text-transform:uppercase;">
-                                                                {{ $row->status }}
+                                                                {{ $row['status'] }}
                                                             </span>
                                                         </td>
-                                                        <td style="padding:8px 10px;border-bottom:1px solid #f3e8ef;max-width:120px;overflow:hidden;">
-                                                            @if ($row->live_link)
-                                                                <a href="{{ $row->live_link }}" style="color:{{ $brand_color }};text-decoration:none;font-size:11px;" target="_blank">
-                                                                    {{ $row->live_link }}
+                                                        <td style="padding:8px 10px;border-bottom:1px solid #f3e8ef;max-width:130px;overflow:hidden;">
+                                                            @if ($row['live_link'])
+                                                                <a href="{{ $row['live_link'] }}" style="color:{{ $brand_color }};text-decoration:none;font-size:11px;" target="_blank">
+                                                                    {{ $row['live_link'] }}
                                                                 </a>
                                                             @else
                                                                 <span style="color:#9ca3af;">—</span>
                                                             @endif
                                                         </td>
                                                         <td style="padding:8px 10px;text-align:center;color:#374151;border-bottom:1px solid #f3e8ef;">
-                                                            {{ $row->dr ?? '—' }}
+                                                            {{ $row['dr'] ?? '—' }}
                                                         </td>
                                                         <td style="padding:8px 10px;text-align:center;color:#374151;border-bottom:1px solid #f3e8ef;white-space:nowrap;">
-                                                            {{ $row->live_link_date ? $row->live_link_date->format('Y-m-d') : '—' }}
+                                                            {{ $row['live_link_date'] ?? '—' }}
                                                         </td>
                                                     </tr>
                                                 @endforeach
@@ -161,13 +158,13 @@
                                         </table>
                                     @else
                                         <p style="margin:0 0 24px;font-size:13px;color:#9ca3af;font-style:italic;">
-                                            No rows in this table yet.
+                                            No placements in this group yet.
                                         </p>
                                     @endif
 
                                 @empty
                                     <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">
-                                        No tables have been added to this report yet.
+                                        No placement data is available for this order yet.
                                     </p>
                                 @endforelse
 

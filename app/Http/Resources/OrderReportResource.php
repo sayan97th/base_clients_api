@@ -13,7 +13,6 @@ class OrderReportResource extends JsonResource
             'id'         => $this->id,
             'order_id'   => $this->order_id,
             'sent_at'    => $this->sent_at,
-            'tables'     => OrderReportTableResource::collection($this->whenLoaded('tables')),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

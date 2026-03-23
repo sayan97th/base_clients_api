@@ -10,16 +10,10 @@ class OrderReportRow extends Model
 {
     use HasUuids;
 
-    const STATUSES = ['pending', 'live', 'rejected'];
+    public const STATUSES = ['pending', 'live', 'rejected'];
 
     protected $fillable = [
-        'order_report_table_id',
-        'order_number',
-        'link_type',
-        'keyword',
-        'landing_page',
-        'exact_match',
-        'request_date',
+        'order_placement_id',
         'status',
         'live_link',
         'live_link_date',
@@ -29,15 +23,13 @@ class OrderReportRow extends Model
     protected function casts(): array
     {
         return [
-            'exact_match'    => 'boolean',
-            'request_date'   => 'date:Y-m-d',
             'live_link_date' => 'date:Y-m-d',
             'dr'             => 'integer',
         ];
     }
 
-    public function table(): BelongsTo
+    public function placement(): BelongsTo
     {
-        return $this->belongsTo(OrderReportTable::class, 'order_report_table_id');
+        return $this->belongsTo(LinkBuildingOrderPlacement::class, 'order_placement_id');
     }
 }

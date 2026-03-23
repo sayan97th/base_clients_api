@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceControll
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
 use App\Http\Controllers\Admin\Tracking\TrackingController as AdminTrackingController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
@@ -151,6 +152,16 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'index']);
             Route::post('orders/{order_id}/updates', [AdminOrderUpdateController::class, 'store']);
             Route::patch('orders/{order_id}/status', [AdminOrderUpdateController::class, 'updateStatus']);
+
+            // Order reports
+            Route::get('orders/{order}/report', [AdminOrderReportController::class, 'show']);
+            Route::post('orders/{order}/report/send', [AdminOrderReportController::class, 'send']);
+            Route::post('orders/{order}/report/tables', [AdminOrderReportController::class, 'createTable']);
+            Route::patch('orders/{order}/report/tables/{table}', [AdminOrderReportController::class, 'updateTable']);
+            Route::delete('orders/{order}/report/tables/{table}', [AdminOrderReportController::class, 'deleteTable']);
+            Route::post('orders/{order}/report/tables/{table}/rows', [AdminOrderReportController::class, 'createRow']);
+            Route::patch('orders/{order}/report/tables/{table}/rows/{row}', [AdminOrderReportController::class, 'updateRow']);
+            Route::delete('orders/{order}/report/tables/{table}/rows/{row}', [AdminOrderReportController::class, 'deleteRow']);
 
             // Invitation management — super_admin and admin only
             Route::middleware('role:super_admin,admin')->group(function () {

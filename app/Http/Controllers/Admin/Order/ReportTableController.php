@@ -67,7 +67,7 @@ class ReportTableController extends Controller
      * Permanently deletes a report table and all its rows (cascade).
      * Validates that the table belongs to the given order.
      */
-    public function destroy(LinkBuildingOrder $order, OrderReportTable $table): JsonResponse
+    public function destroy(LinkBuildingOrder $order, OrderReportTable $table): \Illuminate\Http\Response
     {
         abort_if($table->report->order_id !== $order->id, 404);
 

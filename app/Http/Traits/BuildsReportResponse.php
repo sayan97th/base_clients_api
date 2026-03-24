@@ -43,11 +43,22 @@ trait BuildsReportResponse
         ];
     }
 
+    private function formatOrderNumber(?string $order_number): ?string
+    {
+        if (! $order_number) {
+            return null;
+        }
+
+        $clean = strtoupper(str_replace('-', '', $order_number));
+
+        return 'ORD-' . substr($clean, 0, 8);
+    }
+
     private function buildRowResponse(OrderReportRow $row): array
     {
         return [
             'id'             => $row->id,
-            'order_number'   => $row->order_number,
+            'order_number'   => $this->formatOrderNumber($row->order_number),
             'link_type'      => $row->link_type,
             'keyword'        => $row->keyword,
             'landing_page'   => $row->landing_page,

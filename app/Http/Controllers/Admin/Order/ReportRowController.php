@@ -80,7 +80,7 @@ class ReportRowController extends Controller
      * Permanently removes a single row from a report table.
      * Validates that the table belongs to the order and the row belongs to the table.
      */
-    public function destroy(LinkBuildingOrder $order, OrderReportTable $table, OrderReportRow $row): JsonResponse
+    public function destroy(LinkBuildingOrder $order, OrderReportTable $table, OrderReportRow $row): \Illuminate\Http\Response
     {
         abort_if($table->report->order_id !== $order->id, 404);
         abort_if($row->table_id !== $table->id, 404);

@@ -26,6 +26,7 @@ use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
+use App\Http\Controllers\Client\LinkBuilding\OrderReportController as ClientOrderReportController;
 use App\Http\Controllers\Client\LinkBuilding\OrderUpdateController as ClientOrderUpdateController;
 use App\Http\Controllers\Client\Notification\NotificationController;
 use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
@@ -281,6 +282,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::post('/orders', [LinkBuildingOrderController::class, 'store']);
         Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
         Route::get('/orders/{order_id}/updates', [ClientOrderUpdateController::class, 'index']);
+        Route::get('/orders/{order_id}/report', [ClientOrderReportController::class, 'show']);
     });
 
     // Invoices

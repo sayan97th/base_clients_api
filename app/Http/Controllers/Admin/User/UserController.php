@@ -27,6 +27,8 @@ class UserController extends Controller
         $sort_direction = $request->query('sort_direction', 'asc');
         $date_from      = $request->query('date_from');
         $date_to        = $request->query('date_to');
+        $email_status   = $request->query('email_status');
+        $account_status = $request->query('account_status');
 
         if ($type !== null && !\in_array($type, ['staff', 'client'], true)) {
             return response()->json([
@@ -35,8 +37,11 @@ class UserController extends Controller
             ], 422);
         }
 
-        if (!\in_array($sort_field, self::ALLOWED_SORT_FIELDS, true)) {
-            $sort_field = 'created_at';
+        if ($sort_field !== null && !\in_array($sort_field, self::ALLOWED_SORT_FIELDS, true)) {
+            return response()->json([
+                'message' => 'The sort_field value is invalid.',
+                'errors'  => ['sort_field' => ['The selected sort field is invalid.']],
+            ], 422);
         }
 
         if (!\in_array($sort_direction, ['asc', 'desc'], true)) {
@@ -73,8 +78,11 @@ class UserController extends Controller
 
         if ($search !== null && $search !== '') {
             $query->where(function ($q) use ($search) {
-                $q->whereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ["%{$search}%"])
-                  ->orWhere('users.email', 'LIKE', "%{$search}%");
+                $q->where('users.first_name', 'LIKE', "%{$search}%")
+                  ->orWhere('users.last_name', 'LIKE', "%{$search}%")
+                  ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ["%{$search}%"])
+                  ->orWhere('users.email', 'LIKE', "%{$search}%")
+                  ->orWhereHas('organization', fn ($q) => $q->where('name', 'LIKE', "%{$search}%"));
             });
         }
 
@@ -84,6 +92,18 @@ class UserController extends Controller
 
         if ($date_to !== null) {
             $query->where('users.created_at', '<=', $date_to . ' 23:59:59');
+        }
+
+        if ($email_status === 'verified') {
+            $query->whereNotNull('users.email_verified_at');
+        } elseif ($email_status === 'unverified') {
+            $query->whereNull('users.email_verified_at');
+        }
+
+        if ($account_status === 'active') {
+            $query->where('users.is_active', true);
+        } elseif ($account_status === 'disabled') {
+            $query->where('users.is_active', false);
         }
 
         $users = $query->paginate(15);
@@ -133,7 +153,7 @@ class UserController extends Controller
         }
 
         if (! $user->is_active) {
-            return response()->json(['message' => 'This account is already disabled.'], 422);
+            return response()->json(['message' => 'This account is already disabled.'], 409);
         }
 
         $user_roles = $user->roles->pluck('name');
@@ -156,7 +176,7 @@ class UserController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'User has been disabled successfully.',
+            'message' => 'User account has been disabled.',
             'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
         ]);
     }
@@ -176,7 +196,7 @@ class UserController extends Controller
         }
 
         if ($user->is_active) {
-            return response()->json(['message' => 'This account is already active.'], 422);
+            return response()->json(['message' => 'This account is already active.'], 409);
         }
 
         $user_roles = $user->roles->pluck('name');
@@ -199,7 +219,7 @@ class UserController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'User has been enabled successfully.',
+            'message' => 'User account has been re-enabled.',
             'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
         ]);
     }

@@ -28,7 +28,9 @@ class UserWithRolesResource extends JsonResource
                 'name'         => $role->name,
                 'display_name' => $role->display_name,
             ])->values(),
-            'organization'      => $this->organization,
+            'organization'      => $this->organization
+                ? ['id' => $this->organization->id, 'name' => $this->organization->name]
+                : null,
         ];
     }
 }

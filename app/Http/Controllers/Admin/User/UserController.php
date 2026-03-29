@@ -12,31 +12,78 @@ use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
-    private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+    private const STAFF_ROLES         = ['super_admin', 'admin', 'staff'];
+    private const ALLOWED_SORT_FIELDS = ['first_name', 'email', 'organization', 'created_at'];
 
     /**
-     * GET /api/admin/users?page=N&type=staff|client
+     * GET /api/admin/users
      */
     public function index(Request $request): JsonResponse
     {
-        $type = $request->query('type');
+        $type           = $request->query('type');
+        $search         = $request->query('search');
+        $role           = $request->query('role');
+        $sort_field     = $request->query('sort_field', 'created_at');
+        $sort_direction = $request->query('sort_direction', 'asc');
+        $date_from      = $request->query('date_from');
+        $date_to        = $request->query('date_to');
 
         if ($type !== null && !\in_array($type, ['staff', 'client'], true)) {
             return response()->json([
                 'message' => 'The type field must be staff or client.',
-                'errors'  => [
-                    'type' => ['The selected type is invalid.'],
-                ],
+                'errors'  => ['type' => ['The selected type is invalid.']],
             ], 422);
         }
 
-        $query = User::with(['roles:id,name,display_name', 'organization'])->latest();
+        if (!\in_array($sort_field, self::ALLOWED_SORT_FIELDS, true)) {
+            $sort_field = 'created_at';
+        }
+
+        if (!\in_array($sort_direction, ['asc', 'desc'], true)) {
+            $sort_direction = 'asc';
+        }
+
+        if ($role !== null && !\in_array($role, self::STAFF_ROLES, true)) {
+            $role = null;
+        }
+
+        $query = User::with(['roles:id,name,display_name', 'organization'])
+            ->select('users.*');
+
+        if ($sort_field === 'organization') {
+            $query->leftJoin('organizations', 'users.organization_id', '=', 'organizations.id')
+                  ->orderBy('organizations.name', $sort_direction);
+        } elseif ($sort_field === 'first_name') {
+            $query->orderBy('users.first_name', $sort_direction)
+                  ->orderBy('users.last_name', $sort_direction);
+        } else {
+            $query->orderBy('users.' . $sort_field, $sort_direction);
+        }
 
         if ($type === 'staff') {
             $query->whereHas('roles', fn ($q) => $q->whereIn('name', self::STAFF_ROLES));
         } elseif ($type === 'client') {
             $query->whereHas('roles', fn ($q) => $q->where('name', 'client'))
                   ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', self::STAFF_ROLES));
+        }
+
+        if ($role !== null) {
+            $query->whereHas('roles', fn ($q) => $q->where('name', $role));
+        }
+
+        if ($search !== null && $search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->whereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ["%{$search}%"])
+                  ->orWhere('users.email', 'LIKE', "%{$search}%");
+            });
+        }
+
+        if ($date_from !== null) {
+            $query->where('users.created_at', '>=', $date_from . ' 00:00:00');
+        }
+
+        if ($date_to !== null) {
+            $query->where('users.created_at', '<=', $date_to . ' 23:59:59');
         }
 
         $users = $query->paginate(15);
@@ -46,9 +93,6 @@ class UserController extends Controller
             'current_page' => $users->currentPage(),
             'last_page'    => $users->lastPage(),
             'total'        => $users->total(),
-            'per_page'     => $users->perPage(),
-            'from'         => $users->firstItem(),
-            'to'           => $users->lastItem(),
         ]);
     }
 
@@ -112,7 +156,7 @@ class UserController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Account has been disabled successfully.',
+            'message' => 'User has been disabled successfully.',
             'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
         ]);
     }
@@ -155,7 +199,7 @@ class UserController extends Controller
         ]);
 
         return response()->json([
-            'message' => 'Account has been re-enabled successfully.',
+            'message' => 'User has been enabled successfully.',
             'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
         ]);
     }
@@ -190,9 +234,6 @@ class UserController extends Controller
             'current_page' => $orders->currentPage(),
             'last_page'    => $orders->lastPage(),
             'total'        => $orders->total(),
-            'per_page'     => $orders->perPage(),
-            'from'         => $orders->firstItem(),
-            'to'           => $orders->lastItem(),
         ]);
     }
 }

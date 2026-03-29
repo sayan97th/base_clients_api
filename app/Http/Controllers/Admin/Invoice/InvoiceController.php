@@ -3,24 +3,58 @@
 namespace App\Http\Controllers\Admin\Invoice;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Invoice\ListInvoicesRequest;
 use App\Models\Invoice;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class InvoiceController extends Controller
 {
     /**
-     * GET /api/admin/invoices?page=N
+     * GET /api/admin/invoices
      */
-    public function index(Request $request): JsonResponse
+    public function index(ListInvoicesRequest $request): JsonResponse
     {
-        $invoices = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->latest()
-            ->paginate(15);
+        $query = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->join('users', 'invoices.user_id', '=', 'users.id')
+            ->select('invoices.*');
 
-        $data = $invoices->map(function (Invoice $invoice) {
-            return $this->formatInvoice($invoice);
-        })->values();
+        if ($search = $request->input('search')) {
+            $query->where(function ($q) use ($search) {
+                $q->where('invoices.invoice_number', 'like', "%{$search}%")
+                  ->orWhere('users.first_name', 'like', "%{$search}%")
+                  ->orWhere('users.last_name', 'like', "%{$search}%")
+                  ->orWhere('users.email', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status = $request->input('status')) {
+            $query->where('invoices.status', $status);
+        }
+
+        if ($date_from = $request->input('date_from')) {
+            $query->whereDate('invoices.date_issued', '>=', $date_from);
+        }
+
+        if ($date_to = $request->input('date_to')) {
+            $query->whereDate('invoices.date_issued', '<=', $date_to);
+        }
+
+        $sort_field     = $request->input('sort_field');
+        $sort_direction = $request->input('sort_direction', 'desc');
+
+        if ($sort_field === 'customer') {
+            $query->orderBy('users.last_name', $sort_direction)
+                  ->orderBy('users.first_name', $sort_direction);
+        } elseif ($sort_field) {
+            $query->orderBy("invoices.{$sort_field}", $sort_direction);
+        } else {
+            $query->orderBy('invoices.created_at', $sort_direction);
+        }
+
+        $per_page = (int) $request->input('per_page', 15);
+        $invoices = $query->paginate($per_page);
+
+        $data = $invoices->map(fn (Invoice $invoice) => $this->formatInvoice($invoice))->values();
 
         return response()->json([
             'data'         => $data,
@@ -31,11 +65,11 @@ class InvoiceController extends Controller
     }
 
     /**
-     * GET /api/admin/invoices/{invoice_id}
+     * GET /api/admin/invoices/{unique_id}
      */
-    public function show(string $invoice_id): JsonResponse
+    public function show(string $unique_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
+        $invoice = Invoice::where('unique_id', $unique_id)
             ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
             ->first();
 
@@ -48,7 +82,7 @@ class InvoiceController extends Controller
 
     private function formatInvoice(Invoice $invoice): array
     {
-        $billed_to       = $invoice->billedTo;
+        $billed_to        = $invoice->billedTo;
         $coupon_discounts = $this->buildCouponDiscounts($invoice);
 
         return [
@@ -64,9 +98,9 @@ class InvoiceController extends Controller
             'discount_amount' => $invoice->discount_amount,
             'total_amount'    => $invoice->total_amount,
             'credit_amount'   => $invoice->credit_amount,
-            'date_issued'     => $invoice->date_issued?->toIso8601String(),
-            'date_due'        => $invoice->date_due?->toIso8601String(),
-            'date_paid'       => $invoice->date_paid?->toIso8601String(),
+            'date_issued'     => $invoice->date_issued?->toDateString(),
+            'date_due'        => $invoice->date_due?->toDateString(),
+            'date_paid'       => $invoice->date_paid?->toDateString(),
             'created_at'      => $invoice->created_at?->toIso8601String(),
             'updated_at'      => $invoice->updated_at?->toIso8601String(),
             'user' => [

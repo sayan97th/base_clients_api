@@ -24,6 +24,8 @@ class OrderController extends Controller
         $status         = $request->input('status');
         $sort_field     = $request->input('sort_field', 'created_at');
         $sort_direction = $request->input('sort_direction', 'desc');
+        $date_from      = $request->input('date_from');
+        $date_to        = $request->input('date_to');
         $per_page       = (int) $request->input('per_page', 15);
 
         $query = LinkBuildingOrder::with([
@@ -39,7 +41,7 @@ class OrderController extends Controller
 
         if (filled($search)) {
             $query->where(function ($q) use ($search) {
-                $q->where('order_title', 'like', '%' . $search . '%')
+                $q->where('link_building_orders.order_title', 'like', '%' . $search . '%')
                     ->orWhereHas('user', function ($uq) use ($search) {
                         $uq->where('first_name', 'like', '%' . $search . '%')
                             ->orWhere('last_name', 'like', '%' . $search . '%')
@@ -49,10 +51,26 @@ class OrderController extends Controller
         }
 
         if (filled($status)) {
-            $query->where('status', $status);
+            $query->where('link_building_orders.status', $status);
         }
 
-        $query->orderBy($sort_field, $sort_direction);
+        if (filled($date_from)) {
+            $query->whereDate('link_building_orders.created_at', '>=', $date_from);
+        }
+
+        if (filled($date_to)) {
+            $query->whereDate('link_building_orders.created_at', '<=', $date_to);
+        }
+
+        if ($sort_field === 'customer') {
+            $query->join('users', 'users.id', '=', 'link_building_orders.user_id')
+                  ->select('link_building_orders.*')
+                  ->orderBy('users.first_name', $sort_direction);
+        } else {
+            $query->orderBy('link_building_orders.' . $sort_field, $sort_direction);
+        }
+
+        $query->orderBy('link_building_orders.id', 'desc');
 
         $orders = $query->paginate($per_page);
 

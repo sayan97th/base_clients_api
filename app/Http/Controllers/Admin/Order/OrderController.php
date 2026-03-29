@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Order;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Order\IndexOrderRequest;
 use App\Mail\OrderStatusChangeMail;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
@@ -13,22 +14,50 @@ use Illuminate\Support\Facades\Mail;
 class OrderController extends Controller
 {
     /**
-     * GET /api/admin/orders?page=N
+     * GET /api/admin/orders
+     *
+     * Returns a paginated, filtered, and sortable list of all admin orders.
      */
-    public function index(Request $request): JsonResponse
+    public function index(IndexOrderRequest $request): JsonResponse
     {
-        $orders = LinkBuildingOrder::with([
+        $search         = $request->input('search');
+        $status         = $request->input('status');
+        $sort_field     = $request->input('sort_field', 'created_at');
+        $sort_direction = $request->input('sort_direction', 'desc');
+        $per_page       = (int) $request->input('per_page', 15);
+
+        $query = LinkBuildingOrder::with([
             'user:id,first_name,last_name,email',
-            'items',
+            'items.drTier',
+            'items.placements',
             'billing',
-            'invoice',
             'orderCoupons.coupon',
-        ])
-            ->latest()
-            ->paginate(15);
+            'invoice.user:id,first_name,last_name,email',
+            'invoice.lineItems',
+            'invoice.billedTo',
+        ]);
+
+        if (filled($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('order_title', 'like', '%' . $search . '%')
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('first_name', 'like', '%' . $search . '%')
+                            ->orWhere('last_name', 'like', '%' . $search . '%')
+                            ->orWhere('email', 'like', '%' . $search . '%');
+                    });
+            });
+        }
+
+        if (filled($status)) {
+            $query->where('status', $status);
+        }
+
+        $query->orderBy($sort_field, $sort_direction);
+
+        $orders = $query->paginate($per_page);
 
         $data = $orders->map(function (LinkBuildingOrder $order) {
-            return $this->formatOrderSummary($order);
+            return $this->formatOrderDetail($order);
         })->values();
 
         return response()->json([
@@ -89,57 +118,6 @@ class OrderController extends Controller
             'message' => 'Order status updated to ' . $validated['status'] . '.',
             'status'  => $order->status,
         ]);
-    }
-
-    private function formatOrderSummary(LinkBuildingOrder $order): array
-    {
-        $subtotal_before_discount = $order->subtotal_before_discount ?? $order->items->sum('subtotal');
-
-        $user    = $order->user;
-        $billing = $order->billing;
-        $invoice = $order->invoice;
-
-        return [
-            'id'                       => $order->id,
-            'user_id'                  => $order->user_id,
-            'order_title'              => $order->order_title,
-            'order_notes'              => $order->order_notes,
-            'subtotal_before_discount' => (float) $subtotal_before_discount,
-            'total_amount'             => $order->total_amount,
-            'status'                   => $order->status,
-            'payment_intent_id'        => $order->payment_intent_id,
-            'created_at'               => $order->created_at,
-            'updated_at'               => $order->updated_at,
-            'user' => $user ? [
-                'id'         => $user->id,
-                'first_name' => $user->first_name,
-                'last_name'  => $user->last_name,
-                'email'      => $user->email,
-            ] : null,
-            'items' => $order->items->map(fn ($item) => [
-                'id'         => $item->id,
-                'dr_tier_id' => $item->dr_tier_id,
-                'quantity'   => $item->quantity,
-                'unit_price' => $item->unit_price,
-                'subtotal'   => $item->subtotal,
-            ])->values(),
-            'billing' => $billing ? [
-                'company'     => $billing->company,
-                'address'     => $billing->address,
-                'city'        => $billing->city,
-                'state'       => $billing->state,
-                'country'     => $billing->country,
-                'postal_code' => $billing->postal_code,
-            ] : null,
-            'invoice' => $invoice ? [
-                'id'             => $invoice->id,
-                'unique_id'      => $invoice->unique_id,
-                'invoice_number' => $invoice->invoice_number,
-                'status'         => $invoice->status,
-                'total_amount'   => $invoice->total_amount,
-            ] : null,
-            'coupons' => $this->buildOrderCoupons($order),
-        ];
     }
 
     private function formatOrderDetail(LinkBuildingOrder $order): array

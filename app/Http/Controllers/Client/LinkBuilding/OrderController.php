@@ -13,6 +13,7 @@ use App\Services\CouponService;
 use App\Services\InvoiceService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
@@ -26,12 +27,18 @@ class OrderController extends Controller
         protected StripeService $stripeService
     ) {}
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        /** @var User $user */
-        $user = auth()->user();
+        $request->validate([
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        $orders = LinkBuildingOrder::where('user_id', $user->id)
+        /** @var User $user */
+        $user     = auth()->user();
+        $per_page = min((int) $request->get('per_page', 10), 100);
+
+        $paginator = LinkBuildingOrder::where('user_id', $user->id)
             ->where('is_hidden', false)
             ->withCount(['items as items_count' => function ($query) {
                 $query->selectRaw('sum(quantity)');
@@ -41,19 +48,26 @@ class OrderController extends Controller
                 $query->latest()->limit(1);
             }])
             ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(fn ($order) => [
-                'id'             => $order->id,
-                'order_title'    => $order->order_title,
-                'total_amount'   => $order->total_amount,
-                'status'         => $order->status,
-                'created_at'     => $order->created_at,
-                'items_count'    => (int) ($order->items_count ?? 0),
-                'updates_count'  => (int) ($order->updates_count ?? 0),
-                'last_update_at' => $order->updates->first()?->created_at,
-            ]);
+            ->paginate($per_page);
 
-        return response()->json(['data' => $orders]);
+        $data = collect($paginator->items())->map(fn ($order) => [
+            'id'             => $order->id,
+            'order_title'    => $order->order_title,
+            'total_amount'   => $order->total_amount,
+            'status'         => $order->status,
+            'created_at'     => $order->created_at,
+            'items_count'    => (int) ($order->items_count ?? 0),
+            'updates_count'  => (int) ($order->updates_count ?? 0),
+            'last_update_at' => $order->updates->first()?->created_at,
+        ]);
+
+        return response()->json([
+            'data'         => $data,
+            'current_page' => $paginator->currentPage(),
+            'last_page'    => $paginator->lastPage(),
+            'per_page'     => $paginator->perPage(),
+            'total'        => $paginator->total(),
+        ]);
     }
 
     public function store(StoreLinkBuildingOrderRequest $request): JsonResponse
@@ -274,6 +288,7 @@ class OrderController extends Controller
                     'price_per_link'  => $item->drTier->price_per_link,
                     'is_most_popular' => $item->drTier->is_most_popular,
                     'is_active'       => $item->drTier->is_active,
+                    'max_quantity'    => $item->drTier->max_quantity,
                 ] : null,
                 'placements' => $item->placements->map(fn ($placement) => [
                     'id'           => $placement->id,

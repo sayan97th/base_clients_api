@@ -17,13 +17,18 @@ class LinkBuildingOrderPlacement extends Model
         'keyword',
         'landing_page',
         'exact_match',
+        'live_link',
+        'dr',
+        'completed_date',
     ];
 
     protected function casts(): array
     {
         return [
-            'row_index'   => 'integer',
-            'exact_match' => 'boolean',
+            'row_index'      => 'integer',
+            'exact_match'    => 'boolean',
+            'dr'             => 'integer',
+            'completed_date' => 'datetime',
         ];
     }
 

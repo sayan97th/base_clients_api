@@ -17,23 +17,36 @@ class InvoiceController extends Controller
         protected InvoiceService $invoiceService
     ) {}
 
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $request->validate([
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         /** @var User $user */
-        $user = auth()->user();
+        $user     = auth()->user();
+        $per_page = min((int) $request->get('per_page', 10), 100);
 
-        $invoices = Invoice::where('user_id', $user->id)
+        $paginator = Invoice::where('user_id', $user->id)
             ->orderBy('date_issued', 'desc')
-            ->get()
-            ->map(fn ($invoice) => [
-                'unique_id' => $invoice->unique_id,
-                'date'      => $invoice->date_issued?->format('F j, Y'),
-                'date_due'  => $invoice->date_due?->format('F j, Y'),
-                'total'     => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
-                'status'    => $invoice->status,
-            ]);
+            ->paginate($per_page);
 
-        return response()->json(['data' => $invoices]);
+        $data = collect($paginator->items())->map(fn ($invoice) => [
+            'unique_id' => $invoice->unique_id,
+            'date'      => $invoice->date_issued?->format('M j, Y'),
+            'date_due'  => $invoice->date_due?->format('M j, Y'),
+            'total'     => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
+            'status'    => $invoice->status,
+        ]);
+
+        return response()->json([
+            'data'         => $data,
+            'current_page' => $paginator->currentPage(),
+            'last_page'    => $paginator->lastPage(),
+            'per_page'     => $paginator->perPage(),
+            'total'        => $paginator->total(),
+        ]);
     }
 
     public function show(string $unique_id): JsonResponse

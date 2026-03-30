@@ -32,15 +32,15 @@ class OrderPlacementsController extends Controller
             ->where('o.user_id', $user->id)
             ->where('o.is_hidden', false)
             ->select([
-                'o.id          as order_id',
-                'o.created_at  as start_date',
-                'dt.dr_label   as dr_type',
+                'o.id as order_id',
+                'o.created_at as start_date',
+                'dt.dr_label as dr_type',
                 'p.keyword',
                 'p.landing_page',
                 'o.status',
-                DB::raw("'' as live_link"),
-                DB::raw("CASE WHEN o.status = 'completed' THEN o.updated_at ELSE '' END as completed_date"),
-                DB::raw('NULL as dr'),
+                'p.live_link',
+                'p.completed_date',
+                'p.dr',
             ])
             ->orderBy('o.created_at', 'desc');
 
@@ -57,6 +57,14 @@ class OrderPlacementsController extends Controller
             $query->where('o.status', $status);
         }
 
-        return response()->json($query->paginate($per_page));
+        $paginator = $query->paginate($per_page);
+
+        return response()->json([
+            'data'         => $paginator->items(),
+            'current_page' => $paginator->currentPage(),
+            'last_page'    => $paginator->lastPage(),
+            'per_page'     => $paginator->perPage(),
+            'total'        => $paginator->total(),
+        ]);
     }
 }

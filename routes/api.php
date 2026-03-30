@@ -27,6 +27,7 @@ use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
 use App\Http\Controllers\Client\LinkBuilding\OrderPlacementsController as LinkBuildingOrderPlacementsController;
+use App\Http\Controllers\Client\LinkBuilding\DeliverableController as LinkBuildingDeliverableController;
 use App\Http\Controllers\Client\LinkBuilding\OrderReportController as ClientOrderReportController;
 use App\Http\Controllers\Client\LinkBuilding\OrderUpdateController as ClientOrderUpdateController;
 use App\Http\Controllers\Client\Notification\NotificationController;
@@ -284,6 +285,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
         Route::get('/orders/{order_id}/updates', [ClientOrderUpdateController::class, 'index']);
         Route::get('/orders/{order_id}/report', [ClientOrderReportController::class, 'show']);
+        Route::get('/deliverables', [LinkBuildingDeliverableController::class, 'index']);
         Route::get('/order-placements', [LinkBuildingOrderPlacementsController::class, 'index']);
     });
 

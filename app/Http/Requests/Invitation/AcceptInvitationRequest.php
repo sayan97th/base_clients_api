@@ -15,8 +15,8 @@ class AcceptInvitationRequest extends FormRequest
     {
         return [
             'invitation_token'      => ['required', 'string'],
-            'first_name'            => ['required', 'string', 'max:255'],
-            'last_name'             => ['required', 'string', 'max:255'],
+            'first_name'            => ['required', 'string', 'min:2', 'max:100'],
+            'last_name'             => ['required', 'string', 'min:2', 'max:100'],
             'password'              => ['required', 'string', 'min:8', 'confirmed'],
         ];
     }

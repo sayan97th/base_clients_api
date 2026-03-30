@@ -11,6 +11,7 @@ use App\Models\Invitation;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
@@ -21,17 +22,17 @@ class InvitationController extends Controller
      */
     public function validateToken(string $token): JsonResponse
     {
-        $invitation = Invitation::where('token', $token)->first();
+        $invitation = Invitation::where('token', $token)->with('inviter')->first();
 
-        if (!$invitation || $invitation->isAccepted() || $invitation->isExpired()) {
-            return response()->json([
-                'message' => 'This invitation link is invalid or has expired.',
-            ], 422);
+        if (!$invitation) {
+            return response()->json(['message' => 'Invitation not found.'], 404);
         }
 
+        $valid = $invitation->isPending();
+
         return response()->json([
-            'valid' => true,
-            'invitation' => new InvitationResource($invitation->load('inviter')),
+            'valid'      => $valid,
+            'invitation' => new InvitationResource($invitation),
         ]);
     }
 
@@ -42,11 +43,11 @@ class InvitationController extends Controller
     {
         $invitation = Invitation::where('token', $request->invitation_token)->first();
 
-        if (!$invitation || $invitation->isAccepted() || $invitation->isExpired()) {
+        if (!$invitation || !$invitation->isPending()) {
             return response()->json([
                 'message' => 'The given data was invalid.',
-                'errors' => [
-                    'invitation_token' => ['This invitation is invalid or has already been used.'],
+                'errors'  => [
+                    'invitation_token' => ['This invitation has expired or has already been used.'],
                 ],
             ], 422);
         }
@@ -83,11 +84,73 @@ class InvitationController extends Controller
     /**
      * GET /api/admin/invitations
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $invitations = Invitation::with('inviter')->latest()->get();
+        $query = Invitation::with('inviter');
 
-        return response()->json(InvitationResource::collection($invitations));
+        // Search by email
+        if ($search = $request->query('search')) {
+            $query->where('email', 'like', '%' . $search . '%');
+        }
+
+        // Filter by computed status
+        if ($status = $request->query('status')) {
+            match ($status) {
+                'accepted' => $query->whereNotNull('accepted_at'),
+                'expired'  => $query->whereNull('accepted_at')->where('expires_at', '<', now()),
+                'pending'  => $query->whereNull('accepted_at')->where('expires_at', '>=', now()),
+                default    => null,
+            };
+        }
+
+        // Filter by role
+        if ($role = $request->query('role')) {
+            $query->where('role', $role);
+        }
+
+        // Filter by created_at date range
+        if ($date_from = $request->query('date_from')) {
+            $query->whereDate('created_at', '>=', $date_from);
+        }
+
+        if ($date_to = $request->query('date_to')) {
+            $query->whereDate('created_at', '<=', $date_to);
+        }
+
+        // Sort
+        $allowed_sort_fields = ['email', 'role', 'status', 'created_at', 'expires_at'];
+        $sort_field          = $request->query('sort_field', 'created_at');
+        $sort_direction      = in_array($request->query('sort_direction'), ['asc', 'desc'])
+            ? $request->query('sort_direction')
+            : 'desc';
+
+        if (!in_array($sort_field, $allowed_sort_fields)) {
+            $sort_field = 'created_at';
+        }
+
+        if ($sort_field === 'status') {
+            $query->orderByRaw("
+                CASE
+                    WHEN accepted_at IS NOT NULL THEN 0
+                    WHEN accepted_at IS NULL AND expires_at >= NOW() THEN 1
+                    WHEN accepted_at IS NULL AND expires_at < NOW() THEN 2
+                    ELSE 3
+                END {$sort_direction}
+            ");
+        } else {
+            $query->orderBy($sort_field, $sort_direction);
+        }
+
+        $paginated = $query->paginate(15);
+
+        return response()->json([
+            'data'         => collect($paginated->items())
+                ->map(fn ($invitation) => (new InvitationResource($invitation))->resolve())
+                ->values(),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'total'        => $paginated->total(),
+        ]);
     }
 
     /**
@@ -101,7 +164,7 @@ class InvitationController extends Controller
         // Admins can only invite staff, not other admins
         if ($sender->hasRole('admin') && !$sender->hasRole('super_admin') && $request->role === 'admin') {
             return response()->json([
-                'message' => 'Admins can only invite staff members.',
+                'message' => 'You are not authorized to invite users with the admin role.',
             ], 403);
         }
 
@@ -114,17 +177,19 @@ class InvitationController extends Controller
 
         if (Invitation::where('email', $request->email)->whereNull('accepted_at')->where('expires_at', '>', now())->exists()) {
             return response()->json([
-                'message' => 'A pending invitation for this email address already exists.',
+                'message' => 'The given data was invalid.',
                 'errors'  => ['email' => ['A pending invitation for this email address already exists.']],
-            ], 409);
+            ], 422);
         }
+
+        $expires_days = (int) config('invitation.expires_days', 7);
 
         $invitation = Invitation::create([
             'email'      => $request->email,
             'role'       => $request->role,
             'token'      => Str::random(64),
             'invited_by' => $sender->id,
-            'expires_at' => now()->addDays(7),
+            'expires_at' => now()->addDays($expires_days),
         ]);
 
         $invitation->load('inviter');
@@ -142,15 +207,11 @@ class InvitationController extends Controller
         $invitation = Invitation::find($id);
 
         if (!$invitation) {
-            return response()->json([
-                'message' => 'Invitation not found.',
-            ], 404);
+            return response()->json(['message' => 'Invitation not found.'], 404);
         }
 
-        if ($invitation->isAccepted()) {
-            return response()->json([
-                'message' => 'Cannot revoke an invitation that has already been accepted.',
-            ], 422);
+        if (!$invitation->isPending()) {
+            return response()->json(['message' => 'Only pending invitations can be revoked.'], 422);
         }
 
         $invitation->delete();

@@ -23,6 +23,7 @@ use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
 use App\Http\Controllers\Client\News\NewsController;
+use App\Http\Controllers\Client\Resource\ResourceController;
 use App\Http\Controllers\Client\Stripe\StripeController;
 use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
@@ -289,6 +290,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // News feed (client — active posts only)
     Route::get('/news', [NewsController::class, 'index']);
+
+    // Resources
+    Route::get('/resources', [ResourceController::class, 'index']);
+    Route::get('/resources/{id}', [ResourceController::class, 'show']);
 
     // DR Tiers catalog
     Route::get('/dr-tiers', [DrTierController::class, 'index']);

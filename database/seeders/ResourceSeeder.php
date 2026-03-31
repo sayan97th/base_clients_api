@@ -22,6 +22,7 @@ class ResourceSeeder extends Seeder
                 'title'       => 'February KW Movement 3 Month Comparison',
                 'description' => 'Monthly keyword ranking comparison for Q1 2025, including position changes, estimated traffic impact and competitor movements.',
                 'category'    => 'spreadsheet',
+                'status'      => 'published',
                 'files'       => [
                     [
                         'name'       => 'feb-kw-movement.xlsx',
@@ -41,6 +42,7 @@ class ResourceSeeder extends Seeder
                 'title'       => 'January Review',
                 'description' => null,
                 'category'    => 'document',
+                'status'      => 'published',
                 'files'       => [
                     [
                         'name'       => 'january-review.docx',
@@ -54,6 +56,7 @@ class ResourceSeeder extends Seeder
                 'title'       => 'Q4 2024 Link Building Report',
                 'description' => 'Summary of all link placements completed in Q4 2024 with DR scores and live link verification.',
                 'category'    => 'pdf',
+                'status'      => 'published',
                 'files'       => [
                     [
                         'name'       => 'q4-2024-link-building-report.pdf',
@@ -67,6 +70,7 @@ class ResourceSeeder extends Seeder
                 'title'       => 'Brand Assets Pack',
                 'description' => 'Official logo files and brand guidelines for your organization.',
                 'category'    => 'image',
+                'status'      => 'published',
                 'files'       => [
                     [
                         'name'       => 'logo-primary.png',
@@ -86,6 +90,7 @@ class ResourceSeeder extends Seeder
                 'title'       => 'SEO Strategy Presentation 2025',
                 'description' => 'Annual SEO strategy deck covering target keywords, link velocity goals and content roadmap.',
                 'category'    => 'presentation',
+                'status'      => 'published',
                 'files'       => [
                     [
                         'name'       => 'seo-strategy-2025.pptx',

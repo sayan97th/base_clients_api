@@ -36,8 +36,8 @@ class NewsPost extends Model
         'tags'        => 'array',
         'is_featured' => 'boolean',
         'sort_order'  => 'integer',
-        'starts_at'   => 'date',
-        'ends_at'     => 'date',
+        'starts_at'   => 'datetime',
+        'ends_at'     => 'datetime',
     ];
 
     public function coupon(): BelongsTo

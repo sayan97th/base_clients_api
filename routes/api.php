@@ -69,6 +69,10 @@ Route::prefix('auth')->group(function () {
     });
 });
 
+// ─── Public news feed (no auth required) ─────────────────────────────────────
+Route::get('/news', [NewsController::class, 'index']);
+Route::get('/news/{id}', [NewsController::class, 'show']);
+
 // ─── Admin public routes (no auth required) ───────────────────────────────────
 Route::prefix('admin')->group(function () {
     Route::prefix('invitations')->group(function () {
@@ -300,9 +304,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Coupon validation
     Route::post('/coupons/validate', [CouponValidationController::class, 'validate']);
-
-    // News feed (client — active posts only)
-    Route::get('/news', [NewsController::class, 'index']);
 
     // Resources
     Route::get('/resources', [ResourceController::class, 'index']);

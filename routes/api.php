@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
+use App\Http\Controllers\Admin\Resource\AdminResourceController;
+use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
 use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
@@ -115,6 +117,17 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/', [AdminServiceController::class, 'store']);
             Route::patch('/{id}', [AdminServiceController::class, 'update']);
             Route::delete('/{id}', [AdminServiceController::class, 'destroy']);
+        });
+
+        // Resources — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('resources')->group(function () {
+            Route::get('/',                          [AdminResourceController::class, 'index']);
+            Route::post('/',                         [AdminResourceController::class, 'store']);
+            Route::get('/{id}',                      [AdminResourceController::class, 'show']);
+            Route::patch('/{id}',                    [AdminResourceController::class, 'update']);
+            Route::delete('/{id}',                   [AdminResourceController::class, 'destroy']);
+            Route::post('/{id}/files',               [AdminResourceFileController::class, 'store']);
+            Route::delete('/{id}/files/{file_id}',   [AdminResourceFileController::class, 'destroy']);
         });
 
         // News & Promos — super_admin, admin, staff

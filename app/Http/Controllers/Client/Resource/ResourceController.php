@@ -29,6 +29,7 @@ class ResourceController extends Controller
 
         $query = Resource::with('files')
             ->where('organization_id', $organization_id)
+            ->where('status', 'published')
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -64,6 +65,7 @@ class ResourceController extends Controller
         $resource = Resource::with('files')
             ->where('id', $id)
             ->where('organization_id', $organization_id)
+            ->where('status', 'published')
             ->first();
 
         if (! $resource) {

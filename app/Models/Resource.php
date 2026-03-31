@@ -8,11 +8,27 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Resource extends Model
 {
+    const CATEGORIES = [
+        'pdf',
+        'spreadsheet',
+        'document',
+        'presentation',
+        'image',
+        'blog_post',
+        'other',
+    ];
+
+    const STATUSES = [
+        'published',
+        'draft',
+    ];
+
     protected $fillable = [
         'organization_id',
         'title',
         'description',
         'category',
+        'status',
     ];
 
     public function organization(): BelongsTo

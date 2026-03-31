@@ -8,6 +8,7 @@ use App\Http\Resources\ResourceFileResource;
 use App\Models\Resource;
 use App\Models\ResourceFile;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class AdminResourceFileController extends Controller
@@ -20,6 +21,10 @@ class AdminResourceFileController extends Controller
      */
     public function store(StoreResourceFileRequest $request, int $id): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.manage_files')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource = Resource::find($id);
 
         if (! $resource) {
@@ -46,8 +51,12 @@ class AdminResourceFileController extends Controller
      * Deletes a specific file attachment from both storage and the database.
      * Returns 404 if the file does not belong to the given resource.
      */
-    public function destroy(int $id, int $file_id): JsonResponse
+    public function destroy(Request $request, int $id, int $file_id): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.manage_files')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource_file = ResourceFile::where('id', $file_id)
             ->where('resource_id', $id)
             ->first();

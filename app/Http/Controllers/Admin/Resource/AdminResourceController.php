@@ -21,6 +21,10 @@ class AdminResourceController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.view')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $request->validate([
             'page'     => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|min:1|max:100',
@@ -62,8 +66,12 @@ class AdminResourceController extends Controller
      * Returns the full detail of a resource including all attached files.
      * Admin can access any resource regardless of organization.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.show')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource = Resource::with(['files', 'organization'])->find($id);
 
         if (! $resource) {
@@ -80,6 +88,10 @@ class AdminResourceController extends Controller
      */
     public function store(StoreResourceRequest $request): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.create')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource = Resource::create($request->validated());
 
         $resource->load(['files', 'organization']);
@@ -92,9 +104,19 @@ class AdminResourceController extends Controller
      *
      * Updates resource metadata. All fields are optional, enabling
      * quick status toggles as well as full edits.
+     *
+     * When the request body contains only the "status" field (publish toggle),
+     * the resources.publish permission is required instead of resources.edit.
      */
     public function update(UpdateResourceRequest $request, int $id): JsonResponse
     {
+        $only_status = $request->keys() === ['status'];
+        $required_permission = $only_status ? 'resources.publish' : 'resources.edit';
+
+        if (! $request->user()->hasPermission($required_permission)) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource = Resource::find($id);
 
         if (! $resource) {
@@ -113,8 +135,12 @@ class AdminResourceController extends Controller
      *
      * Deletes a resource and all its attached files from storage and the database.
      */
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
+        if (! $request->user()->hasPermission('resources.delete')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
         $resource = Resource::with('files')->find($id);
 
         if (! $resource) {

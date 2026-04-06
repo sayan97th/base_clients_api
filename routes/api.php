@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBacklinkOrderController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
+use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
@@ -160,6 +162,23 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminDrTierController::class, 'show']);
             Route::patch('/{id}', [AdminDrTierController::class, 'update']);
             Route::delete('/{id}', [AdminDrTierController::class, 'destroy']);
+        });
+
+        // Dashboard — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('dashboard')->group(function () {
+            Route::get('/summary',       [AdminDashboardController::class, 'summary']);
+            Route::get('/team-capacity', [AdminDashboardController::class, 'teamCapacity']);
+            Route::get('/team-health',   [AdminDashboardController::class, 'teamHealth']);
+        });
+
+        // Backlink Orders — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->group(function () {
+            Route::get('/backlink-orders/export',      [AdminBacklinkOrderController::class, 'export']);
+            Route::get('/backlink-orders',             [AdminBacklinkOrderController::class, 'index']);
+            Route::post('/backlink-orders',            [AdminBacklinkOrderController::class, 'store']);
+            Route::put('/backlink-orders/{id}',        [AdminBacklinkOrderController::class, 'update']);
+            Route::patch('/backlink-orders/{id}',      [AdminBacklinkOrderController::class, 'partialUpdate']);
+            Route::delete('/backlink-orders/{id}',     [AdminBacklinkOrderController::class, 'destroy']);
         });
 
         // Staff portal — super_admin, admin, staff

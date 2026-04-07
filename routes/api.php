@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBacklinkOrderController;
+use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
@@ -83,6 +84,9 @@ Route::prefix('admin')->group(function () {
         Route::get('{token}/validate', [AdminInvitationController::class, 'validateToken']);
         Route::post('accept', [AdminInvitationController::class, 'accept']);
     });
+
+    // News placements CSV export — auth handled via ?token= query parameter
+    Route::get('news-placements/export', [AdminNewsPlacementController::class, 'export']);
 });
 
 // ─── Authenticated routes ─────────────────────────────────────────────────────
@@ -189,6 +193,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::put('/backlink-orders/{id}',        [AdminBacklinkOrderController::class, 'update']);
             Route::patch('/backlink-orders/{id}',      [AdminBacklinkOrderController::class, 'partialUpdate']);
             Route::delete('/backlink-orders/{id}',     [AdminBacklinkOrderController::class, 'destroy']);
+        });
+
+        // News Placements — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->group(function () {
+            Route::get('/news-placements',         [AdminNewsPlacementController::class, 'index']);
+            Route::post('/news-placements',        [AdminNewsPlacementController::class, 'store']);
+            Route::put('/news-placements/{id}',    [AdminNewsPlacementController::class, 'update']);
+            Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
         });
 
         // Staff portal — super_admin, admin, staff

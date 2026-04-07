@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardCo
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
+use App\Http\Controllers\Admin\ContentRefreshTier\ContentRefreshTierController as AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
@@ -30,6 +31,7 @@ use App\Http\Controllers\Client\News\NewsController;
 use App\Http\Controllers\Client\Resource\ResourceController;
 use App\Http\Controllers\Client\Stripe\StripeController;
 use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
+use App\Http\Controllers\Client\LinkBuilding\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
@@ -153,6 +155,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
+        });
+
+        // Content Refresh Tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
+            Route::get('/', [AdminContentRefreshTierController::class, 'index']);
+            Route::post('/', [AdminContentRefreshTierController::class, 'store']);
+            Route::patch('/{id}', [AdminContentRefreshTierController::class, 'update']);
+            Route::delete('/{id}', [AdminContentRefreshTierController::class, 'destroy']);
         });
 
         // DR Tiers — super_admin, admin, staff
@@ -330,6 +340,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // DR Tiers catalog
     Route::get('/dr-tiers', [DrTierController::class, 'index']);
+
+    // Content Refresh Tiers catalog
+    Route::get('/content-refresh-tiers', [ContentRefreshTierController::class, 'index']);
 
     // Link building orders
     Route::prefix('link-building')->group(function () {

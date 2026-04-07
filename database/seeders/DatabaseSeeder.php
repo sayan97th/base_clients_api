@@ -22,6 +22,8 @@ class DatabaseSeeder extends Seeder
         $this->seedOrganization();
 
         $this->call(ResourceSeeder::class);
+        $this->call(StaffUserSeeder::class);
+        $this->call(BacklinkOrderSeeder::class);
     }
 
     private function seedOrganization(): void

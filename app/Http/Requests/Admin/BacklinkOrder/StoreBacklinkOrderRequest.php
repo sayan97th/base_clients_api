@@ -31,7 +31,7 @@ class StoreBacklinkOrderRequest extends FormRequest
             'partnership'               => 'nullable|string|max:2000',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|url|max:2000',
-            'status'                    => 'required|in:Live,Pending,In Progress,Cancelled',
+            'status'                    => 'required|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
             'live_link'                 => 'nullable|url|max:2000',
             'live_link_date'            => 'nullable|string|max:20',
             'dr_lbs'                    => 'nullable|string|max:20',

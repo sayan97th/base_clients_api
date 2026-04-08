@@ -386,7 +386,7 @@ class BacklinkOrderController extends Controller
             'partnership'               => 'sometimes|nullable|string|max:2000',
             'article_title'             => 'sometimes|nullable|string|max:500',
             'article'                   => 'sometimes|nullable|url|max:2000',
-            'status'                    => 'sometimes|nullable|in:Live,Pending,In Progress,Cancelled',
+            'status'                    => 'sometimes|nullable|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
             'live_link'                 => 'sometimes|nullable|url|max:2000',
             'live_link_date'            => 'sometimes|nullable|string|max:20',
             'dr_lbs'                    => 'sometimes|nullable|string|max:20',

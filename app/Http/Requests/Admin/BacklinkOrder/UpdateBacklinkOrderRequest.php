@@ -12,8 +12,9 @@ class UpdateBacklinkOrderRequest extends FormRequest
     }
 
     /**
-     * Convert empty strings to null for URL fields so that nullable|url
-     * validation does not reject an empty string (which is not a valid URL).
+     * Normalize URL fields: convert empty strings to null and prepend
+     * "https://" when a value is present but has no scheme, so that
+     * values like "starmusiqweb.com" pass the url validation rule.
      */
     protected function prepareForValidation(): void
     {
@@ -21,8 +22,16 @@ class UpdateBacklinkOrderRequest extends FormRequest
 
         $normalized = [];
         foreach ($url_fields as $field) {
-            if ($this->has($field) && $this->input($field) === '') {
+            if (! $this->has($field)) {
+                continue;
+            }
+
+            $value = $this->input($field);
+
+            if ($value === '' || $value === null) {
                 $normalized[$field] = null;
+            } elseif (! preg_match('#^https?://#i', $value)) {
+                $normalized[$field] = 'https://' . $value;
             }
         }
 

@@ -22,15 +22,26 @@ class InvoiceController extends Controller
         $request->validate([
             'page'     => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search'   => ['nullable', 'string', 'max:255'],
         ]);
 
         /** @var User $user */
         $user     = auth()->user();
         $per_page = min((int) $request->get('per_page', 10), 100);
+        $search   = $request->get('search');
 
-        $paginator = Invoice::where('user_id', $user->id)
-            ->orderBy('date_issued', 'desc')
-            ->paginate($per_page);
+        $query = Invoice::where('user_id', $user->id)
+            ->orderBy('date_issued', 'desc');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('unique_id', 'like', "%{$search}%")
+                  ->orWhere('status', 'like', "%{$search}%")
+                  ->orWhereRaw("DATE_FORMAT(date_issued, '%M %d, %Y') LIKE ?", ["%{$search}%"]);
+            });
+        }
+
+        $paginator = $query->paginate($per_page);
 
         $data = collect($paginator->items())->map(fn ($invoice) => [
             'unique_id' => $invoice->unique_id,
@@ -56,7 +67,7 @@ class InvoiceController extends Controller
 
         $invoice = Invoice::where('unique_id', $unique_id)
             ->where('user_id', $user->id)
-            ->with(['lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->with(['lineItems', 'billedTo', 'order.items', 'order.orderCoupons.coupon'])
             ->first();
 
         if (!$invoice) {
@@ -106,11 +117,10 @@ class InvoiceController extends Controller
 
     private function buildInvoiceDetail(Invoice $invoice): array
     {
-        $billed_to = $invoice->billedTo;
-        $order     = $invoice->order;
-
+        $billed_to        = $invoice->billedTo;
+        $order            = $invoice->order;
+        $bulk_discount    = (float) ($invoice->discount_amount ?? 0);
         $coupon_discounts = [];
-        $total_discount   = 0.0;
 
         if ($order && $order->orderCoupons->isNotEmpty()) {
             $coupon_discounts = $order->orderCoupons->map(fn ($oc) => [
@@ -120,8 +130,6 @@ class InvoiceController extends Controller
                 'discount_value'  => $oc->coupon?->discount_value ?? 0,
                 'discount_amount' => '$' . number_format((float) $oc->discount_amount, 2),
             ])->values()->all();
-
-            $total_discount = (float) $order->orderCoupons->sum('discount_amount');
         }
 
         return [
@@ -133,7 +141,7 @@ class InvoiceController extends Controller
             'payment_method' => $invoice->payment_method,
             'status'         => $invoice->status,
             'subtotal'       => $this->formatAmount($invoice->subtotal_amount, $invoice->currency_type),
-            'discount'       => $total_discount > 0 ? '$' . number_format($total_discount, 2) : '$0.00',
+            'discount'       => $bulk_discount > 0 ? '$' . number_format($bulk_discount, 2) : '$0.00',
             'total'          => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
             'credit'         => $this->formatCredit($invoice->credit_amount, $invoice->currency_type),
             'billed_to'      => $billed_to ? [

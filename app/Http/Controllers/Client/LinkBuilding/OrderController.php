@@ -32,23 +32,33 @@ class OrderController extends Controller
         $request->validate([
             'page'     => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'search'   => ['nullable', 'string', 'max:255'],
         ]);
 
         /** @var User $user */
         $user     = auth()->user();
         $per_page = min((int) $request->get('per_page', 10), 100);
+        $search   = $request->get('search');
 
-        $paginator = LinkBuildingOrder::where('user_id', $user->id)
+        $query = LinkBuildingOrder::where('user_id', $user->id)
             ->where('is_hidden', false)
-            ->withCount(['items as items_count' => function ($query) {
-                $query->selectRaw('sum(quantity)');
+            ->withCount(['items as items_count' => function ($q) {
+                $q->selectRaw('sum(quantity)');
             }])
             ->withCount('updates as updates_count')
-            ->with(['updates' => function ($query) {
-                $query->latest()->limit(1);
+            ->with(['updates' => function ($q) {
+                $q->latest()->limit(1);
             }])
-            ->orderBy('created_at', 'desc')
-            ->paginate($per_page);
+            ->orderBy('created_at', 'desc');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('id', 'like', "%{$search}%")
+                  ->orWhere('order_title', 'like', "%{$search}%");
+            });
+        }
+
+        $paginator = $query->paginate($per_page);
 
         $data = collect($paginator->items())->map(fn ($order) => [
             'id'             => $order->id,
@@ -221,7 +231,7 @@ class OrderController extends Controller
             $entry['coupon']->increment('times_used');
         }
 
-        $this->invoiceService->createForLinkBuildingOrder($user, $order);
+        $this->invoiceService->createForLinkBuildingOrder($user, $order, 'Credit Card', 'usd', 0.0, $total_links);
 
         event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 

@@ -35,7 +35,7 @@ class PaymentProfileController extends Controller
             'billing_address.city'            => ['nullable', 'string', 'max:255'],
             'billing_address.state'           => ['nullable', 'string', 'max:255'],
             'billing_address.postal_code'     => ['nullable', 'string', 'max:20'],
-            'billing_address.country'         => ['nullable', 'string', 'size:2'],
+            'billing_address.country'         => ['nullable', 'string', 'max:100'],
             'billing_address.company'         => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -104,7 +104,7 @@ class PaymentProfileController extends Controller
                 ?->update(['is_default' => true]);
         }
 
-        return response()->json(['message' => 'Payment method removed successfully.']);
+        return response()->noContent();
     }
 
     public function setDefault(string $id, Request $request): JsonResponse

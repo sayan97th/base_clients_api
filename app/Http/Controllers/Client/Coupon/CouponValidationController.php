@@ -27,10 +27,17 @@ class CouponValidationController extends Controller
         $dr_tier_ids     = $request->dr_tier_ids ?? [];
         $dr_tier_amounts = $request->dr_tier_amounts ?? [];
 
+        if ($order_amount < 1000.00) {
+            return response()->json($this->buildInvalidResponse(
+                $code,
+                'A minimum cart total of $1,000.00 is required to apply a promo code.'
+            ));
+        }
+
         $coupon = Coupon::where('code', $code)->where('is_active', true)->first();
 
         if (!$coupon) {
-            return response()->json($this->buildInvalidResponse($code, 'Coupon not found.'));
+            return response()->json($this->buildInvalidResponse($code, 'This promo code is expired or does not exist.'));
         }
 
         $result = $this->couponService->validateAndCalculate(

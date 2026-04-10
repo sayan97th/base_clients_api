@@ -10,26 +10,38 @@ use Illuminate\Support\Facades\DB;
 
 class InvoiceService
 {
+    private const BULK_DISCOUNT_THRESHOLD = 10;
+    private const BULK_DISCOUNT_RATE      = 0.10;
+
     /**
      * Create an invoice for a link building order.
      * Fires PaymentCompleted event to notify all super admins.
+     *
+     * @param int|null $total_links  Total link quantity across all items — used to determine bulk discount.
+     *                               When null, it is computed from order items.
      */
     public function createForLinkBuildingOrder(
         User $user,
         LinkBuildingOrder $order,
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        ?int $total_links = null
     ): Invoice {
         $order->loadMissing(['items.drTier', 'billing', 'orderCoupons']);
 
-        $subtotal_amount  = $order->items->sum('subtotal');
-        $discount_amount  = $order->orderCoupons->sum('discount_amount');
-        $total_amount     = $order->total_amount;
+        $subtotal_amount = (float) $order->items->sum('subtotal');
+
+        $resolved_total_links = $total_links ?? (int) $order->items->sum('quantity');
+        $bulk_discount_amount = $resolved_total_links >= self::BULK_DISCOUNT_THRESHOLD
+            ? round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2)
+            : 0.0;
+
+        $total_amount = $order->total_amount;
 
         $invoice = DB::transaction(function () use (
             $user, $order, $payment_method, $currency_type,
-            $subtotal_amount, $discount_amount, $total_amount, $credit_amount
+            $subtotal_amount, $bulk_discount_amount, $total_amount, $credit_amount
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
@@ -43,7 +55,7 @@ class InvoiceService
                 'payment_method'  => $payment_method,
                 'currency_type'   => $currency_type,
                 'subtotal_amount'  => $subtotal_amount,
-                'discount_amount'  => $discount_amount,
+                'discount_amount'  => $bulk_discount_amount,
                 'total_amount'     => $total_amount,
                 'credit_amount'   => $credit_amount,
                 'date_issued'     => now(),

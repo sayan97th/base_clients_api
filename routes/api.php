@@ -186,12 +186,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         });
 
         // Backlink Orders — super_admin, admin, staff
+        // Note: search and export are registered before the generic POST store to avoid route shadowing.
         Route::middleware('role:super_admin,admin,staff')->group(function () {
-            Route::get('/backlink-orders/export',      [AdminBacklinkOrderController::class, 'export']);
-            Route::get('/backlink-orders',             [AdminBacklinkOrderController::class, 'index']);
+            Route::post('/backlink-orders/search',     [AdminBacklinkOrderController::class, 'search']);
+            Route::post('/backlink-orders/export',     [AdminBacklinkOrderController::class, 'export']);
             Route::post('/backlink-orders',            [AdminBacklinkOrderController::class, 'store']);
             Route::put('/backlink-orders/{id}',        [AdminBacklinkOrderController::class, 'update']);
-            Route::patch('/backlink-orders/{id}',      [AdminBacklinkOrderController::class, 'partialUpdate']);
             Route::delete('/backlink-orders/{id}',     [AdminBacklinkOrderController::class, 'destroy']);
         });
 

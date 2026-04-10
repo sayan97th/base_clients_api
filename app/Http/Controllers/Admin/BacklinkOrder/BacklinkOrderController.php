@@ -9,8 +9,6 @@ use App\Models\BacklinkOrder;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Support\Str;
 
 class BacklinkOrderController extends Controller
 {
@@ -28,59 +26,45 @@ class BacklinkOrderController extends Controller
         'dr_lbs',
     ];
 
+    /** All columns that may be targeted by column_filters. */
+    private const FILTERABLE_COLUMNS = [
+        'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'article_title', 'article', 'status', 'live_link', 'live_link_date',
+        'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
+        'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+    ];
+
     /**
-     * GET /api/admin/backlink-orders
+     * POST /api/admin/backlink-orders/search
      *
-     * Returns a paginated, searchable, sortable list of backlink orders.
+     * Paginated list with server-side filtering (body-based) and multi-column sorting.
      */
-    public function index(Request $request): JsonResponse
+    public function search(Request $request): JsonResponse
     {
+        $page           = max(1, (int) $request->input('page', 1));
+        $per_page       = min((int) $request->input('per_page', 50), 200);
         $search         = $request->input('search');
         $status         = $request->input('status');
+        $link_type      = $request->input('link_type');
         $client         = $request->input('client');
         $link_builder   = $request->input('link_builder');
-        $sort_field     = $request->input('sort_field', 'order_id');
-        $sort_direction = $request->input('sort_direction', 'asc');
-        $per_page       = min((int) $request->input('per_page', 50), 200);
-
-        if (! in_array($sort_field, self::SORTABLE_FIELDS, true)) {
-            $sort_field = 'order_id';
-        }
-
-        if (! in_array($sort_direction, ['asc', 'desc'], true)) {
-            $sort_direction = 'asc';
-        }
+        $sort_rules     = $request->input('sort_rules', []);
+        $column_filters = $request->input('column_filters', []);
 
         $query = BacklinkOrder::query();
 
-        if (filled($search)) {
-            $query->where(function ($q) use ($search) {
-                $q->where('order_id', 'like', '%' . $search . '%')
-                    ->orWhere('client', 'like', '%' . $search . '%')
-                    ->orWhere('keyword', 'like', '%' . $search . '%')
-                    ->orWhere('link_builder', 'like', '%' . $search . '%')
-                    ->orWhere('partnership', 'like', '%' . $search . '%')
-                    ->orWhere('status', 'like', '%' . $search . '%');
-            });
-        }
+        $this->applyGlobalSearch($query, $search);
+        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+        $this->applyColumnFilters($query, $column_filters);
+        $this->applySortRules($query, $sort_rules);
 
-        if (filled($status)) {
-            $query->where('status', $status);
-        }
+        $paginated = $query->paginate($per_page, ['*'], 'page', $page);
 
-        if (filled($client)) {
-            $query->where('client', 'like', '%' . $client . '%');
-        }
-
-        if (filled($link_builder)) {
-            $query->where('link_builder', 'like', '%' . $link_builder . '%');
-        }
-
-        $query->orderBy($sort_field, $sort_direction);
-
-        $paginated = $query->paginate($per_page);
-
-        $data = $paginated->getCollection()->map(fn (BacklinkOrder $order) => $this->formatRow($order))->values();
+        $data = $paginated->getCollection()
+            ->map(fn (BacklinkOrder $order) => $this->formatRow($order))
+            ->values();
 
         return response()->json([
             'data'         => $data,
@@ -130,29 +114,6 @@ class BacklinkOrderController extends Controller
     }
 
     /**
-     * PATCH /api/admin/backlink-orders/{id}
-     *
-     * Partially updates specific fields of a backlink order.
-     */
-    public function partialUpdate(Request $request, string $id): JsonResponse
-    {
-        $order = BacklinkOrder::find($id);
-
-        if (! $order) {
-            return response()->json(['message' => 'Backlink order not found.'], 404);
-        }
-
-        $validated = $request->validate($this->partialUpdateRules($id));
-
-        $order->update($validated);
-
-        return response()->json([
-            'message' => 'Backlink order updated successfully.',
-            'data'    => $this->formatRow($order->fresh()),
-        ]);
-    }
-
-    /**
      * DELETE /api/admin/backlink-orders/{id}
      *
      * Permanently deletes a backlink order row.
@@ -171,55 +132,29 @@ class BacklinkOrderController extends Controller
     }
 
     /**
-     * GET /api/admin/backlink-orders/export
+     * POST /api/admin/backlink-orders/export
      *
-     * Streams a CSV download of all matching backlink orders.
+     * Streams a CSV download of all rows matching the same filters as /search.
+     * Pagination fields are ignored — all matching rows are exported.
      */
     public function export(Request $request): Response
     {
-        $search       = $request->input('search');
-        $status       = $request->input('status');
-        $client       = $request->input('client');
-        $link_builder = $request->input('link_builder');
-        $sort_field   = $request->input('sort_field', 'order_id');
-        $sort_dir     = $request->input('sort_direction', 'asc');
-
-        if (! in_array($sort_field, self::SORTABLE_FIELDS, true)) {
-            $sort_field = 'order_id';
-        }
-
-        if (! in_array($sort_dir, ['asc', 'desc'], true)) {
-            $sort_dir = 'asc';
-        }
+        $search         = $request->input('search');
+        $status         = $request->input('status');
+        $link_type      = $request->input('link_type');
+        $client         = $request->input('client');
+        $link_builder   = $request->input('link_builder');
+        $sort_rules     = $request->input('sort_rules', []);
+        $column_filters = $request->input('column_filters', []);
 
         $query = BacklinkOrder::query();
 
-        if (filled($search)) {
-            $query->where(function ($q) use ($search) {
-                $q->where('order_id', 'like', '%' . $search . '%')
-                    ->orWhere('client', 'like', '%' . $search . '%')
-                    ->orWhere('keyword', 'like', '%' . $search . '%')
-                    ->orWhere('link_builder', 'like', '%' . $search . '%')
-                    ->orWhere('partnership', 'like', '%' . $search . '%')
-                    ->orWhere('status', 'like', '%' . $search . '%');
-            });
-        }
+        $this->applyGlobalSearch($query, $search);
+        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+        $this->applyColumnFilters($query, $column_filters);
+        $this->applySortRules($query, $sort_rules);
 
-        if (filled($status)) {
-            $query->where('status', $status);
-        }
-
-        if (filled($client)) {
-            $query->where('client', 'like', '%' . $client . '%');
-        }
-
-        if (filled($link_builder)) {
-            $query->where('link_builder', 'like', '%' . $link_builder . '%');
-        }
-
-        $query->orderBy($sort_field, $sort_dir);
-
-        $filename = 'backlink_orders_' . now()->format('Y-m-d') . '.csv';
+        $filename = 'backlink-orders-' . now()->format('Y-m-d') . '.csv';
 
         $headers = [
             'Content-Type'        => 'text/csv; charset=UTF-8',
@@ -227,12 +162,13 @@ class BacklinkOrderController extends Controller
         ];
 
         $columns = [
-            'Order ID', 'Team Specific Link ID', 'Link Type', 'Client', 'Keyword',
-            'Landing Page', 'Exact Match', 'Notes', 'Request Date', 'Estimated Delivery Date',
-            'Estimated Turnaround Days', 'Days Left', 'Projected Health', 'Link Builder',
-            'Pen Name', 'Partnership', 'Article Title', 'Article', 'Status', 'Live Link',
-            'Live Link Date', 'DR LBS', 'Posting Fee LBS', 'Current Traffic', 'DR Formula',
-            'Current POC', 'Current Price', 'LB TL Approval', 'Approval Date', 'Final Price',
+            'id', 'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+            'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+            'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
+            'pen_name', 'partnership', 'article_title', 'article', 'status', 'live_link',
+            'live_link_date', 'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
+            'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+            'created_at', 'updated_at',
         ];
 
         $callback = function () use ($query, $columns) {
@@ -241,41 +177,10 @@ class BacklinkOrderController extends Controller
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM
             fputcsv($handle, $columns);
 
-            $query->chunk(500, function ($orders) use ($handle) {
+            $query->chunk(500, function ($orders) use ($handle, $columns) {
                 foreach ($orders as $order) {
-                    $row    = $this->formatRow($order);
-                    fputcsv($handle, [
-                        $row['order_id'],
-                        $row['team_specific_link_id'],
-                        $row['link_type'],
-                        $row['client'],
-                        $row['keyword'],
-                        $row['landing_page'],
-                        $row['exact_match'],
-                        $row['notes'],
-                        $row['request_date'],
-                        $row['estimated_delivery_date'],
-                        $row['estimated_turnaround_days'],
-                        $row['days_left'],
-                        $row['projected_health'],
-                        $row['link_builder'],
-                        $row['pen_name'],
-                        $row['partnership'],
-                        $row['article_title'],
-                        $row['article'],
-                        $row['status'],
-                        $row['live_link'],
-                        $row['live_link_date'],
-                        $row['dr_lbs'],
-                        $row['posting_fee_lbs'],
-                        $row['current_traffic'],
-                        $row['dr_formula'],
-                        $row['current_poc'],
-                        $row['current_price'],
-                        $row['lb_tl_approval'],
-                        $row['approval_date'],
-                        $row['final_price'],
-                    ]);
+                    $row = $this->formatRow($order);
+                    fputcsv($handle, array_map(fn ($col) => $row[$col] ?? '', $columns));
                 }
             });
 
@@ -285,9 +190,151 @@ class BacklinkOrderController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
+    // ── Private helpers ───────────────────────────────────────────────────────
+
     /**
-     * Formats a BacklinkOrder into the API response array,
-     * including computed fields days_left and projected_health.
+     * Applies a global keyword search across key text columns.
+     */
+    private function applyGlobalSearch($query, ?string $search): void
+    {
+        if (! filled($search)) {
+            return;
+        }
+
+        $query->where(function ($q) use ($search) {
+            $q->where('order_id', 'like', '%' . $search . '%')
+                ->orWhere('client', 'like', '%' . $search . '%')
+                ->orWhere('keyword', 'like', '%' . $search . '%')
+                ->orWhere('link_builder', 'like', '%' . $search . '%')
+                ->orWhere('status', 'like', '%' . $search . '%')
+                ->orWhere('partnership', 'like', '%' . $search . '%');
+        });
+    }
+
+    /**
+     * Applies toolbar quick filters (exact/substring matches).
+     */
+    private function applyQuickFilters($query, ?string $status, ?string $link_type, ?string $client, ?string $link_builder): void
+    {
+        if (filled($status)) {
+            $query->where('status', $status);
+        }
+
+        if (filled($link_type)) {
+            $query->where('link_type', $link_type);
+        }
+
+        if (filled($client)) {
+            $query->where('client', 'like', '%' . $client . '%');
+        }
+
+        if (filled($link_builder)) {
+            $query->where('link_builder', 'like', '%' . $link_builder . '%');
+        }
+    }
+
+    /**
+     * Applies per-column filters (text, select, number, date).
+     */
+    private function applyColumnFilters($query, array $column_filters): void
+    {
+        foreach ($column_filters as $filter) {
+            $key  = $filter['key']  ?? '';
+            $type = $filter['type'] ?? '';
+
+            if (! in_array($key, self::FILTERABLE_COLUMNS, true)) {
+                continue;
+            }
+
+            match ($type) {
+                'text'   => $this->applyTextFilter($query, $key, $filter),
+                'select' => $this->applySelectFilter($query, $key, $filter),
+                'number' => $this->applyNumberFilter($query, $key, $filter),
+                'date'   => $this->applyDateFilter($query, $key, $filter),
+                default  => null,
+            };
+        }
+    }
+
+    private function applyTextFilter($query, string $key, array $filter): void
+    {
+        $value = $filter['value'] ?? '';
+        if (filled($value)) {
+            $query->where($key, 'like', '%' . $value . '%');
+        }
+    }
+
+    private function applySelectFilter($query, string $key, array $filter): void
+    {
+        $values = $filter['values'] ?? [];
+        if (! empty($values)) {
+            $query->whereIn($key, $values);
+        }
+    }
+
+    private function applyNumberFilter($query, string $key, array $filter): void
+    {
+        $min = $filter['min'] ?? '';
+        $max = $filter['max'] ?? '';
+
+        if (filled($min)) {
+            $query->where($key, '>=', (float) $min);
+        }
+
+        if (filled($max)) {
+            $query->where($key, '<=', (float) $max);
+        }
+    }
+
+    private function applyDateFilter($query, string $key, array $filter): void
+    {
+        $from = $filter['from'] ?? '';
+        $to   = $filter['to']   ?? '';
+
+        if (filled($from)) {
+            try {
+                $from_date = Carbon::createFromFormat('m/d/Y', $from)->startOfDay();
+                $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') >= ?", [$from_date->toDateString()]);
+            } catch (\Exception) {
+                // Invalid date — skip this bound
+            }
+        }
+
+        if (filled($to)) {
+            try {
+                $to_date = Carbon::createFromFormat('m/d/Y', $to)->startOfDay();
+                $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') <= ?", [$to_date->toDateString()]);
+            } catch (\Exception) {
+                // Invalid date — skip this bound
+            }
+        }
+    }
+
+    /**
+     * Applies an ordered list of sort rules. Falls back to order_id asc when empty.
+     */
+    private function applySortRules($query, array $sort_rules): void
+    {
+        $applied = false;
+
+        foreach ($sort_rules as $rule) {
+            $key = $rule['key']       ?? '';
+            $dir = strtolower($rule['direction'] ?? 'asc');
+
+            if (in_array($key, self::SORTABLE_FIELDS, true) && in_array($dir, ['asc', 'desc'], true)) {
+                $query->orderBy($key, $dir);
+                $applied = true;
+            }
+        }
+
+        if (! $applied) {
+            $query->orderBy('order_id', 'asc');
+        }
+    }
+
+    /**
+     * Formats a BacklinkOrder into the standard API response shape,
+     * including the computed fields days_left and projected_health.
      */
     private function formatRow(BacklinkOrder $order): array
     {
@@ -316,7 +363,7 @@ class BacklinkOrderController extends Controller
             'partnership'               => $order->partnership ?? '',
             'article_title'             => $order->article_title ?? '',
             'article'                   => $order->article ?? '',
-            'status'                    => $order->status ?? 'Pending',
+            'status'                    => $order->status ?? 'New Request',
             'live_link'                 => $order->live_link ?? '',
             'live_link_date'            => $order->live_link_date ?? '',
             'dr_lbs'                    => $order->dr_lbs ?? '',
@@ -335,6 +382,9 @@ class BacklinkOrderController extends Controller
 
     /**
      * Computes days_left and projected_health from the stored date strings.
+     *
+     * days_left        = signed integer days between today and estimated_delivery_date
+     * projected_health = (days_left / estimated_turnaround_days) * 100 as "%"
      *
      * @return array{string, string}  [$days_left, $projected_health]
      */
@@ -361,43 +411,5 @@ class BacklinkOrderController extends Controller
         $projected_health = (int) round(($days_left / $turnaround) * 100);
 
         return [(string) $days_left, $projected_health . '%'];
-    }
-
-    /**
-     * Validation rules for PATCH (partial update) — all fields are nullable/sometimes.
-     */
-    private function partialUpdateRules(string $id): array
-    {
-        return [
-            'order_id'                  => 'sometimes|string|max:50|unique:backlink_orders,order_id,' . $id,
-            'team_specific_link_id'     => 'sometimes|nullable|string|max:50',
-            'link_type'                 => 'sometimes|nullable|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
-            'client'                    => 'sometimes|nullable|string|max:255',
-            'keyword'                   => 'sometimes|nullable|string|max:500',
-            'landing_page'              => 'sometimes|nullable|url|max:2000',
-            'exact_match'               => 'sometimes|nullable|in:Yes,No',
-            'notes'                     => 'sometimes|nullable|string',
-            'request_date'              => 'sometimes|nullable|string|max:20',
-            'estimated_delivery_date'   => 'sometimes|nullable|string|max:20',
-            'estimated_turnaround_days' => 'sometimes|nullable|integer|min:0',
-            'link_builder_user_id'      => 'sometimes|nullable|integer|exists:users,id',
-            'link_builder'              => 'sometimes|nullable|string|max:255',
-            'pen_name'                  => 'sometimes|nullable|string|max:255',
-            'partnership'               => 'sometimes|nullable|string|max:2000',
-            'article_title'             => 'sometimes|nullable|string|max:500',
-            'article'                   => 'sometimes|nullable|url|max:2000',
-            'status'                    => 'sometimes|nullable|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
-            'live_link'                 => 'sometimes|nullable|url|max:2000',
-            'live_link_date'            => 'sometimes|nullable|string|max:20',
-            'dr_lbs'                    => 'sometimes|nullable|string|max:20',
-            'posting_fee_lbs'           => 'sometimes|nullable|string|max:50',
-            'current_traffic'           => 'sometimes|nullable|string|max:50',
-            'dr_formula'                => 'sometimes|nullable|string|max:50',
-            'current_poc'               => 'sometimes|nullable|string|max:255',
-            'current_price'             => 'sometimes|nullable|string|max:100',
-            'lb_tl_approval'            => 'sometimes|nullable|string|max:255',
-            'approval_date'             => 'sometimes|nullable|string|max:20',
-            'final_price'               => 'sometimes|nullable|string|max:100',
-        ];
     }
 }

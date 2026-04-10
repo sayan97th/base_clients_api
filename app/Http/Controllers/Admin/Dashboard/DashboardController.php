@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\BacklinkOrder;
 use App\Models\Invoice;
-use App\Models\LinkBuildingOrder;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -19,10 +18,15 @@ class DashboardController extends Controller
      */
     public function summary(): JsonResponse
     {
+        $pending_statuses = ['New Request', 'Reviewing', 'Ordered', 'Pending'];
+
         return response()->json([
-            'total_orders'        => LinkBuildingOrder::count(),
-            'pending_orders'      => LinkBuildingOrder::where('status', 'pending')->count(),
-            'total_clients'       => User::whereHas('roles', fn ($q) => $q->where('name', 'client'))->count(),
+            'total_orders'        => BacklinkOrder::count(),
+            'pending_orders'      => BacklinkOrder::whereIn('status', $pending_statuses)->count(),
+            'total_clients'       => BacklinkOrder::whereNotNull('client')
+                                        ->where('client', '!=', '')
+                                        ->distinct()
+                                        ->count('client'),
             'total_paid_invoices' => Invoice::where('status', 'paid')->count(),
         ]);
     }
@@ -39,7 +43,7 @@ class DashboardController extends Controller
 
         $data = $staff_users->map(function (User $user) {
             $total_assigned = BacklinkOrder::where('link_builder_user_id', $user->id)
-                ->where('status', '!=', 'Cancelled')
+                ->whereNotIn('status', ['Cancelled', 'Live'])
                 ->count();
 
             $max_capacity = $user->staff_capacity ?: 25;

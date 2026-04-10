@@ -11,6 +11,26 @@ class UpdateBacklinkOrderRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Convert empty strings to null for URL fields so that nullable|url
+     * validation does not reject an empty string (which is not a valid URL).
+     */
+    protected function prepareForValidation(): void
+    {
+        $url_fields = ['landing_page', 'article', 'live_link', 'partnership'];
+
+        $normalized = [];
+        foreach ($url_fields as $field) {
+            if ($this->has($field) && $this->input($field) === '') {
+                $normalized[$field] = null;
+            }
+        }
+
+        if (! empty($normalized)) {
+            $this->merge($normalized);
+        }
+    }
+
     public function rules(): array
     {
         $id = $this->route('id');
@@ -18,11 +38,11 @@ class UpdateBacklinkOrderRequest extends FormRequest
         return [
             'order_id'                  => 'required|string|max:50|unique:backlink_orders,order_id,' . $id,
             'team_specific_link_id'     => 'nullable|string|max:50',
-            'link_type'                 => 'required|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
-            'client'                    => 'required|string|max:255',
-            'keyword'                   => 'required|string|max:500',
-            'landing_page'              => 'required|url|max:2000',
-            'exact_match'               => 'required|in:Yes,No',
+            'link_type'                 => 'nullable|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
+            'client'                    => 'nullable|string|max:255',
+            'keyword'                   => 'nullable|string|max:500',
+            'landing_page'              => 'nullable|url|max:2000',
+            'exact_match'               => 'nullable|in:Yes,No',
             'notes'                     => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
             'estimated_delivery_date'   => 'nullable|string|max:20',
@@ -30,10 +50,10 @@ class UpdateBacklinkOrderRequest extends FormRequest
             'link_builder_user_id'      => 'nullable|integer|exists:users,id',
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',
-            'partnership'               => 'nullable|string|max:2000',
+            'partnership'               => 'nullable|url|max:2000',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|url|max:2000',
-            'status'                    => 'required|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
+            'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
             'live_link'                 => 'nullable|url|max:2000',
             'live_link_date'            => 'nullable|string|max:20',
             'dr_lbs'                    => 'nullable|string|max:20',

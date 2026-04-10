@@ -9,6 +9,7 @@ use App\Models\BacklinkOrder;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BacklinkOrderController extends Controller
 {
@@ -137,7 +138,7 @@ class BacklinkOrderController extends Controller
      * Streams a CSV download of all rows matching the same filters as /search.
      * Pagination fields are ignored — all matching rows are exported.
      */
-    public function export(Request $request): Response
+    public function export(Request $request): StreamedResponse
     {
         $search         = $request->input('search');
         $status         = $request->input('status');

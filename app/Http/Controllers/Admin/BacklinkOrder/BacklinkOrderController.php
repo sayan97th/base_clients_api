@@ -13,18 +13,17 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class BacklinkOrderController extends Controller
 {
-    /** Columns allowed for sorting. */
-    private const SORTABLE_FIELDS = [
-        'order_id',
-        'client',
-        'keyword',
-        'status',
-        'request_date',
-        'estimated_delivery_date',
-        'link_builder',
-        'final_price',
-        'current_traffic',
-        'dr_lbs',
+    /**
+     * DB columns that may appear as a sort_rules key.
+     * Computed-only fields (days_left, projected_health) are intentionally excluded.
+     */
+    private const ALLOWED_SORT_COLUMNS = [
+        'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'article_title', 'article', 'status', 'live_link', 'live_link_date',
+        'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
+        'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
     ];
 
     /** All columns that may be targeted by column_filters. */
@@ -162,14 +161,14 @@ class BacklinkOrderController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
+        // Column order matches the table left-to-right as specified.
         $columns = [
-            'id', 'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+            'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
             'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
             'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
-            'pen_name', 'partnership', 'article_title', 'article', 'status', 'live_link',
-            'live_link_date', 'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
-            'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
-            'created_at', 'updated_at',
+            'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
+            'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
+            'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
         ];
 
         $callback = function () use ($query, $columns) {
@@ -313,19 +312,43 @@ class BacklinkOrderController extends Controller
 
     /**
      * Applies an ordered list of sort rules. Falls back to order_id asc when empty.
+     *
+     * When nulls_last is true, MySQL's lack of native NULLS LAST support is worked
+     * around with the (col IS NULL OR col = '') trick so empty rows always sink to
+     * the bottom regardless of sort direction.
      */
     private function applySortRules($query, array $sort_rules): void
     {
+        // Computed-only fields must never reach an ORDER BY clause.
+        $unsortable = ['days_left', 'projected_health'];
+
         $applied = false;
 
         foreach ($sort_rules as $rule) {
-            $key = $rule['key']       ?? '';
-            $dir = strtolower($rule['direction'] ?? 'asc');
+            $key  = $rule['key']       ?? '';
+            $dir  = strtolower($rule['direction'] ?? 'asc');
+            $nulls_last = (bool) ($rule['nulls_last'] ?? false);
 
-            if (in_array($key, self::SORTABLE_FIELDS, true) && in_array($dir, ['asc', 'desc'], true)) {
-                $query->orderBy($key, $dir);
-                $applied = true;
+            if (in_array($key, $unsortable, true)) {
+                continue;
             }
+
+            if (! in_array($key, self::ALLOWED_SORT_COLUMNS, true)) {
+                continue;
+            }
+
+            if (! in_array($dir, ['asc', 'desc'], true)) {
+                continue;
+            }
+
+            if ($nulls_last) {
+                // Place NULL and empty-string rows last regardless of direction.
+                $query->orderByRaw("(`{$key}` IS NULL OR `{$key}` = ''), `{$key}` {$dir}");
+            } else {
+                $query->orderBy($key, $dir);
+            }
+
+            $applied = true;
         }
 
         if (! $applied) {

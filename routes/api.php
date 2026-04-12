@@ -35,6 +35,7 @@ use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
 use App\Http\Controllers\Client\LinkBuilding\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
+use App\Http\Controllers\Client\LinkBuilding\CartController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
 use App\Http\Controllers\Client\LinkBuilding\OrderPlacementsController as LinkBuildingOrderPlacementsController;
 use App\Http\Controllers\Client\LinkBuilding\DeliverableController as LinkBuildingDeliverableController;
@@ -355,6 +356,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Refresh Tiers catalog
     Route::get('/content-refresh-tiers', [ContentRefreshTierController::class, 'index']);
+
+    // Link building cart
+    Route::prefix('link-building')->group(function () {
+        Route::get('/cart',    [CartController::class, 'show']);
+        Route::put('/cart',    [CartController::class, 'upsert']);
+        Route::delete('/cart', [CartController::class, 'destroy']);
+    });
 
     // Link building orders
     Route::prefix('link-building')->group(function () {

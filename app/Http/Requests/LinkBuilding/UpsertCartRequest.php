@@ -16,7 +16,7 @@ class UpsertCartRequest extends FormRequest
         return [
             'selected_quantities'               => ['required', 'array'],
             'selected_quantities.*'             => ['integer', 'min:1'],
-            'keyword_data'                      => ['required', 'array'],
+            'keyword_data'                      => ['present', 'array'],
             'keyword_data.*'                    => ['array'],
             'keyword_data.*.*.keyword'          => ['nullable', 'string'],
             'keyword_data.*.*.landing_page'     => ['nullable', 'string'],

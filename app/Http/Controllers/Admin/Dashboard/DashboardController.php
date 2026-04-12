@@ -77,7 +77,7 @@ class DashboardController extends Controller
 
         $data = $staff_users->map(function (User $user) use ($today) {
             $assigned_orders = BacklinkOrder::where('link_builder_user_id', $user->id)
-                ->where('status', '!=', 'Cancelled')
+                ->whereNotIn('status', ['Cancelled', 'Live'])
                 ->get(['estimated_delivery_date', 'status']);
 
             $total_links   = $assigned_orders->count();

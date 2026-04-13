@@ -16,7 +16,7 @@ Broadcast::channel('notifications.{userId}', function ($user, $userId) {
 // The session_id is a per-connection UUID that the frontend uses as a tab-level
 // unique identifier (distinct from user_id, which is shared across tabs).
 Broadcast::channel('backlink-orders', function ($user) {
-    if (! $user->hasAnyRole(['super_admin', 'admin', 'staff'])) {
+    if (! $user->hasRole(['super_admin', 'admin', 'staff'])) {
         return false;
     }
 

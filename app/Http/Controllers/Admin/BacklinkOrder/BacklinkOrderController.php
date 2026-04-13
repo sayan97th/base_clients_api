@@ -177,14 +177,13 @@ class BacklinkOrderController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        // Column order matches the table left-to-right as specified.
-        // Excludes id, days_left, and projected_health per the API spec.
+        // Column order matches the frontend COLUMNS definition exactly.
         $columns = [
             'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
             'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
-            'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
-            'article_title', 'article', 'live_link', 'live_link_date', 'dr_lbs',
-            'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
+            'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
+            'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
+            'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
             'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
         ];
 
@@ -308,10 +307,10 @@ class BacklinkOrderController extends Controller
         $from = $filter['from'] ?? '';
         $to   = $filter['to']   ?? '';
 
-        // column_filters send dates as YYYY-MM-DD; rows are stored as MM/DD/YYYY strings.
+        // column_filters send dates as MM/DD/YYYY; rows are stored as MM/DD/YYYY strings.
         if (filled($from)) {
             try {
-                $from_date = Carbon::createFromFormat('Y-m-d', $from)->startOfDay();
+                $from_date = Carbon::createFromFormat('m/d/Y', $from)->startOfDay();
                 $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') >= ?", [$from_date->toDateString()]);
             } catch (\Exception) {
                 // Invalid date — skip this bound
@@ -320,7 +319,7 @@ class BacklinkOrderController extends Controller
 
         if (filled($to)) {
             try {
-                $to_date = Carbon::createFromFormat('Y-m-d', $to)->startOfDay();
+                $to_date = Carbon::createFromFormat('m/d/Y', $to)->startOfDay();
                 $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') <= ?", [$to_date->toDateString()]);
             } catch (\Exception) {
                 // Invalid date — skip this bound

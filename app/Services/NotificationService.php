@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\NewNotification;
 use App\Jobs\SendEmailJob;
 use App\Mail\NotificationEmail;
 use App\Models\Notification;
@@ -59,6 +60,8 @@ class NotificationService
         ]);
 
         $this->sendEmailIfEnabled($user, $notification, $extra['mail_data'] ?? []);
+
+        broadcast(new NewNotification($notification));
 
         return $notification;
     }

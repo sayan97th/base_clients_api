@@ -37,6 +37,7 @@ class User extends Authenticatable implements JWTSubject
         'two_factor_enabled_at',
         'two_factor_recovery_codes',
         'staff_capacity',
+        'presence_color',
     ];
 
     protected $hidden = [

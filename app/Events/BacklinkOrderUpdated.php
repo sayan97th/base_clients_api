@@ -2,8 +2,8 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -19,18 +19,17 @@ class BacklinkOrderUpdated implements ShouldBroadcast
 
     public function broadcastOn(): array
     {
-        return [new Channel('backlink-orders')];
+        return [new PresenceChannel('backlink-orders')];
     }
 
     public function broadcastAs(): string
     {
-        return 'row_updated';
+        return 'BacklinkOrderUpdated';
     }
 
     public function broadcastWith(): array
     {
         return [
-            'type'                  => 'row_updated',
             'row'                   => $this->row,
             'updated_by_session_id' => $this->updated_by_session_id,
         ];

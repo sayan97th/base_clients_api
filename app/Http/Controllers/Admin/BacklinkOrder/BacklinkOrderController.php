@@ -89,7 +89,7 @@ class BacklinkOrderController extends Controller
     {
         $order      = BacklinkOrder::create($request->validated());
         $row        = $this->formatRow($order);
-        $session_id = $request->header('X-WS-Session-Id');
+        $session_id = $request->header('X-Session-Id');
 
         broadcast(new BacklinkOrderCreated($row, $session_id));
 
@@ -115,7 +115,7 @@ class BacklinkOrderController extends Controller
         $order->update($request->validated());
 
         $row        = $this->formatRow($order->fresh());
-        $session_id = $request->header('X-WS-Session-Id');
+        $session_id = $request->header('X-Session-Id');
 
         broadcast(new BacklinkOrderUpdated($row, $session_id));
 
@@ -138,7 +138,7 @@ class BacklinkOrderController extends Controller
             return response()->json(['message' => 'Backlink order not found.'], 404);
         }
 
-        $session_id = $request->header('X-WS-Session-Id');
+        $session_id = $request->header('X-Session-Id');
 
         $order->delete();
 

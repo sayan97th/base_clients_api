@@ -82,7 +82,10 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
-                'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:3000')],
+                'allowed_origins' => array_filter(array_merge(
+                    [env('FRONTEND_URL', 'http://localhost:3000')],
+                    env('APP_ENV') === 'local' ? ['*'] : [],
+                )),
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),

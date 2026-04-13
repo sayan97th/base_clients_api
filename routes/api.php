@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportCo
 use App\Http\Controllers\Admin\Order\ReportTableController as AdminReportTableController;
 use App\Http\Controllers\Admin\Order\ReportRowController as AdminReportRowController;
 use App\Http\Controllers\Admin\Tracking\TrackingController as AdminTrackingController;
+use App\Http\Controllers\Admin\WebSocket\WebSocketController as AdminWebSocketController;
 use App\Http\Controllers\Admin\Organization\OrganizationController as AdminOrganizationController;
 use App\Http\Controllers\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceController;
@@ -111,6 +112,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Order tracking dashboard — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('tracking')->group(function () {
             Route::get('orders', [AdminTrackingController::class, 'orders']);
+        });
+
+        // WebSocket test panel — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('websocket')->group(function () {
+            Route::get('status',    [AdminWebSocketController::class, 'status']);
+            Route::post('broadcast', [AdminWebSocketController::class, 'broadcast']);
+            Route::get('channels',  [AdminWebSocketController::class, 'channels']);
         });
 
         // Admin notifications — super_admin, admin, staff

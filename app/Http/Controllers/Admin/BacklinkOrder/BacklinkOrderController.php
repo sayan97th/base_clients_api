@@ -66,7 +66,7 @@ class BacklinkOrderController extends Controller
         $paginated = $query->paginate($per_page, ['*'], 'page', $page);
 
         $data = $paginated->getCollection()
-            ->map(fn (BacklinkOrder $order) => $this->formatRow($order))
+            ->map(fn (BacklinkOrder $order) => $order->toApiArray())
             ->values();
 
         return response()->json([
@@ -88,14 +88,13 @@ class BacklinkOrderController extends Controller
     public function store(StoreBacklinkOrderRequest $request): JsonResponse
     {
         $order      = BacklinkOrder::create($request->validated());
-        $row        = $this->formatRow($order);
-        $session_id = $request->header('X-Session-Id');
+        $session_id = $request->header('X-Session-ID');
 
-        broadcast(new BacklinkOrderCreated($row, $session_id));
+        broadcast(new BacklinkOrderCreated($order, $session_id));
 
         return response()->json([
             'message' => 'Backlink order created successfully.',
-            'data'    => $row,
+            'data'    => $order->toApiArray(),
         ], 201);
     }
 
@@ -114,14 +113,15 @@ class BacklinkOrderController extends Controller
 
         $order->update($request->validated());
 
-        $row        = $this->formatRow($order->fresh());
-        $session_id = $request->header('X-Session-Id');
+        /** @var BacklinkOrder $fresh_order */
+        $fresh_order = $order->fresh();
+        $session_id  = $request->header('X-Session-ID');
 
-        broadcast(new BacklinkOrderUpdated($row, $session_id));
+        broadcast(new BacklinkOrderUpdated($fresh_order, $session_id));
 
         return response()->json([
             'message' => 'Backlink order updated successfully.',
-            'data'    => $row,
+            'data'    => $fresh_order->toApiArray(),
         ]);
     }
 
@@ -138,7 +138,7 @@ class BacklinkOrderController extends Controller
             return response()->json(['message' => 'Backlink order not found.'], 404);
         }
 
-        $session_id = $request->header('X-Session-Id');
+        $session_id = $request->header('X-Session-ID');
 
         $order->delete();
 
@@ -195,7 +195,7 @@ class BacklinkOrderController extends Controller
 
             $query->chunk(500, function ($orders) use ($handle, $columns) {
                 foreach ($orders as $order) {
-                    $row = $this->formatRow($order);
+                    $row = $order->toApiArray();
                     fputcsv($handle, array_map(fn ($col) => $row[$col] ?? '', $columns));
                 }
             });
@@ -307,9 +307,10 @@ class BacklinkOrderController extends Controller
         $from = $filter['from'] ?? '';
         $to   = $filter['to']   ?? '';
 
+        // column_filters send dates as YYYY-MM-DD; rows are stored as MM/DD/YYYY strings.
         if (filled($from)) {
             try {
-                $from_date = Carbon::createFromFormat('m/d/Y', $from)->startOfDay();
+                $from_date = Carbon::createFromFormat('Y-m-d', $from)->startOfDay();
                 $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') >= ?", [$from_date->toDateString()]);
             } catch (\Exception) {
                 // Invalid date — skip this bound
@@ -318,7 +319,7 @@ class BacklinkOrderController extends Controller
 
         if (filled($to)) {
             try {
-                $to_date = Carbon::createFromFormat('m/d/Y', $to)->startOfDay();
+                $to_date = Carbon::createFromFormat('Y-m-d', $to)->startOfDay();
                 $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') <= ?", [$to_date->toDateString()]);
             } catch (\Exception) {
                 // Invalid date — skip this bound
@@ -372,84 +373,4 @@ class BacklinkOrderController extends Controller
         }
     }
 
-    /**
-     * Formats a BacklinkOrder into the standard API response shape,
-     * including the computed fields days_left and projected_health.
-     */
-    private function formatRow(BacklinkOrder $order): array
-    {
-        [$days_left, $projected_health] = $this->computeDeliveryMetrics(
-            $order->estimated_delivery_date,
-            $order->estimated_turnaround_days,
-        );
-
-        return [
-            'id'                        => $order->id,
-            'order_id'                  => $order->order_id ?? '',
-            'team_specific_link_id'     => $order->team_specific_link_id ?? '',
-            'link_type'                 => $order->link_type ?? '',
-            'client'                    => $order->client ?? '',
-            'keyword'                   => $order->keyword ?? '',
-            'landing_page'              => $order->landing_page ?? '',
-            'exact_match'               => $order->exact_match ?? 'No',
-            'notes'                     => $order->notes ?? '',
-            'request_date'              => $order->request_date ?? '',
-            'estimated_delivery_date'   => $order->estimated_delivery_date ?? '',
-            'estimated_turnaround_days' => (string) ($order->estimated_turnaround_days ?? ''),
-            'days_left'                 => $days_left,
-            'projected_health'          => $projected_health,
-            'link_builder'              => $order->link_builder ?? '',
-            'pen_name'                  => $order->pen_name ?? '',
-            'partnership'               => $order->partnership ?? '',
-            'article_title'             => $order->article_title ?? '',
-            'article'                   => $order->article ?? '',
-            'status'                    => $order->status ?? 'New Request',
-            'live_link'                 => $order->live_link ?? '',
-            'live_link_date'            => $order->live_link_date ?? '',
-            'dr_lbs'                    => $order->dr_lbs ?? '',
-            'posting_fee_lbs'           => $order->posting_fee_lbs ?? '',
-            'current_traffic'           => $order->current_traffic ?? '',
-            'dr_formula'                => $order->dr_formula ?? '',
-            'current_poc'               => $order->current_poc ?? '',
-            'current_price'             => $order->current_price ?? '',
-            'lb_tl_approval'            => $order->lb_tl_approval ?? '',
-            'approval_date'             => $order->approval_date ?? '',
-            'final_price'               => $order->final_price ?? '',
-            'created_at'                => $order->created_at?->toIso8601String(),
-            'updated_at'                => $order->updated_at?->toIso8601String(),
-        ];
-    }
-
-    /**
-     * Computes days_left and projected_health from the stored date strings.
-     *
-     * days_left        = signed integer days between today and estimated_delivery_date
-     * projected_health = (days_left / estimated_turnaround_days) * 100 as "%"
-     *
-     * @return array{string, string}  [$days_left, $projected_health]
-     */
-    private function computeDeliveryMetrics(?string $estimated_delivery_date, $estimated_turnaround_days): array
-    {
-        if (empty($estimated_delivery_date)) {
-            return ['', ''];
-        }
-
-        try {
-            $delivery_date = Carbon::createFromFormat('m/d/Y', $estimated_delivery_date)->startOfDay();
-        } catch (\Exception) {
-            return ['', ''];
-        }
-
-        $days_left = (int) Carbon::today()->diffInDays($delivery_date, false);
-
-        $turnaround = (int) ($estimated_turnaround_days ?? 0);
-
-        if ($turnaround <= 0) {
-            return [(string) $days_left, ''];
-        }
-
-        $projected_health = (int) round(($days_left / $turnaround) * 100);
-
-        return [(string) $days_left, $projected_health . '%'];
-    }
 }

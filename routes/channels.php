@@ -21,7 +21,7 @@ Broadcast::channel('backlink-orders', function ($user) {
     }
 
     return [
-        'session_id' => (string) Str::uuid(),
+        'session_id' => request()->header('X-Session-ID', (string) Str::uuid()),
         'user_id'    => $user->id,
         'name'       => $user->first_name . ' ' . $user->last_name,
         'initials'   => strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1)),

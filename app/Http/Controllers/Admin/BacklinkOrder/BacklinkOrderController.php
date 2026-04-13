@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Admin\BacklinkOrder;
 
+use App\Events\BacklinkOrderCreated;
+use App\Events\BacklinkOrderDeleted;
+use App\Events\BacklinkOrderUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\BacklinkOrder\StoreBacklinkOrderRequest;
 use App\Http\Requests\Admin\BacklinkOrder\UpdateBacklinkOrderRequest;
@@ -84,11 +87,15 @@ class BacklinkOrderController extends Controller
      */
     public function store(StoreBacklinkOrderRequest $request): JsonResponse
     {
-        $order = BacklinkOrder::create($request->validated());
+        $order      = BacklinkOrder::create($request->validated());
+        $row        = $this->formatRow($order);
+        $session_id = $request->header('X-WS-Session-Id');
+
+        broadcast(new BacklinkOrderCreated($row, $session_id));
 
         return response()->json([
             'message' => 'Backlink order created successfully.',
-            'data'    => $this->formatRow($order),
+            'data'    => $row,
         ], 201);
     }
 
@@ -107,9 +114,14 @@ class BacklinkOrderController extends Controller
 
         $order->update($request->validated());
 
+        $row        = $this->formatRow($order->fresh());
+        $session_id = $request->header('X-WS-Session-Id');
+
+        broadcast(new BacklinkOrderUpdated($row, $session_id));
+
         return response()->json([
             'message' => 'Backlink order updated successfully.',
-            'data'    => $this->formatRow($order->fresh()),
+            'data'    => $row,
         ]);
     }
 
@@ -118,7 +130,7 @@ class BacklinkOrderController extends Controller
      *
      * Permanently deletes a backlink order row.
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
         $order = BacklinkOrder::find($id);
 
@@ -126,7 +138,11 @@ class BacklinkOrderController extends Controller
             return response()->json(['message' => 'Backlink order not found.'], 404);
         }
 
+        $session_id = $request->header('X-WS-Session-Id');
+
         $order->delete();
+
+        broadcast(new BacklinkOrderDeleted($id, $session_id));
 
         return response()->json(['message' => 'Backlink order deleted successfully.']);
     }

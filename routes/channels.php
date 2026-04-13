@@ -21,11 +21,13 @@ Broadcast::channel('backlink-orders', function ($user) {
     }
 
     return [
-        'session_id' => request()->header('X-Session-ID', (string) Str::uuid()),
-        'user_id'    => $user->id,
-        'name'       => $user->first_name . ' ' . $user->last_name,
-        'initials'   => strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1)),
-        'color'      => $user->presence_color ?? '#6366f1',
-        'avatar_url' => $user->profile_photo_url,
+        'session_id'      => request()->header('X-Session-ID', (string) Str::uuid()),
+        'user_id'         => $user->id,
+        'name'            => trim($user->first_name . ' ' . $user->last_name),
+        'initials'        => strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1)),
+        'color'           => $user->presence_color ?? null,
+        'avatar_url'      => $user->profile_photo_url ?? null,
+        'focused_row_id'  => null,
+        'focused_col_key' => null,
     ];
 });

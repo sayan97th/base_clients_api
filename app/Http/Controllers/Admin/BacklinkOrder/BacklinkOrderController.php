@@ -178,12 +178,13 @@ class BacklinkOrderController extends Controller
         ];
 
         // Column order matches the table left-to-right as specified.
+        // Excludes id, days_left, and projected_health per the API spec.
         $columns = [
             'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
             'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
-            'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
-            'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
-            'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
+            'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+            'article_title', 'article', 'live_link', 'live_link_date', 'dr_lbs',
+            'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
             'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
         ];
 

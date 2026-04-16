@@ -50,6 +50,10 @@ use App\Http\Controllers\Profile\PasswordController;
 use App\Http\Controllers\Profile\ProfileController;
 use App\Http\Controllers\Profile\ProfilePhotoController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
+use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
+use App\Http\Controllers\Client\SmeContent\AuthoredAppointmentController;
+use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
+use App\Http\Controllers\Client\SmeContent\EnhancedContentController;
 use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
@@ -409,10 +413,53 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::put('/password',[PasswordController::class,     'update']);
     });
 
-    // SME authored content appointments
+    // SME authored content appointments (legacy)
     Route::prefix('sme-content')->group(function () {
         Route::post('appointments',      [SmeAppointmentController::class, 'store']);
         Route::get('appointments/{id}',  [SmeAppointmentController::class, 'show']);
+    });
+
+    // SME Content — Authored Content
+    Route::prefix('sme-content/authored-content')->group(function () {
+        Route::get('/',              [AuthoredContentController::class, 'index']);
+        Route::get('/tiers',         [AuthoredContentController::class, 'tiers']);
+        Route::get('/features',      [AuthoredContentController::class, 'features']);
+        Route::get('/content-types', [AuthoredContentController::class, 'contentTypes']);
+
+        Route::get('/appointments',       [AuthoredAppointmentController::class, 'index']);
+        Route::post('/appointments',      [AuthoredAppointmentController::class, 'store']);
+        Route::get('/appointments/{id}',  [AuthoredAppointmentController::class, 'show']);
+        Route::delete('/appointments/{id}', [AuthoredAppointmentController::class, 'destroy']);
+    });
+
+    // SME Content — Internal Collaboration
+    Route::prefix('sme-content/internal-collaboration')->group(function () {
+        Route::get('/',              [InternalCollaborationController::class, 'index']);
+        Route::get('/tiers',         [InternalCollaborationController::class, 'tiers']);
+        Route::get('/features',      [InternalCollaborationController::class, 'features']);
+        Route::get('/content-types', [InternalCollaborationController::class, 'contentTypes']);
+
+        Route::post('/payment-intent', [InternalCollaborationController::class, 'createPaymentIntent']);
+
+        Route::get('/orders',        [InternalCollaborationController::class, 'indexOrders']);
+        Route::post('/orders',       [InternalCollaborationController::class, 'storeOrder']);
+        Route::get('/orders/{id}',   [InternalCollaborationController::class, 'showOrder']);
+        Route::patch('/orders/{id}', [InternalCollaborationController::class, 'updateOrder']);
+    });
+
+    // SME Content — Enhanced Content
+    Route::prefix('sme-content/enhanced-content')->group(function () {
+        Route::get('/',              [EnhancedContentController::class, 'index']);
+        Route::get('/tiers',         [EnhancedContentController::class, 'tiers']);
+        Route::get('/features',      [EnhancedContentController::class, 'features']);
+        Route::get('/content-types', [EnhancedContentController::class, 'contentTypes']);
+
+        Route::post('/payment-intent', [EnhancedContentController::class, 'createPaymentIntent']);
+
+        Route::get('/orders',        [EnhancedContentController::class, 'indexOrders']);
+        Route::post('/orders',       [EnhancedContentController::class, 'storeOrder']);
+        Route::get('/orders/{id}',   [EnhancedContentController::class, 'showOrder']);
+        Route::patch('/orders/{id}', [EnhancedContentController::class, 'updateOrder']);
     });
 
     // Broadcasting auth (JWT-based)

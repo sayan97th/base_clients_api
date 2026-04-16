@@ -17,6 +17,9 @@ class DatabaseSeeder extends Seeder
         $this->call(ResourcePermissionsSeeder::class);
         $this->call(DrTierSeeder::class);
         $this->call(ContentRefreshTierSeeder::class);
+        $this->call(SmeAuthoredTierSeeder::class);
+        $this->call(SmeCollaborationTierSeeder::class);
+        $this->call(SmeEnhancedTierSeeder::class);
         $this->call(CouponSeeder::class);
         $this->call(NewsPostSeeder::class);
 

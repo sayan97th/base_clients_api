@@ -7,32 +7,12 @@ use App\Http\Requests\SmeContent\StoreCollaborationOrderRequest;
 use App\Http\Requests\SmeContent\StoreCollaborationPaymentIntentRequest;
 use App\Http\Requests\SmeContent\UpdateCollaborationOrderRequest;
 use App\Models\SmeCollaborationOrder;
+use App\Models\SmeCollaborationTier;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 
 class InternalCollaborationController extends Controller
 {
-    private const TIERS = [
-        'sme_1000_1499' => [
-            'id'          => 'sme_1000_1499',
-            'label'       => 'Internal SME Content Collaboration - 1,000-1,499 Words',
-            'description' => "We interview your company's internal experts and transform their insights into polished, audience-ready content.",
-            'price'       => 750,
-        ],
-        'sme_1500_1999' => [
-            'id'          => 'sme_1500_1999',
-            'label'       => 'Internal SME Content Collaboration - 1,500-1,999 Words',
-            'description' => "We interview your company's internal experts and transform their insights into polished, audience-ready content.",
-            'price'       => 1250,
-        ],
-        'sme_2000_plus' => [
-            'id'          => 'sme_2000_plus',
-            'label'       => 'Internal SME Content Collaboration - 2,000+ Words',
-            'description' => "We interview your company's internal experts and transform their insights into polished, audience-ready content.",
-            'price'       => 1500,
-        ],
-    ];
-
     private const FEATURES = [
         'Expert knowledge extraction through structured interviews',
         'Transformation of technical insights into engaging content',
@@ -53,7 +33,7 @@ class InternalCollaborationController extends Controller
     {
         return response()->json([
             'data' => [
-                'tiers'         => array_values(self::TIERS),
+                'tiers'         => $this->getTiers(),
                 'features'      => self::FEATURES,
                 'content_types' => self::CONTENT_TYPES,
             ],
@@ -62,7 +42,7 @@ class InternalCollaborationController extends Controller
 
     public function tiers(): JsonResponse
     {
-        return response()->json(['data' => array_values(self::TIERS)]);
+        return response()->json(['data' => $this->getTiers()]);
     }
 
     public function features(): JsonResponse
@@ -92,15 +72,21 @@ class InternalCollaborationController extends Controller
 
         return response()->json([
             'data' => [
-                'client_secret'      => $result['client_secret'],
-                'payment_intent_id'  => $result['payment_intent_id'],
+                'client_secret'     => $result['client_secret'],
+                'payment_intent_id' => $result['payment_intent_id'],
             ],
         ], 201);
     }
 
     public function storeOrder(StoreCollaborationOrderRequest $request): JsonResponse
     {
-        $invalid_tiers = array_diff(array_keys($request->selected_tiers), array_keys(self::TIERS));
+        $tier_keys    = array_keys($request->selected_tiers);
+        $tiers_map    = SmeCollaborationTier::whereIn('tier_key', $tier_keys)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('tier_key');
+
+        $invalid_tiers = array_diff($tier_keys, $tiers_map->keys()->all());
 
         if (!empty($invalid_tiers)) {
             return response()->json([
@@ -118,7 +104,7 @@ class InternalCollaborationController extends Controller
             ], 422);
         }
 
-        $total_amount = $this->calculateTotal($request->selected_tiers);
+        $total_amount = $this->calculateTotal($request->selected_tiers, $tiers_map);
 
         $order = SmeCollaborationOrder::create([
             'user_id'           => auth()->id(),
@@ -168,13 +154,28 @@ class InternalCollaborationController extends Controller
         return response()->json(['data' => $this->formatOrder($order->fresh())]);
     }
 
-    private function calculateTotal(array $selected_tiers): int
+    private function getTiers(): array
+    {
+        return SmeCollaborationTier::where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn ($tier) => [
+                'id'          => $tier->tier_key,
+                'label'       => $tier->label,
+                'description' => $tier->description,
+                'price'       => $tier->price,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function calculateTotal(array $selected_tiers, \Illuminate\Support\Collection $tiers_map): int
     {
         $total = 0;
 
-        foreach ($selected_tiers as $tier_id => $quantity) {
-            $tier   = self::TIERS[$tier_id] ?? null;
-            $total += $tier ? $tier['price'] * $quantity : 0;
+        foreach ($selected_tiers as $tier_key => $quantity) {
+            $tier   = $tiers_map->get($tier_key);
+            $total += $tier ? $tier->price * $quantity : 0;
         }
 
         return $total;
@@ -183,15 +184,15 @@ class InternalCollaborationController extends Controller
     private function formatOrder(SmeCollaborationOrder $order): array
     {
         return [
-            'id'                 => $order->id,
-            'selected_tiers'     => $order->selected_tiers,
-            'billing_address'    => $order->billing_address,
-            'email'              => $order->email,
-            'total_amount'       => $order->total_amount,
-            'status'             => $order->status,
-            'payment_intent_id'  => $order->payment_intent_id,
-            'created_at'         => $order->created_at,
-            'updated_at'         => $order->updated_at,
+            'id'                => $order->id,
+            'selected_tiers'    => $order->selected_tiers,
+            'billing_address'   => $order->billing_address,
+            'email'             => $order->email,
+            'total_amount'      => $order->total_amount,
+            'status'            => $order->status,
+            'payment_intent_id' => $order->payment_intent_id,
+            'created_at'        => $order->created_at,
+            'updated_at'        => $order->updated_at,
         ];
     }
 }

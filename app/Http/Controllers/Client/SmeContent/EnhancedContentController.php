@@ -7,32 +7,12 @@ use App\Http\Requests\SmeContent\StoreEnhancedOrderRequest;
 use App\Http\Requests\SmeContent\StoreEnhancedPaymentIntentRequest;
 use App\Http\Requests\SmeContent\UpdateEnhancedOrderRequest;
 use App\Models\SmeEnhancedOrder;
+use App\Models\SmeEnhancedTier;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 
 class EnhancedContentController extends Controller
 {
-    private const TIERS = [
-        'sme_enhanced_1000' => [
-            'id'          => 'sme_enhanced_1000',
-            'label'       => 'SME Enhanced Content - 1,000-1,499 Words',
-            'description' => 'We write the content and have a qualified SME review it for technical accuracy and put their name on the article.',
-            'price'       => 1500,
-        ],
-        'sme_enhanced_1500' => [
-            'id'          => 'sme_enhanced_1500',
-            'label'       => 'SME Enhanced Content - 1,500-1,999 Words',
-            'description' => 'We write the content and have a qualified SME review it for technical accuracy and put their name on the article.',
-            'price'       => 2500,
-        ],
-        'sme_enhanced_2000' => [
-            'id'          => 'sme_enhanced_2000',
-            'label'       => 'SME Enhanced Content - 2,000+ Words',
-            'description' => 'We write the content and have a qualified SME review it for technical accuracy and put their name on the article.',
-            'price'       => 3500,
-        ],
-    ];
-
     private const FEATURES = [
         'Technical accuracy verification by qualified SMEs',
         'Identification of knowledge gaps and credibility issues',
@@ -53,7 +33,7 @@ class EnhancedContentController extends Controller
     {
         return response()->json([
             'data' => [
-                'tiers'         => array_values(self::TIERS),
+                'tiers'         => $this->getTiers(),
                 'features'      => self::FEATURES,
                 'content_types' => self::CONTENT_TYPES,
             ],
@@ -62,7 +42,7 @@ class EnhancedContentController extends Controller
 
     public function tiers(): JsonResponse
     {
-        return response()->json(['data' => array_values(self::TIERS)]);
+        return response()->json(['data' => $this->getTiers()]);
     }
 
     public function features(): JsonResponse
@@ -92,15 +72,21 @@ class EnhancedContentController extends Controller
 
         return response()->json([
             'data' => [
-                'client_secret'      => $result['client_secret'],
-                'payment_intent_id'  => $result['payment_intent_id'],
+                'client_secret'     => $result['client_secret'],
+                'payment_intent_id' => $result['payment_intent_id'],
             ],
         ], 201);
     }
 
     public function storeOrder(StoreEnhancedOrderRequest $request): JsonResponse
     {
-        $invalid_tiers = array_diff(array_keys($request->selected_tiers), array_keys(self::TIERS));
+        $tier_keys = array_keys($request->selected_tiers);
+        $tiers_map = SmeEnhancedTier::whereIn('tier_key', $tier_keys)
+            ->where('is_active', true)
+            ->get()
+            ->keyBy('tier_key');
+
+        $invalid_tiers = array_diff($tier_keys, $tiers_map->keys()->all());
 
         if (!empty($invalid_tiers)) {
             return response()->json([
@@ -118,7 +104,7 @@ class EnhancedContentController extends Controller
             ], 422);
         }
 
-        $total_amount = $this->calculateTotal($request->selected_tiers);
+        $total_amount = $this->calculateTotal($request->selected_tiers, $tiers_map);
 
         $order = SmeEnhancedOrder::create([
             'user_id'           => auth()->id(),
@@ -168,13 +154,28 @@ class EnhancedContentController extends Controller
         return response()->json(['data' => $this->formatOrder($order->fresh())]);
     }
 
-    private function calculateTotal(array $selected_tiers): int
+    private function getTiers(): array
+    {
+        return SmeEnhancedTier::where('is_active', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->map(fn ($tier) => [
+                'id'          => $tier->tier_key,
+                'label'       => $tier->label,
+                'description' => $tier->description,
+                'price'       => $tier->price,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function calculateTotal(array $selected_tiers, \Illuminate\Support\Collection $tiers_map): int
     {
         $total = 0;
 
-        foreach ($selected_tiers as $tier_id => $quantity) {
-            $tier   = self::TIERS[$tier_id] ?? null;
-            $total += $tier ? $tier['price'] * $quantity : 0;
+        foreach ($selected_tiers as $tier_key => $quantity) {
+            $tier   = $tiers_map->get($tier_key);
+            $total += $tier ? $tier->price * $quantity : 0;
         }
 
         return $total;
@@ -183,15 +184,15 @@ class EnhancedContentController extends Controller
     private function formatOrder(SmeEnhancedOrder $order): array
     {
         return [
-            'id'                 => $order->id,
-            'selected_tiers'     => $order->selected_tiers,
-            'billing_address'    => $order->billing_address,
-            'email'              => $order->email,
-            'total_amount'       => $order->total_amount,
-            'status'             => $order->status,
-            'payment_intent_id'  => $order->payment_intent_id,
-            'created_at'         => $order->created_at,
-            'updated_at'         => $order->updated_at,
+            'id'                => $order->id,
+            'selected_tiers'    => $order->selected_tiers,
+            'billing_address'   => $order->billing_address,
+            'email'             => $order->email,
+            'total_amount'      => $order->total_amount,
+            'status'            => $order->status,
+            'payment_intent_id' => $order->payment_intent_id,
+            'created_at'        => $order->created_at,
+            'updated_at'        => $order->updated_at,
         ];
     }
 }

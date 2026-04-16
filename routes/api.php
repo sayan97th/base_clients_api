@@ -49,6 +49,7 @@ use App\Http\Controllers\Client\ScheduledCall\ScheduledCallController;
 use App\Http\Controllers\Profile\PasswordController;
 use App\Http\Controllers\Profile\ProfileController;
 use App\Http\Controllers\Profile\ProfilePhotoController;
+use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
@@ -406,6 +407,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::post('/photo',  [ProfilePhotoController::class, 'store']);
         Route::delete('/photo',[ProfilePhotoController::class, 'destroy']);
         Route::put('/password',[PasswordController::class,     'update']);
+    });
+
+    // SME authored content appointments
+    Route::prefix('sme-content')->group(function () {
+        Route::post('appointments',      [SmeAppointmentController::class, 'store']);
+        Route::get('appointments/{id}',  [SmeAppointmentController::class, 'show']);
     });
 
     // Broadcasting auth (JWT-based)

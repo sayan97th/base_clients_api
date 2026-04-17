@@ -49,6 +49,9 @@ use App\Http\Controllers\Client\ScheduledCall\ScheduledCallController;
 use App\Http\Controllers\Profile\PasswordController;
 use App\Http\Controllers\Profile\ProfileController;
 use App\Http\Controllers\Profile\ProfilePhotoController;
+use App\Http\Controllers\Admin\SmeContent\SmeAuthoredServiceController;
+use App\Http\Controllers\Admin\SmeContent\SmeCollaborationServiceController;
+use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
 use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
@@ -133,6 +136,24 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
             Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
+        });
+
+        // SME Content service tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('sme-content')->group(function () {
+            Route::get('collaboration-services',                [SmeCollaborationServiceController::class, 'index']);
+            Route::post('collaboration-services',               [SmeCollaborationServiceController::class, 'store']);
+            Route::put('collaboration-services/{service_id}',   [SmeCollaborationServiceController::class, 'update']);
+            Route::delete('collaboration-services/{service_id}', [SmeCollaborationServiceController::class, 'destroy']);
+
+            Route::get('authored-services',                [SmeAuthoredServiceController::class, 'index']);
+            Route::post('authored-services',               [SmeAuthoredServiceController::class, 'store']);
+            Route::put('authored-services/{service_id}',   [SmeAuthoredServiceController::class, 'update']);
+            Route::delete('authored-services/{service_id}', [SmeAuthoredServiceController::class, 'destroy']);
+
+            Route::get('enhanced-services',                [SmeEnhancedServiceController::class, 'index']);
+            Route::post('enhanced-services',               [SmeEnhancedServiceController::class, 'store']);
+            Route::put('enhanced-services/{service_id}',   [SmeEnhancedServiceController::class, 'update']);
+            Route::delete('enhanced-services/{service_id}', [SmeEnhancedServiceController::class, 'destroy']);
         });
 
         // Services — super_admin, admin, staff
@@ -412,27 +433,18 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::put('/password', [PasswordController::class,     'update']);
     });
 
-    // SME Content — Appointments (unified across all service types)
+    // SME Content — client routes
     Route::prefix('sme-content')->group(function () {
-        Route::get('appointments',           [SmeAppointmentController::class, 'index']);
-        Route::post('appointments',          [SmeAppointmentController::class, 'store']);
-        Route::get('appointments/{id}',      [SmeAppointmentController::class, 'show']);
-        Route::delete('appointments/{id}',   [SmeAppointmentController::class, 'destroy']);
-    });
+        // Appointments
+        Route::get('appointments',         [SmeAppointmentController::class, 'index']);
+        Route::post('appointments',        [SmeAppointmentController::class, 'store']);
+        Route::get('appointments/{id}',    [SmeAppointmentController::class, 'show']);
+        Route::delete('appointments/{id}', [SmeAppointmentController::class, 'destroy']);
 
-    // SME Content — Authored Content (tier listings)
-    Route::prefix('sme-content/authored-content')->group(function () {
-        Route::get('/', [AuthoredContentController::class, 'index']);
-    });
-
-    // SME Content — Internal Collaboration
-    Route::prefix('sme-content/internal-collaboration')->group(function () {
-        Route::get('/', [InternalCollaborationController::class, 'index']);
-    });
-
-    // SME Content — Enhanced Content
-    Route::prefix('sme-content/enhanced-content')->group(function () {
-        Route::get('/', [EnhancedContentController::class, 'index']);
+        // Service tier listings
+        Route::get('collaboration-services', [InternalCollaborationController::class, 'index']);
+        Route::get('authored-services',      [AuthoredContentController::class,       'index']);
+        Route::get('enhanced-services',      [EnhancedContentController::class,       'index']);
     });
 
     // Broadcasting auth (JWT-based)

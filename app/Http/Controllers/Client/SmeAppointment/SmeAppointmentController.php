@@ -26,17 +26,16 @@ class SmeAppointmentController extends Controller
 
     public function store(StoreSmeAppointmentRequest $request): JsonResponse
     {
-        $enrichedTiers = $this->enrichTiers(
-            $request->service_type,
-            $request->selected_tiers
-        );
+        $tiers = $request->service_type
+            ? $this->enrichTiers($request->service_type, $request->selected_tiers)
+            : $request->selected_tiers;
 
         $appointment = SmeAppointment::create([
             'user_id'        => $request->user()->id,
             'service_type'   => $request->service_type,
             'event_uri'      => $request->event_uri,
             'invitee_uri'    => $request->invitee_uri,
-            'selected_tiers' => $enrichedTiers,
+            'selected_tiers' => $tiers,
             'scheduled_at'   => null,
         ]);
 

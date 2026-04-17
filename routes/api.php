@@ -409,8 +409,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::put('/',        [ProfileController::class,      'update']);
         Route::patch('/',      [ProfileController::class,      'partialUpdate']);
         Route::post('/photo',  [ProfilePhotoController::class, 'store']);
-        Route::delete('/photo',[ProfilePhotoController::class, 'destroy']);
-        Route::put('/password',[PasswordController::class,     'update']);
+        Route::delete('/photo', [ProfilePhotoController::class, 'destroy']);
+        Route::put('/password', [PasswordController::class,     'update']);
     });
 
     // SME authored content appointments (legacy)
@@ -422,9 +422,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // SME Content — Authored Content
     Route::prefix('sme-content/authored-content')->group(function () {
         Route::get('/',              [AuthoredContentController::class, 'index']);
-        Route::get('/tiers',         [AuthoredContentController::class, 'tiers']);
-        Route::get('/features',      [AuthoredContentController::class, 'features']);
-        Route::get('/content-types', [AuthoredContentController::class, 'contentTypes']);
 
         Route::get('/appointments',       [AuthoredAppointmentController::class, 'index']);
         Route::post('/appointments',      [AuthoredAppointmentController::class, 'store']);
@@ -435,11 +432,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // SME Content — Internal Collaboration
     Route::prefix('sme-content/internal-collaboration')->group(function () {
         Route::get('/',              [InternalCollaborationController::class, 'index']);
-        Route::get('/tiers',         [InternalCollaborationController::class, 'tiers']);
-        Route::get('/features',      [InternalCollaborationController::class, 'features']);
-        Route::get('/content-types', [InternalCollaborationController::class, 'contentTypes']);
-
-        Route::post('/payment-intent', [InternalCollaborationController::class, 'createPaymentIntent']);
 
         Route::get('/orders',        [InternalCollaborationController::class, 'indexOrders']);
         Route::post('/orders',       [InternalCollaborationController::class, 'storeOrder']);
@@ -450,11 +442,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // SME Content — Enhanced Content
     Route::prefix('sme-content/enhanced-content')->group(function () {
         Route::get('/',              [EnhancedContentController::class, 'index']);
-        Route::get('/tiers',         [EnhancedContentController::class, 'tiers']);
-        Route::get('/features',      [EnhancedContentController::class, 'features']);
-        Route::get('/content-types', [EnhancedContentController::class, 'contentTypes']);
-
-        Route::post('/payment-intent', [EnhancedContentController::class, 'createPaymentIntent']);
 
         Route::get('/orders',        [EnhancedContentController::class, 'indexOrders']);
         Route::post('/orders',       [EnhancedContentController::class, 'storeOrder']);
@@ -470,6 +457,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/status',  [TwoFactorController::class, 'status']);
         Route::post('/setup',  [TwoFactorController::class, 'setup']);
         Route::post('/verify', [TwoFactorController::class, 'verify']);
-        Route::post('/disable',[TwoFactorController::class, 'disable']);
+        Route::post('/disable', [TwoFactorController::class, 'disable']);
     });
 });

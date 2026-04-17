@@ -14,9 +14,10 @@ class UpdateSmeAppointmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status'      => ['sometimes', 'string', 'in:pending,confirmed,cancelled,completed'],
-            'notes'       => ['nullable', 'string'],
-            'admin_notes' => ['nullable', 'string'],
+            'status'       => ['sometimes', 'string', 'in:pending,confirmed,cancelled,completed'],
+            'scheduled_at' => ['sometimes', 'nullable', 'date'],
+            'notes'        => ['nullable', 'string'],
+            'admin_notes'  => ['nullable', 'string'],
         ];
     }
 }

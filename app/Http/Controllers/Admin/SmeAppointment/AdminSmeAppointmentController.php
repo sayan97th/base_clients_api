@@ -151,7 +151,7 @@ class AdminSmeAppointmentController extends Controller
             }
         }
 
-        $appointment->fill($request->only(['status', 'notes', 'admin_notes']));
+        $appointment->fill($request->only(['status', 'scheduled_at', 'notes', 'admin_notes']));
         $appointment->save();
 
         return response()->json(['data' => new SmeAppointmentResource($appointment)]);
@@ -167,7 +167,7 @@ class AdminSmeAppointmentController extends Controller
 
         $appointment->delete();
 
-        return response()->json(['message' => 'Appointment deleted successfully.']);
+        return response()->json(null, 204);
     }
 
     public function export(Request $request): StreamedResponse

@@ -13,7 +13,7 @@ class SmeAppointmentResource extends JsonResource
             'id'             => $this->id,
             'event_uri'      => $this->event_uri,
             'invitee_uri'    => $this->invitee_uri,
-            'selected_tiers' => $this->selected_tiers,
+            'selected_tiers' => (object) ($this->selected_tiers ?? []),
             'service_type'   => $this->service_type,
             'status'         => $this->status,
             'scheduled_at'   => $this->scheduled_at?->toIso8601String(),

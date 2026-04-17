@@ -84,8 +84,8 @@ class SmeAppointmentController extends Controller
 
         $enriched = [];
         foreach ($selectedTiers as $tierKey => $quantity) {
-            $tier       = $tiers->get($tierKey);
-            $enriched[] = [
+            $tier                = $tiers->get($tierKey);
+            $enriched[$tierKey]  = [
                 'tier_key'    => $tierKey,
                 'quantity'    => $quantity,
                 'label'       => $tier?->label,

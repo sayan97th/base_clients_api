@@ -427,22 +427,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // SME Content — Internal Collaboration
     Route::prefix('sme-content/internal-collaboration')->group(function () {
-        Route::get('/',              [InternalCollaborationController::class, 'index']);
-
-        Route::get('/orders',        [InternalCollaborationController::class, 'indexOrders']);
-        Route::post('/orders',       [InternalCollaborationController::class, 'storeOrder']);
-        Route::get('/orders/{id}',   [InternalCollaborationController::class, 'showOrder']);
-        Route::patch('/orders/{id}', [InternalCollaborationController::class, 'updateOrder']);
+        Route::get('/', [InternalCollaborationController::class, 'index']);
     });
 
     // SME Content — Enhanced Content
     Route::prefix('sme-content/enhanced-content')->group(function () {
-        Route::get('/',              [EnhancedContentController::class, 'index']);
-
-        Route::get('/orders',        [EnhancedContentController::class, 'indexOrders']);
-        Route::post('/orders',       [EnhancedContentController::class, 'storeOrder']);
-        Route::get('/orders/{id}',   [EnhancedContentController::class, 'showOrder']);
-        Route::patch('/orders/{id}', [EnhancedContentController::class, 'updateOrder']);
+        Route::get('/', [EnhancedContentController::class, 'index']);
     });
 
     // Broadcasting auth (JWT-based)

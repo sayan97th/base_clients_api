@@ -52,6 +52,7 @@ use App\Http\Controllers\Profile\ProfilePhotoController;
 use App\Http\Controllers\Admin\SmeContent\SmeAuthoredServiceController;
 use App\Http\Controllers\Admin\SmeContent\SmeCollaborationServiceController;
 use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
+use App\Http\Controllers\Admin\SmeAppointment\AdminSmeAppointmentController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
 use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
@@ -136,6 +137,17 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
             Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
+        });
+
+        // SME Appointments — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('sme-content/appointments')->group(function () {
+            Route::get('stats',                          [AdminSmeAppointmentController::class, 'stats']);
+            Route::get('export',                         [AdminSmeAppointmentController::class, 'export']);
+            Route::get('/',                              [AdminSmeAppointmentController::class, 'index']);
+            Route::get('{appointment_id}',               [AdminSmeAppointmentController::class, 'show']);
+            Route::patch('{appointment_id}/status',      [AdminSmeAppointmentController::class, 'updateStatus']);
+            Route::put('{appointment_id}',               [AdminSmeAppointmentController::class, 'update']);
+            Route::delete('{appointment_id}',            [AdminSmeAppointmentController::class, 'destroy']);
         });
 
         // SME Content service tiers — super_admin, admin, staff

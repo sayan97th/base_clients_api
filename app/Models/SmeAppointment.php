@@ -9,6 +9,7 @@ class SmeAppointment extends Model
 {
     protected $fillable = [
         'user_id',
+        'service_type',
         'event_uri',
         'invitee_uri',
         'selected_tiers',

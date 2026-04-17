@@ -51,7 +51,6 @@ use App\Http\Controllers\Profile\ProfileController;
 use App\Http\Controllers\Profile\ProfilePhotoController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
-use App\Http\Controllers\Client\SmeContent\AuthoredAppointmentController;
 use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
 use App\Http\Controllers\Client\SmeContent\EnhancedContentController;
 use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
@@ -413,20 +412,17 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::put('/password', [PasswordController::class,     'update']);
     });
 
-    // SME authored content appointments (legacy)
+    // SME Content — Appointments (unified across all service types)
     Route::prefix('sme-content')->group(function () {
-        Route::post('appointments',      [SmeAppointmentController::class, 'store']);
-        Route::get('appointments/{id}',  [SmeAppointmentController::class, 'show']);
+        Route::get('appointments',           [SmeAppointmentController::class, 'index']);
+        Route::post('appointments',          [SmeAppointmentController::class, 'store']);
+        Route::get('appointments/{id}',      [SmeAppointmentController::class, 'show']);
+        Route::delete('appointments/{id}',   [SmeAppointmentController::class, 'destroy']);
     });
 
-    // SME Content — Authored Content
+    // SME Content — Authored Content (tier listings)
     Route::prefix('sme-content/authored-content')->group(function () {
-        Route::get('/',              [AuthoredContentController::class, 'index']);
-
-        Route::get('/appointments',       [AuthoredAppointmentController::class, 'index']);
-        Route::post('/appointments',      [AuthoredAppointmentController::class, 'store']);
-        Route::get('/appointments/{id}',  [AuthoredAppointmentController::class, 'show']);
-        Route::delete('/appointments/{id}', [AuthoredAppointmentController::class, 'destroy']);
+        Route::get('/', [AuthoredContentController::class, 'index']);
     });
 
     // SME Content — Internal Collaboration

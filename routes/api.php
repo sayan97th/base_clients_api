@@ -64,6 +64,8 @@ use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
+use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
+use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Test\TestEmailController;
 use Illuminate\Support\Facades\Route;
 
@@ -461,6 +463,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::prefix('premium-mentions')->group(function () {
         Route::get('plans', [PremiumMentionsPlanController::class, 'index']);
         Route::post('orders', [PremiumMentionsOrderController::class, 'store']);
+    });
+
+    // SEO Packages
+    Route::prefix('seo-packages')->group(function () {
+        Route::get('/',             [SeoPackageController::class,      'index']);
+        Route::post('subscriptions', [SeoSubscriptionController::class, 'store']);
     });
 
     // SME Content — client routes

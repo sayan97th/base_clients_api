@@ -21,6 +21,7 @@ class PremiumMentionsPlan extends Model
         'tagline',
         'is_most_popular',
         'is_active',
+        'sort_order',
     ];
 
     protected function casts(): array
@@ -33,6 +34,7 @@ class PremiumMentionsPlan extends Model
             'support_placements'   => 'integer',
             'is_most_popular'      => 'boolean',
             'is_active'            => 'boolean',
+            'sort_order'           => 'integer',
         ];
     }
 

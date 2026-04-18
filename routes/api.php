@@ -54,6 +54,7 @@ use App\Http\Controllers\Admin\SmeContent\SmeCollaborationServiceController;
 use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
 use App\Http\Controllers\Admin\SmeAppointment\AdminSmeAppointmentController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
+use App\Http\Controllers\Admin\PremiumMentions\AdminPremiumMentionsPlanController;
 use App\Http\Controllers\Client\PremiumMentions\OrderController as PremiumMentionsOrderController;
 use App\Http\Controllers\Client\PremiumMentions\PlanController as PremiumMentionsPlanController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
@@ -150,6 +151,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('{appointment_id}/status',      [AdminSmeAppointmentController::class, 'updateStatus']);
             Route::put('{appointment_id}',               [AdminSmeAppointmentController::class, 'update']);
             Route::delete('{appointment_id}',            [AdminSmeAppointmentController::class, 'destroy']);
+        });
+
+        // Premium Mentions plans — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('premium-mentions')->group(function () {
+            Route::get('plans',        [AdminPremiumMentionsPlanController::class, 'index']);
+            Route::get('plans/{id}',   [AdminPremiumMentionsPlanController::class, 'show']);
+            Route::post('plans',       [AdminPremiumMentionsPlanController::class, 'store']);
+            Route::patch('plans/{id}', [AdminPremiumMentionsPlanController::class, 'update']);
+            Route::delete('plans/{id}', [AdminPremiumMentionsPlanController::class, 'destroy']);
         });
 
         // SME Content service tiers — super_admin, admin, staff

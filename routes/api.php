@@ -64,6 +64,7 @@ use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
+use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -153,6 +154,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('{appointment_id}/status',      [AdminSmeAppointmentController::class, 'updateStatus']);
             Route::put('{appointment_id}',               [AdminSmeAppointmentController::class, 'update']);
             Route::delete('{appointment_id}',            [AdminSmeAppointmentController::class, 'destroy']);
+        });
+
+        // SEO Packages — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('seo-packages')->group(function () {
+            Route::get('/',        [AdminSeoPackageController::class, 'index']);
+            Route::post('/',       [AdminSeoPackageController::class, 'store']);
+            Route::get('/{id}',    [AdminSeoPackageController::class, 'show']);
+            Route::patch('/{id}',  [AdminSeoPackageController::class, 'update']);
+            Route::delete('/{id}', [AdminSeoPackageController::class, 'destroy']);
         });
 
         // Premium Mentions plans — super_admin, admin, staff

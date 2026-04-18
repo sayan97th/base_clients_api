@@ -17,6 +17,7 @@ class SeoPackage extends Model
         'slug',
         'price_per_month',
         'best_for',
+        'tagline',
         'features',
         'is_most_popular',
         'is_active',

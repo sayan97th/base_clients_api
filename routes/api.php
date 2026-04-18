@@ -54,6 +54,8 @@ use App\Http\Controllers\Admin\SmeContent\SmeCollaborationServiceController;
 use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
 use App\Http\Controllers\Admin\SmeAppointment\AdminSmeAppointmentController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
+use App\Http\Controllers\Client\PremiumMentions\OrderController as PremiumMentionsOrderController;
+use App\Http\Controllers\Client\PremiumMentions\PlanController as PremiumMentionsPlanController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
 use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
 use App\Http\Controllers\Client\SmeContent\EnhancedContentController;
@@ -443,6 +445,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::post('/photo',  [ProfilePhotoController::class, 'store']);
         Route::delete('/photo', [ProfilePhotoController::class, 'destroy']);
         Route::put('/password', [PasswordController::class,     'update']);
+    });
+
+    // Premium Mentions
+    Route::prefix('premium-mentions')->group(function () {
+        Route::get('plans', [PremiumMentionsPlanController::class, 'index']);
+        Route::post('orders', [PremiumMentionsOrderController::class, 'store']);
     });
 
     // SME Content — client routes

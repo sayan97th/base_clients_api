@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
         $this->call(SmeCollaborationTierSeeder::class);
         $this->call(SmeEnhancedTierSeeder::class);
         $this->call(CouponSeeder::class);
+        $this->call(PremiumMentionsPlanSeeder::class);
         $this->call(NewsPostSeeder::class);
 
         $this->seedOrganization();

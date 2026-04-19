@@ -5,15 +5,18 @@ namespace App\Http\Controllers\Admin\Invoice;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Invoice\ListInvoicesRequest;
 use App\Http\Requests\Admin\Invoice\StoreInvoiceRequest;
+use App\Http\Requests\Admin\Invoice\UpdateInvoiceBillingRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceLineItem;
 use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
+use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -332,6 +335,246 @@ class InvoiceController extends Controller
         }
 
         return response()->json($this->formatInvoice($invoice));
+    }
+
+    /**
+     * PATCH /api/admin/invoices/{invoice_id}/billing
+     */
+    public function updateBilling(UpdateInvoiceBillingRequest $request, string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $billing_fields = ['company_name', 'company_description', 'address_line_1', 'address_line_2', 'state', 'country'];
+        $billing_data   = [];
+
+        foreach ($billing_fields as $field) {
+            if ($request->has($field)) {
+                $billing_data[$field] = $request->input($field);
+            }
+        }
+
+        if ($invoice->billedTo) {
+            $invoice->billedTo->update($billing_data);
+        } else {
+            $invoice->billedTo()->create($billing_data);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'billing_details_updated',
+            'description'    => 'Billing details updated by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/mark-paid
+     */
+    public function markPaid(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->status    = 'paid';
+        $invoice->date_paid = now();
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'marked invoice as paid',
+            'description'    => 'Invoice manually marked as paid by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/void
+     */
+    public function voidInvoice(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->status = 'void';
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'invoice_voided',
+            'description'    => 'Invoice voided by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/duplicate
+     */
+    public function duplicate(string $invoice_id): JsonResponse
+    {
+        $original = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems', 'billedTo'])
+            ->first();
+
+        if (! $original) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $admin = Auth::user();
+
+        $new_invoice = DB::transaction(function () use ($original, $admin) {
+            $unique_id      = strtoupper(bin2hex(random_bytes(4)));
+            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
+
+            $new_invoice = Invoice::create([
+                'unique_id'       => $unique_id,
+                'invoice_number'  => $invoice_number,
+                'user_id'         => $original->user_id,
+                'order_id'        => null,
+                'status'          => 'void',
+                'payment_method'  => $original->payment_method,
+                'currency_type'   => $original->currency_type,
+                'subtotal_amount' => $original->subtotal_amount,
+                'discount_amount' => $original->discount_amount,
+                'total_amount'    => $original->total_amount,
+                'credit_amount'   => 0.0,
+                'notes'           => $original->notes,
+                'date_issued'     => now(),
+                'date_due'        => $original->date_due,
+                'date_paid'       => null,
+            ]);
+
+            foreach ($original->lineItems as $item) {
+                $new_invoice->lineItems()->create([
+                    'item_name'        => $item->item_name,
+                    'description'      => $item->description,
+                    'price'            => $item->price,
+                    'quantity'         => $item->quantity,
+                    'discount_percent' => $item->discount_percent,
+                    'item_total'       => $item->item_total,
+                ]);
+            }
+
+            if ($original->billedTo) {
+                $new_invoice->billedTo()->create([
+                    'company_name'        => $original->billedTo->company_name,
+                    'company_description' => $original->billedTo->company_description,
+                    'address_line_1'      => $original->billedTo->address_line_1,
+                    'address_line_2'      => $original->billedTo->address_line_2,
+                    'state'               => $original->billedTo->state,
+                    'country'             => $original->billedTo->country,
+                ]);
+            }
+
+            $actor_name     = $admin->full_name ?? $admin->email;
+            $actor_initials = $this->buildInitials($actor_name);
+
+            InvoiceHistory::create([
+                'invoice_id'     => $new_invoice->id,
+                'event'          => 'invoice_duplicated',
+                'description'    => "Duplicated from invoice {$original->unique_id}.",
+                'actor_id'       => $admin->id,
+                'actor_name'     => $actor_name,
+                'actor_initials' => $actor_initials,
+                'actor_type'     => 'admin',
+            ]);
+
+            return $new_invoice->load(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+        });
+
+        return response()->json($this->formatInvoice($new_invoice), 201);
+    }
+
+    /**
+     * DELETE /api/admin/invoices/{invoice_id}
+     */
+    public function destroy(string $invoice_id): Response|JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $invoice->delete();
+
+        return response()->noContent();
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/send-reminder
+     */
+    public function sendReminder(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems'])
+            ->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $invoice->user->notify(new InvoiceReminderNotification($invoice, $invoice->user));
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'reminder_sent',
+            'description'    => 'Payment reminder email sent to client.',
+            'actor_id'       => null,
+            'actor_name'     => 'System',
+            'actor_initials' => 'S',
+            'actor_type'     => 'system',
+        ]);
+
+        return response()->json(['message' => 'Reminder sent successfully.']);
     }
 
     /**

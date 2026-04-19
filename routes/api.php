@@ -296,8 +296,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}/history', [AdminInvoiceController::class, 'history']);
             Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
             Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
+            Route::post('invoices/{invoice_id}/mark-paid', [AdminInvoiceController::class, 'markPaid']);
+            Route::post('invoices/{invoice_id}/void', [AdminInvoiceController::class, 'voidInvoice']);
+            Route::post('invoices/{invoice_id}/duplicate', [AdminInvoiceController::class, 'duplicate']);
+            Route::post('invoices/{invoice_id}/send-reminder', [AdminInvoiceController::class, 'sendReminder']);
+            Route::patch('invoices/{invoice_id}/billing', [AdminInvoiceController::class, 'updateBilling']);
             Route::patch('invoices/{invoice_id}', [AdminInvoiceController::class, 'update']);
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
+            Route::delete('invoices/{invoice_id}', [AdminInvoiceController::class, 'destroy']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 
             // Order tracking — list updates, create update

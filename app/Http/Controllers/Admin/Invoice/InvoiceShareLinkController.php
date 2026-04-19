@@ -10,8 +10,6 @@ use Illuminate\Support\Str;
 
 class InvoiceShareLinkController extends Controller
 {
-    private const PORTAL_BASE_URL = 'https://clients.basesearchmarketing.com';
-
     /**
      * GET /api/admin/invoices/{invoice_id}/share-links
      */
@@ -56,8 +54,8 @@ class InvoiceShareLinkController extends Controller
     {
         return [
             'sharing_enabled' => $invoice->sharing_enabled,
-            'private_link'    => self::PORTAL_BASE_URL . '/invoices/' . $invoice->unique_id,
-            'public_link'     => self::PORTAL_BASE_URL . '/share/invoices/' . $invoice->unique_id . '?key=' . $invoice->share_key,
+            'private_link'    => '/invoices/' . $invoice->unique_id . '/view',
+            'public_link'     => '/invoices/' . $invoice->unique_id . '/view?token=' . $invoice->share_key,
         ];
     }
 

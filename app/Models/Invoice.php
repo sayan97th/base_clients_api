@@ -29,6 +29,8 @@ class Invoice extends Model
         'total_amount',
         'credit_amount',
         'notes',
+        'share_key',
+        'sharing_enabled',
         'date_issued',
         'date_due',
         'date_paid',
@@ -37,13 +39,14 @@ class Invoice extends Model
     protected function casts(): array
     {
         return [
-            'subtotal_amount' => 'float',
-            'discount_amount' => 'float',
-            'total_amount'    => 'float',
-            'credit_amount'   => 'float',
-            'date_issued'     => 'datetime',
-            'date_due'        => 'datetime',
-            'date_paid'       => 'datetime',
+            'subtotal_amount'  => 'float',
+            'discount_amount'  => 'float',
+            'total_amount'     => 'float',
+            'credit_amount'    => 'float',
+            'sharing_enabled'  => 'boolean',
+            'date_issued'      => 'datetime',
+            'date_due'         => 'datetime',
+            'date_paid'        => 'datetime',
         ];
     }
 

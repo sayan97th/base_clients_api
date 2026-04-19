@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
+use App\Http\Controllers\Admin\Invoice\InvoiceShareLinkController as AdminInvoiceShareLinkController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
@@ -293,6 +294,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
             Route::post('invoices', [AdminInvoiceController::class, 'store']);
             Route::get('invoices/{invoice_id}/history', [AdminInvoiceController::class, 'history']);
+            Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
+            Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 

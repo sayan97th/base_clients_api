@@ -291,6 +291,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('orders',          [AdminOrderController::class, 'index']);
             Route::get('orders/{order}',  [AdminOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
+            Route::post('invoices', [AdminInvoiceController::class, 'store']);
+            Route::get('invoices/{invoice_id}/history', [AdminInvoiceController::class, 'history']);
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 

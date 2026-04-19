@@ -13,17 +13,20 @@ class InvoiceLineItem extends Model
     protected $fillable = [
         'invoice_id',
         'item_name',
+        'description',
         'price',
         'quantity',
+        'discount_percent',
         'item_total',
     ];
 
     protected function casts(): array
     {
         return [
-            'price'      => 'float',
-            'quantity'   => 'integer',
-            'item_total' => 'float',
+            'price'            => 'float',
+            'quantity'         => 'integer',
+            'discount_percent' => 'float',
+            'item_total'       => 'float',
         ];
     }
 

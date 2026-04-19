@@ -28,6 +28,7 @@ class Invoice extends Model
         'discount_amount',
         'total_amount',
         'credit_amount',
+        'notes',
         'date_issued',
         'date_due',
         'date_paid',
@@ -64,5 +65,10 @@ class Invoice extends Model
     public function billedTo(): HasOne
     {
         return $this->hasOne(InvoiceBilledTo::class);
+    }
+
+    public function history(): HasMany
+    {
+        return $this->hasMany(InvoiceHistory::class);
     }
 }

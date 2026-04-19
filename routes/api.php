@@ -296,6 +296,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}/history', [AdminInvoiceController::class, 'history']);
             Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
             Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
+            Route::patch('invoices/{invoice_id}', [AdminInvoiceController::class, 'update']);
             Route::get('invoices/{invoice_id}', [AdminInvoiceController::class, 'show']);
             Route::get('invitations', [AdminInvitationController::class, 'index']);
 

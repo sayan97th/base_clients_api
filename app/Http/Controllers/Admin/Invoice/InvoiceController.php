@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Admin\Invoice;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Invoice\ListInvoicesRequest;
 use App\Http\Requests\Admin\Invoice\StoreInvoiceRequest;
+use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
+use App\Models\InvoiceLineItem;
 use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
+use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -219,6 +222,113 @@ class InvoiceController extends Controller
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        return response()->json($this->formatInvoice($invoice));
+    }
+
+    /**
+     * PATCH /api/admin/invoices/{invoice_id}
+     */
+    public function update(UpdateInvoiceRequest $request, string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::where('unique_id', $invoice_id)
+            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $admin        = Auth::user();
+        $changed      = [];
+
+        $invoice = DB::transaction(function () use ($request, $invoice, $admin, &$changed) {
+            if ($request->has('date_due')) {
+                $invoice->date_due = $request->input('date_due');
+                $changed[]         = 'due date';
+            }
+
+            if ($request->has('notes')) {
+                $invoice->notes = $request->input('notes');
+                $changed[]      = 'notes';
+            }
+
+            if ($request->has('line_items') && is_array($request->input('line_items'))) {
+                $raw_items       = $request->input('line_items');
+                $subtotal_amount = 0.0;
+                $discount_amount = 0.0;
+                $computed_items  = [];
+
+                foreach ($raw_items as $item) {
+                    $price            = (float) $item['price'];
+                    $quantity         = (int) $item['quantity'];
+                    $discount_percent = (float) ($item['discount_percent'] ?? 0);
+                    $gross            = $price * $quantity;
+                    $discount         = round($gross * ($discount_percent / 100), 2);
+                    $item_total       = round($gross - $discount, 2);
+
+                    $subtotal_amount += $item_total;
+                    $discount_amount += $discount;
+
+                    $computed_items[] = [
+                        'item_name'        => $item['item_name'],
+                        'description'      => $item['description'] ?? null,
+                        'price'            => $price,
+                        'quantity'         => $quantity,
+                        'discount_percent' => $discount_percent,
+                        'item_total'       => $item_total,
+                    ];
+                }
+
+                $subtotal_amount = round($subtotal_amount, 2);
+                $discount_amount = round($discount_amount, 2);
+
+                InvoiceLineItem::where('invoice_id', $invoice->id)->delete();
+
+                foreach ($computed_items as $item) {
+                    $invoice->lineItems()->create($item);
+                }
+
+                $invoice->subtotal_amount = $subtotal_amount;
+                $invoice->discount_amount = $discount_amount;
+                $invoice->total_amount    = $subtotal_amount;
+                $changed[]                = 'line items';
+            }
+
+            $invoice->save();
+
+            $actor_name     = $admin->full_name ?? $admin->email;
+            $actor_initials = $this->buildInitials($actor_name);
+            $change_summary = count($changed) > 0
+                ? implode(', ', $changed) . ' modified'
+                : 'no fields changed';
+
+            InvoiceHistory::create([
+                'invoice_id'     => $invoice->id,
+                'event'          => 'invoice_updated',
+                'description'    => "Invoice updated by admin: {$change_summary}.",
+                'actor_id'       => $admin->id,
+                'actor_name'     => $actor_name,
+                'actor_initials' => $actor_initials,
+                'actor_type'     => 'admin',
+            ]);
+
+            return $invoice->load(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+        });
+
+        if ($request->boolean('send_update_notification')) {
+            $invoice->user->notify(new InvoiceUpdatedNotification($invoice, $invoice->user));
+
+            InvoiceHistory::create([
+                'invoice_id'     => $invoice->id,
+                'event'          => 'Email update notification sent to client.',
+                'description'    => null,
+                'actor_id'       => null,
+                'actor_name'     => 'System',
+                'actor_initials' => 'S',
+                'actor_type'     => 'system',
+            ]);
         }
 
         return response()->json($this->formatInvoice($invoice));

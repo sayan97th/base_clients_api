@@ -24,8 +24,12 @@ class PublicInvoiceController extends Controller
 
         $token = $request->query('token');
 
-        if (! $token || $token !== $invoice->share_key || ! $invoice->sharing_enabled) {
-            return response()->json(['message' => 'This invoice is not available for public viewing.'], 403);
+        if (! $invoice->sharing_enabled) {
+            return response()->json(['message' => 'Sharing is disabled for this invoice.'], 403);
+        }
+
+        if (! $token || $token !== $invoice->share_key) {
+            return response()->json(['message' => 'Invalid or expired sharing token.'], 401);
         }
 
         return response()->json(['data' => $this->formatPublicInvoice($invoice)]);

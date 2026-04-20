@@ -426,6 +426,121 @@ class InvoiceController extends Controller
     }
 
     /**
+     * POST /api/admin/invoices/{invoice_id}/mark-unpaid
+     */
+    public function markUnpaid(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'unpaid') {
+            return response()->json(['message' => 'Invoice is already marked as unpaid.'], 422);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->status    = 'unpaid';
+        $invoice->date_paid = null;
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'marked invoice as unpaid',
+            'description'    => 'Invoice manually marked as unpaid by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/mark-overdue
+     */
+    public function markOverdue(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'overdue') {
+            return response()->json(['message' => 'Invoice is already marked as overdue.'], 422);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->status = 'overdue';
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'marked invoice as overdue',
+            'description'    => 'Invoice manually marked as overdue by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/refund
+     */
+    public function refundInvoice(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'refund') {
+            return response()->json(['message' => 'Invoice is already marked as refunded.'], 422);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->status = 'refund';
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'invoice refunded',
+            'description'    => 'Invoice marked as refunded by admin.',
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        ));
+    }
+
+    /**
      * POST /api/admin/invoices/{invoice_id}/void
      */
     public function voidInvoice(string $invoice_id): JsonResponse

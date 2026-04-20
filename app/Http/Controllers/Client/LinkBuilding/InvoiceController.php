@@ -141,7 +141,8 @@ class InvoiceController extends Controller
             'payment_method' => $invoice->payment_method,
             'status'         => $invoice->status,
             'subtotal'       => $this->formatAmount($invoice->subtotal_amount, $invoice->currency_type),
-            'discount'       => $bulk_discount > 0 ? '$' . number_format($bulk_discount, 2) : '$0.00',
+            'discount'       => $bulk_discount > 0 ? $this->formatAmount($bulk_discount, $invoice->currency_type) : null,
+            'discount_type'  => $invoice->discount_type,
             'total'          => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
             'credit'         => $this->formatCredit($invoice->credit_amount, $invoice->currency_type),
             'billed_to'      => $billed_to ? [

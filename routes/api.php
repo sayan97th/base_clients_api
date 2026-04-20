@@ -301,6 +301,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
             Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
             Route::post('invoices/{invoice_id}/mark-paid', [AdminInvoiceController::class, 'markPaid']);
+            Route::post('invoices/{invoice_id}/mark-unpaid', [AdminInvoiceController::class, 'markUnpaid']);
+            Route::post('invoices/{invoice_id}/mark-overdue', [AdminInvoiceController::class, 'markOverdue']);
+            Route::post('invoices/{invoice_id}/refund', [AdminInvoiceController::class, 'refundInvoice']);
             Route::post('invoices/{invoice_id}/void', [AdminInvoiceController::class, 'voidInvoice']);
             Route::post('invoices/{invoice_id}/duplicate', [AdminInvoiceController::class, 'duplicate']);
             Route::post('invoices/{invoice_id}/send-reminder', [AdminInvoiceController::class, 'sendReminder']);

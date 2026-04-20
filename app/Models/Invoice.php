@@ -12,9 +12,9 @@ class Invoice extends Model
 {
     use HasUuids;
 
-    const STATUSES        = ['unpaid', 'paid', 'void'];
-    const CURRENCY_TYPES  = ['usd', 'credits'];
-    const PAYMENT_METHODS = ['Account Balance', 'Credit Card'];
+    public const STATUSES        = ['unpaid', 'paid', 'overdue', 'refund', 'void'];
+    public const CURRENCY_TYPES  = ['usd', 'credits'];
+    public const PAYMENT_METHODS = ['Account Balance', 'Credit Card'];
 
     protected $fillable = [
         'unique_id',

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Public;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Public\PayInvoiceRequest;
 use App\Models\Invoice;
+use App\Services\StripePublicPaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -25,11 +27,11 @@ class PublicInvoiceController extends Controller
         $token = $request->query('token');
 
         if (! $invoice->sharing_enabled) {
-            return response()->json(['message' => 'Sharing is disabled for this invoice.'], 403);
+            return response()->json(['message' => 'Access denied.'], 403);
         }
 
         if (! $token || $token !== $invoice->share_key) {
-            return response()->json(['message' => 'Invalid or expired sharing token.'], 401);
+            return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
         return response()->json(['data' => $this->formatPublicInvoice($invoice)]);
@@ -111,5 +113,43 @@ class PublicInvoiceController extends Controller
                 'discount_amount' => $this->formatMoney((float) $order_coupon->discount_amount, $is_usd),
             ];
         })->filter()->values()->all();
+    }
+
+    /**
+     * POST /api/invoices/{invoice_id}/pay
+     *
+     * Confirm a Stripe payment for a public invoice.
+     * No authentication required; authorization via token in request body.
+     */
+    public function pay(
+        PayInvoiceRequest $request,
+        string $invoice_id,
+        StripePublicPaymentService $payment_service
+    ): JsonResponse {
+        $invoice = Invoice::where('unique_id', $invoice_id)->first();
+
+        if (!$invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $payment_intent_id = $request->input('payment_intent_id');
+        $token = $request->input('token');
+
+        $result = $payment_service->confirmPublicInvoicePayment(
+            $invoice,
+            $payment_intent_id,
+            $token
+        );
+
+        $status_code = $result['status_code'] ?? 200;
+
+        if ($result['success']) {
+            return response()->json([
+                'message' => $result['message'],
+                'status'  => $result['status'],
+            ], $status_code);
+        }
+
+        return response()->json(['message' => $result['error']], $status_code);
     }
 }

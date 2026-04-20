@@ -98,6 +98,7 @@ Route::get('/news/{id}', [NewsController::class, 'show']);
 
 // ─── Public invoice view (no auth required) ───────────────────────────────────
 Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show']);
+Route::post('/invoices/{invoice_id}/pay', [PublicInvoiceController::class, 'pay']);
 
 // ─── Admin public routes (no auth required) ───────────────────────────────────
 Route::prefix('admin')->group(function () {

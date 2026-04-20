@@ -68,6 +68,7 @@ use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
+use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
 use Illuminate\Support\Facades\Route;
 
@@ -94,6 +95,9 @@ Route::prefix('auth')->group(function () {
 // ─── Public news feed (no auth required) ─────────────────────────────────────
 Route::get('/news', [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
+
+// ─── Public invoice view (no auth required) ───────────────────────────────────
+Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show']);
 
 // ─── Admin public routes (no auth required) ───────────────────────────────────
 Route::prefix('admin')->group(function () {

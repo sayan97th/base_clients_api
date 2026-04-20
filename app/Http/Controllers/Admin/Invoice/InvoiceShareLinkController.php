@@ -54,7 +54,7 @@ class InvoiceShareLinkController extends Controller
     {
         return [
             'sharing_enabled' => $invoice->sharing_enabled,
-            'private_link'    => '/invoices/' . $invoice->unique_id . '/view',
+            'private_link'    => '/invoices/' . $invoice->unique_id,
             'public_link'     => '/invoices/' . $invoice->unique_id . '/view?token=' . $invoice->share_key,
         ];
     }

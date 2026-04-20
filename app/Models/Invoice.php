@@ -12,7 +12,7 @@ class Invoice extends Model
 {
     use HasUuids;
 
-    const STATUSES        = ['paid', 'void'];
+    const STATUSES        = ['unpaid', 'paid', 'void'];
     const CURRENCY_TYPES  = ['usd', 'credits'];
     const PAYMENT_METHODS = ['Account Balance', 'Credit Card'];
 
@@ -26,6 +26,7 @@ class Invoice extends Model
         'currency_type',
         'subtotal_amount',
         'discount_amount',
+        'discount_type',
         'total_amount',
         'credit_amount',
         'notes',

@@ -15,7 +15,7 @@ class InvoiceShareLinkController extends Controller
      */
     public function show(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)->first();
+        $invoice = Invoice::find($invoice_id);
 
         if (!$invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -34,7 +34,7 @@ class InvoiceShareLinkController extends Controller
      */
     public function update(UpdateShareLinksRequest $request, string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)->first();
+        $invoice = Invoice::find($invoice_id);
 
         if (!$invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);

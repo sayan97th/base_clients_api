@@ -75,10 +75,13 @@ class InvoiceController extends Controller
         $data = $invoices->map(fn (Invoice $invoice) => $this->formatInvoice($invoice))->values();
 
         return response()->json([
-            'data'         => $data,
-            'current_page' => $invoices->currentPage(),
-            'last_page'    => $invoices->lastPage(),
-            'total'        => $invoices->total(),
+            'data' => $data,
+            'meta' => [
+                'current_page' => $invoices->currentPage(),
+                'last_page'    => $invoices->lastPage(),
+                'per_page'     => $invoices->perPage(),
+                'total'        => $invoices->total(),
+            ],
         ]);
     }
 
@@ -93,13 +96,13 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'User not found.'], 404);
         }
 
-        $admin        = Auth::user();
-        $currency     = $request->input('currency_type', 'usd');
-        $raw_items    = $request->input('line_items');
+        $admin     = Auth::user();
+        $currency  = $request->input('currency_type', 'usd');
+        $raw_items = $request->input('line_items');
 
-        $subtotal_amount  = 0.0;
-        $discount_amount  = 0.0;
-        $computed_items   = [];
+        $subtotal_amount = 0.0;
+        $discount_amount = 0.0;
+        $computed_items  = [];
 
         foreach ($raw_items as $item) {
             $price            = (float) $item['price'];
@@ -138,11 +141,12 @@ class InvoiceController extends Controller
                 'invoice_number'  => $invoice_number,
                 'user_id'         => $user->id,
                 'order_id'        => null,
-                'status'          => 'void',
+                'status'          => 'unpaid',
                 'payment_method'  => 'Account Balance',
                 'currency_type'   => $currency,
                 'subtotal_amount' => $subtotal_amount,
                 'discount_amount' => $discount_amount,
+                'discount_type'   => $discount_amount > 0 ? 'line_item' : null,
                 'total_amount'    => $total_amount,
                 'credit_amount'   => 0.0,
                 'notes'           => $request->input('notes'),
@@ -172,7 +176,7 @@ class InvoiceController extends Controller
 
             InvoiceHistory::create([
                 'invoice_id'     => $invoice->id,
-                'event'          => "Invoice {$unique_id} created.",
+                'event'          => 'invoice created',
                 'description'    => 'Invoice generated manually by admin.',
                 'actor_id'       => $admin->id,
                 'actor_name'     => $actor_name,
@@ -188,11 +192,11 @@ class InvoiceController extends Controller
 
             InvoiceHistory::create([
                 'invoice_id'     => $invoice->id,
-                'event'          => 'Email notification sent to client.',
+                'event'          => 'email notification sent to client',
                 'description'    => null,
                 'actor_id'       => null,
                 'actor_name'     => 'System',
-                'actor_initials' => 'S',
+                'actor_initials' => 'SY',
                 'actor_type'     => 'system',
             ]);
         }
@@ -205,7 +209,7 @@ class InvoiceController extends Controller
                         type: 'invoice',
                         message: "Invoice {$invoice->invoice_number} has been created for {$invoice->user->full_name}.",
                         extra: [
-                            'link' => '/admin/invoices/' . $invoice->unique_id,
+                            'link' => '/admin/invoices/' . $invoice->id,
                         ],
                     );
                 });
@@ -217,11 +221,10 @@ class InvoiceController extends Controller
     /**
      * GET /api/admin/invoices/{invoice_id}
      */
-    public function show(string $unique_id): JsonResponse
+    public function show(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $unique_id)
-            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -235,16 +238,15 @@ class InvoiceController extends Controller
      */
     public function update(UpdateInvoiceRequest $request, string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
 
-        $admin        = Auth::user();
-        $changed      = [];
+        $admin   = Auth::user();
+        $changed = [];
 
         $invoice = DB::transaction(function () use ($request, $invoice, $admin, &$changed) {
             if ($request->has('date_due')) {
@@ -295,6 +297,7 @@ class InvoiceController extends Controller
 
                 $invoice->subtotal_amount = $subtotal_amount;
                 $invoice->discount_amount = $discount_amount;
+                $invoice->discount_type   = $discount_amount > 0 ? 'line_item' : null;
                 $invoice->total_amount    = $subtotal_amount;
                 $changed[]                = 'line items';
             }
@@ -309,7 +312,7 @@ class InvoiceController extends Controller
 
             InvoiceHistory::create([
                 'invoice_id'     => $invoice->id,
-                'event'          => 'invoice_updated',
+                'event'          => 'invoice updated',
                 'description'    => "Invoice updated by admin: {$change_summary}.",
                 'actor_id'       => $admin->id,
                 'actor_name'     => $actor_name,
@@ -325,11 +328,11 @@ class InvoiceController extends Controller
 
             InvoiceHistory::create([
                 'invoice_id'     => $invoice->id,
-                'event'          => 'Email update notification sent to client.',
+                'event'          => 'email update notification sent to client',
                 'description'    => null,
                 'actor_id'       => null,
                 'actor_name'     => 'System',
-                'actor_initials' => 'S',
+                'actor_initials' => 'SY',
                 'actor_type'     => 'system',
             ]);
         }
@@ -342,9 +345,8 @@ class InvoiceController extends Controller
      */
     public function updateBilling(UpdateInvoiceBillingRequest $request, string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -371,7 +373,7 @@ class InvoiceController extends Controller
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
-            'event'          => 'billing_details_updated',
+            'event'          => 'billing details updated',
             'description'    => 'Billing details updated by admin.',
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
@@ -389,12 +391,15 @@ class InvoiceController extends Controller
      */
     public function markPaid(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'paid') {
+            return response()->json(['message' => 'Invoice is already marked as paid.'], 422);
         }
 
         $admin          = Auth::user();
@@ -425,12 +430,15 @@ class InvoiceController extends Controller
      */
     public function voidInvoice(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'void') {
+            return response()->json(['message' => 'Invoice is already voided.'], 422);
         }
 
         $admin          = Auth::user();
@@ -442,7 +450,7 @@ class InvoiceController extends Controller
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
-            'event'          => 'invoice_voided',
+            'event'          => 'invoice voided',
             'description'    => 'Invoice voided by admin.',
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
@@ -460,9 +468,8 @@ class InvoiceController extends Controller
      */
     public function duplicate(string $invoice_id): JsonResponse
     {
-        $original = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems', 'billedTo'])
-            ->first();
+        $original = Invoice::with(['user', 'lineItems', 'billedTo'])
+            ->find($invoice_id);
 
         if (! $original) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -479,11 +486,12 @@ class InvoiceController extends Controller
                 'invoice_number'  => $invoice_number,
                 'user_id'         => $original->user_id,
                 'order_id'        => null,
-                'status'          => 'void',
+                'status'          => 'unpaid',
                 'payment_method'  => $original->payment_method,
                 'currency_type'   => $original->currency_type,
                 'subtotal_amount' => $original->subtotal_amount,
                 'discount_amount' => $original->discount_amount,
+                'discount_type'   => $original->discount_type,
                 'total_amount'    => $original->total_amount,
                 'credit_amount'   => 0.0,
                 'notes'           => $original->notes,
@@ -519,7 +527,7 @@ class InvoiceController extends Controller
 
             InvoiceHistory::create([
                 'invoice_id'     => $new_invoice->id,
-                'event'          => 'invoice_duplicated',
+                'event'          => 'invoice duplicated',
                 'description'    => "Duplicated from invoice {$original->unique_id}.",
                 'actor_id'       => $admin->id,
                 'actor_name'     => $actor_name,
@@ -538,7 +546,7 @@ class InvoiceController extends Controller
      */
     public function destroy(string $invoice_id): Response|JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)->first();
+        $invoice = Invoice::find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -554,35 +562,38 @@ class InvoiceController extends Controller
      */
     public function sendReminder(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $invoice_id)
-            ->with(['user', 'lineItems'])
-            ->first();
+        $invoice = Invoice::with(['user', 'lineItems'])
+            ->find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if ($invoice->status === 'paid') {
+            return response()->json(['message' => 'Unable to send reminder. Invoice may already be paid.'], 422);
         }
 
         $invoice->user->notify(new InvoiceReminderNotification($invoice, $invoice->user));
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
-            'event'          => 'reminder_sent',
+            'event'          => 'reminder sent',
             'description'    => 'Payment reminder email sent to client.',
             'actor_id'       => null,
             'actor_name'     => 'System',
-            'actor_initials' => 'S',
+            'actor_initials' => 'SY',
             'actor_type'     => 'system',
         ]);
 
-        return response()->json(['message' => 'Reminder sent successfully.']);
+        return response()->json(['message' => 'Reminder email sent successfully.']);
     }
 
     /**
      * GET /api/admin/invoices/{invoice_id}/history
      */
-    public function history(string $unique_id): JsonResponse
+    public function history(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::where('unique_id', $unique_id)->first();
+        $invoice = Invoice::find($invoice_id);
 
         if (! $invoice) {
             return response()->json(['message' => 'Invoice not found.'], 404);
@@ -592,13 +603,13 @@ class InvoiceController extends Controller
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (InvoiceHistory $entry) => [
-                'id'              => $entry->id,
-                'event'           => $entry->event,
-                'description'     => $entry->description,
-                'actor_name'      => $entry->actor_name,
-                'actor_initials'  => $entry->actor_initials,
-                'actor_type'      => $entry->actor_type,
-                'created_at'      => $entry->created_at?->toIso8601String(),
+                'id'             => $entry->id,
+                'event'          => $entry->event,
+                'description'    => $entry->description,
+                'actor_name'     => $entry->actor_name,
+                'actor_initials' => $entry->actor_initials,
+                'actor_type'     => $entry->actor_type,
+                'created_at'     => $entry->created_at?->toIso8601String(),
             ])
             ->values();
 
@@ -621,6 +632,7 @@ class InvoiceController extends Controller
             'currency_type'   => $invoice->currency_type,
             'subtotal_amount' => $invoice->subtotal_amount,
             'discount_amount' => $invoice->discount_amount,
+            'discount_type'   => $invoice->discount_type,
             'total_amount'    => $invoice->total_amount,
             'credit_amount'   => $invoice->credit_amount,
             'notes'           => $invoice->notes,
@@ -673,7 +685,6 @@ class InvoiceController extends Controller
 
             return [
                 'code'            => $coupon->code,
-                'name'            => $coupon->name,
                 'discount_type'   => $coupon->discount_type,
                 'discount_value'  => $coupon->discount_value,
                 'discount_amount' => $order_coupon->discount_amount,
@@ -689,6 +700,6 @@ class InvoiceController extends Controller
             return strtoupper(mb_substr($parts[0], 0, 1) . mb_substr(end($parts), 0, 1));
         }
 
-        return strtoupper(mb_substr($name, 0, 1));
+        return strtoupper(mb_substr($name, 0, 2));
     }
 }

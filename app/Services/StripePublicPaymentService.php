@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Mail\PaymentSuccessfulEmail;
 use App\Models\Invoice;
+use Illuminate\Support\Facades\Mail;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
 
@@ -124,6 +126,9 @@ class StripePublicPaymentService
                 'actor_type'  => 'system',
             ]);
 
+            // Send payment confirmation email to the user
+            $this->sendPaymentSuccessfulEmail($invoice);
+
             return [
                 'success'     => true,
                 'message'     => 'Payment confirmed successfully.',
@@ -136,6 +141,25 @@ class StripePublicPaymentService
                 'error'       => 'An error occurred while processing your payment. Please contact support.',
                 'status_code' => 500,
             ];
+        }
+    }
+
+    /**
+     * Send payment confirmation email to the user.
+     */
+    private function sendPaymentSuccessfulEmail(Invoice $invoice): void
+    {
+        try {
+            $user = $invoice->user;
+
+            if ($user && $user->email) {
+                Mail::to($user->email)->queue(new PaymentSuccessfulEmail($user, $invoice));
+            }
+        } catch (\Exception $e) {
+            // Silently fail — payment was already confirmed, just email failed
+            logger()->warning("Failed to send payment confirmation email for invoice {$invoice->unique_id}", [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

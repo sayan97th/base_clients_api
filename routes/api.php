@@ -76,6 +76,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
 Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
 Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
+Route::get('/test/send-payment-successful-email', [TestEmailController::class, 'sendPaymentSuccessfulEmail']);
 
 // ─── Auth routes ──────────────────────────────────────────────────────────────
 Route::prefix('auth')->group(function () {

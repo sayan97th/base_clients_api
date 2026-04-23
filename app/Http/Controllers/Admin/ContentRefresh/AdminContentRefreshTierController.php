@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin\ContentRefreshTier;
+namespace App\Http\Controllers\Admin\ContentRefresh;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ContentRefreshTier\StoreContentRefreshTierRequest;
@@ -9,7 +9,7 @@ use App\Models\ContentRefreshTier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 
-class ContentRefreshTierController extends Controller
+class AdminContentRefreshTierController extends Controller
 {
     /**
      * GET /api/admin/content-refresh-tiers
@@ -18,7 +18,7 @@ class ContentRefreshTierController extends Controller
     {
         $tiers = ContentRefreshTier::orderBy('sort_order')->get();
 
-        return response()->json($tiers->map(fn (ContentRefreshTier $tier) => $this->formatTier($tier)));
+        return response()->json($tiers->map(fn(ContentRefreshTier $tier) => $this->formatTier($tier)));
     }
 
     /**

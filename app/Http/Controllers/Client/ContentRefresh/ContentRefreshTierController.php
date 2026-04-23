@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Client\LinkBuilding;
+namespace App\Http\Controllers\Client\ContentRefresh;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContentRefreshTier;
@@ -16,7 +16,7 @@ class ContentRefreshTierController extends Controller
         $tiers = ContentRefreshTier::where('is_active', true)
             ->orderBy('sort_order')
             ->get()
-            ->map(fn (ContentRefreshTier $tier) => [
+            ->map(fn(ContentRefreshTier $tier) => [
                 'id'               => $tier->id,
                 'label'            => $tier->label,
                 'word_count_range' => $tier->word_count_range,

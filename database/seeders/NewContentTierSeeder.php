@@ -14,7 +14,7 @@ class NewContentTierSeeder extends Seeder
     {
         $tiers = [
             [
-                'tier_id' => 'article_500',
+                'id' => 'new_content_500',
                 'label' => '500 Word Optimized SEO Article',
                 'turnaround_time' => '6 Business Days',
                 'price' => 300.00,
@@ -22,7 +22,7 @@ class NewContentTierSeeder extends Seeder
                 'sort_order' => 1,
             ],
             [
-                'tier_id' => 'article_600',
+                'id' => 'new_content_600',
                 'label' => '600 Word Optimized SEO Article',
                 'turnaround_time' => '6 Business Days',
                 'price' => 330.00,
@@ -30,7 +30,7 @@ class NewContentTierSeeder extends Seeder
                 'sort_order' => 2,
             ],
             [
-                'tier_id' => 'article_750',
+                'id' => 'new_content_750',
                 'label' => '750 Word Optimized SEO Article',
                 'turnaround_time' => '6 Business Days',
                 'price' => 425.00,
@@ -38,7 +38,7 @@ class NewContentTierSeeder extends Seeder
                 'sort_order' => 3,
             ],
             [
-                'tier_id' => 'article_1000',
+                'id' => 'new_content_1000',
                 'label' => '1,000 Word Optimized SEO Article',
                 'turnaround_time' => '7 Business Days',
                 'price' => 550.00,
@@ -46,7 +46,7 @@ class NewContentTierSeeder extends Seeder
                 'sort_order' => 4,
             ],
             [
-                'tier_id' => 'article_1500',
+                'id' => 'new_content_1500',
                 'label' => '1,500 Word Optimized SEO Article',
                 'turnaround_time' => '7 Business Days',
                 'price' => 775.00,
@@ -57,7 +57,7 @@ class NewContentTierSeeder extends Seeder
 
         foreach ($tiers as $tier) {
             NewContentTier::updateOrCreate(
-                ['tier_id' => $tier['tier_id']],
+                ['id' => $tier['id']],
                 $tier
             );
         }

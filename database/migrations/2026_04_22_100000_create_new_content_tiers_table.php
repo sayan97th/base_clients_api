@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('new_content_tiers', function (Blueprint $table) {
-            $table->id();
+            $table->string('id')->primary();
             $table->string('label')->comment('Tier label (e.g., 500 Word Optimized SEO Article)');
             $table->string('turnaround_time')->comment('Turnaround time (e.g., 6 Business Days)');
             $table->decimal('price', 10, 2)->comment('Price in USD');

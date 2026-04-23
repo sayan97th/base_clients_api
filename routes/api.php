@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Client\NewContent\NewContentTierController;
+use App\Http\Controllers\Client\NewContent\NewContentOrderController;
 use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBacklinkOrderController;
 use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
@@ -456,6 +457,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // New Content Tiers catalog
     Route::get('/new-content-tiers', [NewContentTierController::class, 'index']);
+
+    // New Content orders
+    Route::prefix('new-content')->group(function () {
+        Route::get('/orders',  [NewContentOrderController::class, 'index']);
+        Route::post('/orders', [NewContentOrderController::class, 'store']);
+    });
 
     // Content Refresh Tiers catalog
     Route::get('/content-refresh-tiers', [ContentRefreshTierController::class, 'index']);

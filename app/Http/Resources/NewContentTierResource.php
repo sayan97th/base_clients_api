@@ -15,12 +15,17 @@ class NewContentTierResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' => $this->tier_id,
-            'label' => $this->label,
+            'id'              => $this->id,
+            'label'           => $this->label,
             'turnaround_time' => $this->turnaround_time,
-            'price' => (int) $this->price,
-            'is_active' => $this->is_active,
-            'sort_order' => $this->sort_order,
+            'price'           => (float) $this->price,
+            'is_active'       => $this->is_active,
+            'is_most_popular' => $this->is_most_popular,
+            'max_quantity'    => $this->max_quantity,
+            'is_hidden'       => $this->is_hidden,
+            'sort_order'      => $this->sort_order,
+            'created_at'      => $this->created_at,
+            'updated_at'      => $this->updated_at,
         ];
     }
 }

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin\NewContent;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\NewContent\StoreNewContentTierRequest;
+use App\Http\Requests\Admin\NewContent\UpdateNewContentTierRequest;
 use App\Models\NewContentTier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;

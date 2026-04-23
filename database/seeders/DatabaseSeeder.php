@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
         $this->call(PremiumMentionsPlanSeeder::class);
         $this->call(SeoPackagesSeeder::class);
         $this->call(NewsPostSeeder::class);
+        $this->call(NewContentTierSeeder::class);
 
         $this->seedOrganization();
 

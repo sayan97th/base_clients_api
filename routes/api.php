@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Client\NewContent\NewContentTierController;
 use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBacklinkOrderController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
@@ -70,7 +72,6 @@ use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
-use Illuminate\Support\Facades\Route;
 
 // ─── Test routes (remove in production) ──────────────────────────────────────
 Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
@@ -501,6 +502,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/',             [SeoPackageController::class,      'index']);
         Route::post('subscriptions', [SeoSubscriptionController::class, 'store']);
     });
+
+    // New Content Tiers catalog
+    Route::get('/new-content-tiers', [NewContentTierController::class, 'index']);
 
     // SME Content — client routes
     Route::prefix('sme-content')->group(function () {

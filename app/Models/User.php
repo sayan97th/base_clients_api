@@ -129,6 +129,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(NewContentOrder::class);
     }
 
+    public function contentOptimizationOrders(): HasMany
+    {
+        return $this->hasMany(ContentOptimizationOrder::class);
+    }
+
     public function hasTeamPermission(Team $team, string $permission): bool
     {
         if ($this->hasRole('super_admin')) {

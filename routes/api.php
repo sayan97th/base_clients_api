@@ -68,6 +68,8 @@ use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
+use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationTierController;
+use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationOrderController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
@@ -462,6 +464,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::prefix('new-content')->group(function () {
         Route::get('/orders',  [NewContentOrderController::class, 'index']);
         Route::post('/orders', [NewContentOrderController::class, 'store']);
+    });
+
+    // Content Optimization Tiers catalog
+    Route::get('/content-optimization-tiers', [ContentOptimizationTierController::class, 'index']);
+
+    // Content Optimization orders
+    Route::prefix('content-optimization')->group(function () {
+        Route::get('/orders',  [ContentOptimizationOrderController::class, 'index']);
+        Route::post('/orders', [ContentOptimizationOrderController::class, 'store']);
     });
 
     // Content Refresh Tiers catalog

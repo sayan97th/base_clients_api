@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
         $this->call(SeoPackagesSeeder::class);
         $this->call(NewsPostSeeder::class);
         $this->call(NewContentTierSeeder::class);
+        $this->call(ContentOptimizationTierSeeder::class);
 
         $this->seedOrganization();
 

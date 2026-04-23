@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceControll
 use App\Http\Controllers\Admin\Invoice\InvoiceShareLinkController as AdminInvoiceShareLinkController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
+use App\Http\Controllers\Admin\NewContent\AdminNewContentTierController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
 use App\Http\Controllers\Admin\Order\ReportTableController as AdminReportTableController;
@@ -239,6 +240,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
         });
 
+        // New Content Tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
+            Route::get('/', [AdminNewContentTierController::class, 'index']);
+            Route::post('/', [AdminNewContentTierController::class, 'store']);
+            Route::patch('/{id}', [AdminNewContentTierController::class, 'update']);
+            Route::delete('/{id}', [AdminNewContentTierController::class, 'destroy']);
+        });
+
         // Content Refresh Tiers — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
             Route::get('/', [AdminContentRefreshTierController::class, 'index']);
@@ -445,6 +454,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // DR Tiers catalog
     Route::get('/dr-tiers', [DrTierController::class, 'index']);
 
+    // New Content Tiers catalog
+    Route::get('/new-content-tiers', [NewContentTierController::class, 'index']);
+
     // Content Refresh Tiers catalog
     Route::get('/content-refresh-tiers', [ContentRefreshTierController::class, 'index']);
 
@@ -503,8 +515,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::post('subscriptions', [SeoSubscriptionController::class, 'store']);
     });
 
-    // New Content Tiers catalog
-    Route::get('/new-content-tiers', [NewContentTierController::class, 'index']);
+
 
     // SME Content — client routes
     Route::prefix('sme-content')->group(function () {

@@ -15,6 +15,9 @@ return new class extends Migration
             $table->unsignedInteger('turnaround_days');
             $table->decimal('price', 10, 2);
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_most_popular')->default(false);
+            $table->unsignedInteger('max_quantity')->nullable();
+            $table->boolean('is_hidden')->default(false);
             $table->unsignedInteger('sort_order')->default(1);
             $table->timestamps();
         });

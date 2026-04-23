@@ -11,7 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-class DrTierController extends Controller
+class AdminLinkBuildingTierController extends Controller
 {
     /**
      * GET /api/admin/dr-tiers
@@ -23,7 +23,7 @@ class DrTierController extends Controller
             ->orderBy('price_per_link')
             ->get();
 
-        return response()->json($tiers->map(fn (DrTier $tier) => $this->formatTier($tier)));
+        return response()->json($tiers->map(fn(DrTier $tier) => $this->formatTier($tier)));
     }
 
     /**

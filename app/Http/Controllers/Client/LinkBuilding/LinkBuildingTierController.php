@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DrTier;
 use Illuminate\Http\JsonResponse;
 
-class DrTierController extends Controller
+class LinkBuildingTierController extends Controller
 {
     public function index(): JsonResponse
     {
@@ -14,7 +14,7 @@ class DrTierController extends Controller
             ->where('is_hidden', false)
             ->orderBy('price_per_link')
             ->get()
-            ->map(fn ($tier) => [
+            ->map(fn($tier) => [
                 'id'              => $tier->id,
                 'dr_label'        => $tier->dr_label,
                 'traffic_range'   => $tier->traffic_range,

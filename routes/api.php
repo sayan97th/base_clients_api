@@ -7,10 +7,10 @@ use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Admin\DrTier\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
-use App\Http\Controllers\Admin\DrTier\DrTierController as AdminDrTierController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
@@ -37,7 +37,6 @@ use App\Http\Controllers\Client\News\NewsController;
 use App\Http\Controllers\Client\Resource\ResourceController;
 use App\Http\Controllers\Client\Stripe\StripeController;
 use App\Http\Controllers\Client\PaymentProfile\PaymentProfileController;
-use App\Http\Controllers\Client\LinkBuilding\DrTierController;
 use App\Http\Controllers\Client\LinkBuilding\InvoiceController;
 use App\Http\Controllers\Client\LinkBuilding\CartController;
 use App\Http\Controllers\Client\LinkBuilding\OrderController as LinkBuildingOrderController;
@@ -69,6 +68,7 @@ use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
+use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Public\PublicInvoiceController;
@@ -258,11 +258,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
         // DR Tiers — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('dr-tiers')->group(function () {
-            Route::get('/', [AdminDrTierController::class, 'index']);
-            Route::post('/', [AdminDrTierController::class, 'store']);
-            Route::get('/{id}', [AdminDrTierController::class, 'show']);
-            Route::patch('/{id}', [AdminDrTierController::class, 'update']);
-            Route::delete('/{id}', [AdminDrTierController::class, 'destroy']);
+            Route::get('/', [AdminLinkBuildingTierController::class, 'index']);
+            Route::post('/', [AdminLinkBuildingTierController::class, 'store']);
+            Route::get('/{id}', [AdminLinkBuildingTierController::class, 'show']);
+            Route::patch('/{id}', [AdminLinkBuildingTierController::class, 'update']);
+            Route::delete('/{id}', [AdminLinkBuildingTierController::class, 'destroy']);
         });
 
         // Dashboard — super_admin, admin, staff
@@ -452,7 +452,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::get('/resources/{id}', [ResourceController::class, 'show']);
 
     // DR Tiers catalog
-    Route::get('/dr-tiers', [DrTierController::class, 'index']);
+    Route::get('/dr-tiers', [LinkBuildingTierController::class, 'index']);
 
     // New Content Tiers catalog
     Route::get('/new-content-tiers', [NewContentTierController::class, 'index']);

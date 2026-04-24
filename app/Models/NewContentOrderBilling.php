@@ -10,6 +10,8 @@ class NewContentOrderBilling extends Model
 {
     use HasUuids;
 
+    protected $table = 'new_content_order_billing';
+
     protected $fillable = [
         'order_id',
         'company',

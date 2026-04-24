@@ -16,8 +16,8 @@ class CheckoutCartRequest extends FormRequest
         return [
             'payment_method_id'   => ['required', 'string'],
             'total_amount'        => ['required', 'numeric', 'min:0.01'],
-            'coupon_ids'          => ['required', 'array'],
-            'coupon_ids.*'        => ['required', 'string', 'uuid'],
+            'coupon_ids'          => ['nullable', 'array'],
+            'coupon_ids.*'        => ['string', 'uuid'],
 
             'billing'                   => ['required', 'array'],
             'billing.company'           => ['nullable', 'string', 'max:255'],
@@ -31,7 +31,7 @@ class CheckoutCartRequest extends FormRequest
             'order_notes'         => ['nullable', 'string', 'max:5000'],
 
             'link_building_items'                        => ['nullable', 'array'],
-            'link_building_items.*.dr_tier_id'           => ['required_with:link_building_items', 'string', 'uuid'],
+            'link_building_items.*.dr_tier_id'           => ['required_with:link_building_items', 'string', 'exists:dr_tiers,id'],
             'link_building_items.*.quantity'             => ['required_with:link_building_items', 'integer', 'min:1'],
             'link_building_items.*.unit_price'           => ['required_with:link_building_items', 'numeric', 'min:0'],
             'link_building_items.*.placements'           => ['required_with:link_building_items', 'array'],
@@ -41,17 +41,17 @@ class CheckoutCartRequest extends FormRequest
             'link_building_items.*.placements.*.exact_match'  => ['required', 'boolean'],
 
             'content_optimization_items'              => ['nullable', 'array'],
-            'content_optimization_items.*.tier_id'    => ['required_with:content_optimization_items', 'string', 'uuid'],
+            'content_optimization_items.*.tier_id'    => ['required_with:content_optimization_items', 'string', 'exists:content_optimization_tiers,id'],
             'content_optimization_items.*.quantity'   => ['required_with:content_optimization_items', 'integer', 'min:1'],
             'content_optimization_items.*.unit_price' => ['required_with:content_optimization_items', 'numeric', 'min:0'],
 
             'new_content_items'              => ['nullable', 'array'],
-            'new_content_items.*.tier_id'    => ['required_with:new_content_items', 'string', 'uuid'],
+            'new_content_items.*.tier_id'    => ['required_with:new_content_items', 'string', 'exists:new_content_tiers,id'],
             'new_content_items.*.quantity'   => ['required_with:new_content_items', 'integer', 'min:1'],
             'new_content_items.*.unit_price' => ['required_with:new_content_items', 'numeric', 'min:0'],
 
             'content_brief_items'              => ['nullable', 'array'],
-            'content_brief_items.*.tier_id'    => ['required_with:content_brief_items', 'string', 'uuid'],
+            'content_brief_items.*.tier_id'    => ['required_with:content_brief_items', 'string', 'exists:content_brief_tiers,id'],
             'content_brief_items.*.quantity'   => ['required_with:content_brief_items', 'integer', 'min:1'],
             'content_brief_items.*.unit_price' => ['required_with:content_brief_items', 'numeric', 'min:0'],
         ];

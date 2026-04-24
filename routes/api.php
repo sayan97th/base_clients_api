@@ -72,6 +72,7 @@ use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationTierController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationOrderController;
+use App\Http\Controllers\Client\Cart\CartController as UnifiedCartController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
@@ -488,6 +489,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Refresh Tiers catalog
     Route::get('/content-refresh-tiers', [ContentRefreshTierController::class, 'index']);
+
+    // Unified cart
+    Route::prefix('cart')->group(function () {
+        Route::get('/',      [UnifiedCartController::class, 'show']);
+        Route::put('/',      [UnifiedCartController::class, 'upsert']);
+        Route::delete('/',   [UnifiedCartController::class, 'destroy']);
+        Route::post('/checkout', [UnifiedCartController::class, 'checkout']);
+    });
 
     // Link building cart
     Route::prefix('link-building')->group(function () {

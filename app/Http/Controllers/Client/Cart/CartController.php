@@ -1,0 +1,506 @@
+<?php
+
+namespace App\Http\Controllers\Client\Cart;
+
+use App\Events\LinkBuildingOrderPlaced;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Cart\CheckoutCartRequest;
+use App\Http\Requests\Cart\UpsertCartRequest;
+use App\Models\Cart;
+use App\Models\ContentBriefOrder;
+use App\Models\ContentOptimizationOrder;
+use App\Models\Coupon;
+use App\Models\LinkBuildingOrder;
+use App\Models\NewContentOrder;
+use App\Models\User;
+use App\Services\CouponService;
+use App\Services\InvoiceService;
+use App\Services\StripeService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
+
+class CartController extends Controller
+{
+    private const BULK_DISCOUNT_THRESHOLD = 10;
+    private const BULK_DISCOUNT_RATE      = 0.10;
+
+    public function __construct(
+        protected StripeService $stripeService,
+        protected CouponService $couponService,
+        protected InvoiceService $invoiceService,
+    ) {}
+
+    public function show(Request $request): JsonResponse
+    {
+        $cart = Cart::where('user_id', $request->user()->id)->first();
+
+        return response()->json(['data' => $cart?->payload]);
+    }
+
+    public function upsert(UpsertCartRequest $request): JsonResponse
+    {
+        Cart::updateOrCreate(
+            ['user_id' => $request->user()->id],
+            ['payload' => $request->validated()]
+        );
+
+        return response()->json(['message' => 'Cart saved successfully.']);
+    }
+
+    public function destroy(Request $request): JsonResponse
+    {
+        Cart::where('user_id', $request->user()->id)->delete();
+
+        return response()->json(['message' => 'Cart cleared successfully.']);
+    }
+
+    public function checkout(CheckoutCartRequest $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        $payment_method_id = $request->input('payment_method_id');
+
+        // Verify the Stripe PaymentIntent before writing anything to the database
+        $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id);
+
+        if (!$stripe_result['verified']) {
+            return response()->json([
+                'message' => 'Payment could not be processed.',
+                'error'   => $stripe_result['message'] ?? 'Your payment could not be verified.',
+            ], 402);
+        }
+
+        // Validate that all submitted coupon IDs still exist
+        $coupon_ids     = $request->input('coupon_ids', []);
+        $coupon_models  = [];
+
+        foreach ($coupon_ids as $coupon_id) {
+            $coupon = Coupon::find($coupon_id);
+
+            if (!$coupon) {
+                return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
+            }
+
+            $coupon_models[$coupon_id] = $coupon;
+        }
+
+        $billing       = $request->input('billing');
+        $order_title   = $request->input('order_title');
+        $order_notes   = $request->input('order_notes');
+        $created_orders = [];
+
+        try {
+            DB::transaction(function () use (
+                $request, $user, $payment_method_id, $billing,
+                $order_title, $order_notes, $coupon_models, &$created_orders
+            ) {
+                $link_building_items       = $request->input('link_building_items');
+                $content_optimization_items = $request->input('content_optimization_items');
+                $new_content_items         = $request->input('new_content_items');
+                $content_brief_items       = $request->input('content_brief_items');
+
+                if (!empty($link_building_items)) {
+                    $created_orders[] = $this->createLinkBuildingOrder(
+                        $user, $link_building_items, $billing,
+                        $payment_method_id, $coupon_models, $order_title, $order_notes
+                    );
+                }
+
+                if (!empty($content_optimization_items)) {
+                    $created_orders[] = $this->createContentOptimizationOrder(
+                        $user, $content_optimization_items, $billing,
+                        $payment_method_id, $coupon_models
+                    );
+                }
+
+                if (!empty($new_content_items)) {
+                    $created_orders[] = $this->createNewContentOrder(
+                        $user, $new_content_items, $billing,
+                        $payment_method_id, $coupon_models
+                    );
+                }
+
+                if (!empty($content_brief_items)) {
+                    $created_orders[] = $this->createContentBriefOrder(
+                        $user, $content_brief_items, $billing,
+                        $payment_method_id, $coupon_models
+                    );
+                }
+
+                Cart::where('user_id', $user->id)->delete();
+            });
+        } catch (Throwable $e) {
+            Log::error('Unified cart checkout failed after payment was charged.', [
+                'user_id'           => $user->id,
+                'payment_method_id' => $payment_method_id,
+                'error'             => $e->getMessage(),
+                'trace'             => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'message' => 'An error occurred while creating your orders. Please contact support.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+
+        // Increment coupon usage counts after the transaction commits
+        foreach ($coupon_models as $coupon) {
+            $coupon->increment('times_used');
+        }
+
+        // Fire events and create invoices for link building orders
+        foreach ($created_orders as $entry) {
+            if ($entry['product_type'] === 'link_building') {
+                $this->invoiceService->createForLinkBuildingOrder(
+                    $user,
+                    $entry['model'],
+                    'Credit Card',
+                    'usd',
+                    0.0,
+                    $entry['total_links']
+                );
+
+                event(new LinkBuildingOrderPlaced($user, $entry['model'], $entry['total_links']));
+            }
+        }
+
+        $response_orders = array_map(fn ($entry) => [
+            'product_type' => $entry['product_type'],
+            'order_id'     => $entry['order_id'],
+            'total_amount' => $entry['total_amount'],
+        ], $created_orders);
+
+        return response()->json(['data' => ['orders' => $response_orders]], 201);
+    }
+
+    private function createLinkBuildingOrder(
+        User $user,
+        array $items,
+        array $billing,
+        string $payment_method_id,
+        array $coupon_models,
+        ?string $order_title,
+        ?string $order_notes
+    ): array {
+        $total_links = 0;
+        $subtotal    = 0.0;
+
+        foreach ($items as $item) {
+            $total_links += (int) $item['quantity'];
+            $subtotal    += (float) $item['unit_price'] * (int) $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
+
+        $bulk_discount = $total_links >= self::BULK_DISCOUNT_THRESHOLD
+            ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
+            : 0.0;
+
+        $amount_after_bulk = round($subtotal - $bulk_discount, 2);
+
+        $applied_coupons = [];
+        $current_amount  = $amount_after_bulk;
+
+        foreach ($coupon_models as $coupon) {
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id
+            );
+
+            if ($result['valid']) {
+                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+            }
+        }
+
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $order_total           = round($amount_after_bulk - $total_coupon_discount, 2);
+
+        $order = LinkBuildingOrder::create([
+            'user_id'                  => $user->id,
+            'order_title'              => $order_title,
+            'order_notes'              => $order_notes,
+            'subtotal_before_discount' => $subtotal,
+            'total_amount'             => $order_total,
+            'status'                   => 'pending',
+            'payment_intent_id'        => $payment_method_id,
+        ]);
+
+        foreach ($applied_coupons as $entry) {
+            $order->orderCoupons()->create([
+                'coupon_id'       => $entry['coupon']->id,
+                'discount_amount' => $entry['discount_amount'],
+            ]);
+        }
+
+        foreach ($items as $item_data) {
+            $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
+
+            $item = $order->items()->create([
+                'dr_tier_id' => $item_data['dr_tier_id'],
+                'quantity'   => $item_data['quantity'],
+                'unit_price' => (float) $item_data['unit_price'],
+                'subtotal'   => $item_subtotal,
+            ]);
+
+            foreach ($item_data['placements'] as $placement_data) {
+                $item->placements()->create([
+                    'row_index'    => $placement_data['row_index'],
+                    'keyword'      => $placement_data['keyword'] ?: null,
+                    'landing_page' => $placement_data['landing_page'] ?: null,
+                    'exact_match'  => $placement_data['exact_match'],
+                ]);
+            }
+        }
+
+        $order->billing()->create([
+            'company'     => $billing['company'] ?: null,
+            'address'     => $billing['address'] ?: null,
+            'city'        => $billing['city'] ?: null,
+            'state'       => $billing['state'] ?: null,
+            'country'     => $billing['country'] ?: null,
+            'postal_code' => $billing['postal_code'] ?: null,
+        ]);
+
+        return [
+            'product_type' => 'link_building',
+            'order_id'     => $order->id,
+            'total_amount' => $order_total,
+            'model'        => $order,
+            'total_links'  => $total_links,
+        ];
+    }
+
+    private function createContentOptimizationOrder(
+        User $user,
+        array $items,
+        array $billing,
+        string $payment_method_id,
+        array $coupon_models
+    ): array {
+        $subtotal = 0.0;
+
+        foreach ($items as $item) {
+            $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
+
+        $applied_coupons = [];
+        $current_amount  = $subtotal;
+
+        foreach ($coupon_models as $coupon) {
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id
+            );
+
+            if ($result['valid']) {
+                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+            }
+        }
+
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $order_total           = round($subtotal - $total_coupon_discount, 2);
+
+        $order = ContentOptimizationOrder::create([
+            'user_id'           => $user->id,
+            'total_amount'      => $order_total,
+            'status'            => 'pending',
+            'payment_intent_id' => $payment_method_id,
+        ]);
+
+        foreach ($items as $item_data) {
+            $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
+
+            $order->items()->create([
+                'tier_id'    => $item_data['tier_id'],
+                'quantity'   => $item_data['quantity'],
+                'unit_price' => (float) $item_data['unit_price'],
+                'subtotal'   => $item_subtotal,
+            ]);
+        }
+
+        $order->billing()->create([
+            'company'     => $billing['company'] ?: null,
+            'address'     => $billing['address'] ?: null,
+            'city'        => $billing['city'] ?: null,
+            'state'       => $billing['state'] ?: null,
+            'country'     => $billing['country'] ?: null,
+            'postal_code' => $billing['postal_code'] ?: null,
+        ]);
+
+        foreach ($applied_coupons as $entry) {
+            $order->orderCoupons()->create([
+                'coupon_id'       => $entry['coupon']->id,
+                'discount_amount' => $entry['discount_amount'],
+            ]);
+        }
+
+        return [
+            'product_type' => 'content_optimization',
+            'order_id'     => $order->id,
+            'total_amount' => $order_total,
+            'model'        => $order,
+        ];
+    }
+
+    private function createNewContentOrder(
+        User $user,
+        array $items,
+        array $billing,
+        string $payment_method_id,
+        array $coupon_models
+    ): array {
+        $subtotal = 0.0;
+
+        foreach ($items as $item) {
+            $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
+
+        $applied_coupons = [];
+        $current_amount  = $subtotal;
+
+        foreach ($coupon_models as $coupon) {
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id
+            );
+
+            if ($result['valid']) {
+                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+            }
+        }
+
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $order_total           = round($subtotal - $total_coupon_discount, 2);
+
+        $order = NewContentOrder::create([
+            'user_id'           => $user->id,
+            'total_amount'      => $order_total,
+            'status'            => 'pending',
+            'payment_intent_id' => $payment_method_id,
+        ]);
+
+        foreach ($items as $item_data) {
+            $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
+
+            $order->items()->create([
+                'tier_id'    => $item_data['tier_id'],
+                'quantity'   => $item_data['quantity'],
+                'unit_price' => (float) $item_data['unit_price'],
+                'subtotal'   => $item_subtotal,
+            ]);
+        }
+
+        $order->billing()->create([
+            'company'     => $billing['company'] ?: null,
+            'address'     => $billing['address'] ?: null,
+            'city'        => $billing['city'] ?: null,
+            'state'       => $billing['state'] ?: null,
+            'country'     => $billing['country'] ?: null,
+            'postal_code' => $billing['postal_code'] ?: null,
+        ]);
+
+        foreach ($applied_coupons as $entry) {
+            $order->orderCoupons()->create([
+                'coupon_id'       => $entry['coupon']->id,
+                'discount_amount' => $entry['discount_amount'],
+            ]);
+        }
+
+        return [
+            'product_type' => 'new_content',
+            'order_id'     => $order->id,
+            'total_amount' => $order_total,
+            'model'        => $order,
+        ];
+    }
+
+    private function createContentBriefOrder(
+        User $user,
+        array $items,
+        array $billing,
+        string $payment_method_id,
+        array $coupon_models
+    ): array {
+        $subtotal = 0.0;
+
+        foreach ($items as $item) {
+            $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
+
+        $applied_coupons = [];
+        $current_amount  = $subtotal;
+
+        foreach ($coupon_models as $coupon) {
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id
+            );
+
+            if ($result['valid']) {
+                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+            }
+        }
+
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $order_total           = round($subtotal - $total_coupon_discount, 2);
+
+        $order = ContentBriefOrder::create([
+            'user_id'           => $user->id,
+            'total_amount'      => $order_total,
+            'status'            => 'pending',
+            'payment_intent_id' => $payment_method_id,
+        ]);
+
+        foreach ($items as $item_data) {
+            $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
+
+            $order->items()->create([
+                'tier_id'    => $item_data['tier_id'],
+                'quantity'   => $item_data['quantity'],
+                'unit_price' => (float) $item_data['unit_price'],
+                'subtotal'   => $item_subtotal,
+            ]);
+        }
+
+        $order->billing()->create([
+            'company'     => $billing['company'] ?: null,
+            'address'     => $billing['address'] ?: null,
+            'city'        => $billing['city'] ?: null,
+            'state'       => $billing['state'] ?: null,
+            'country'     => $billing['country'] ?: null,
+            'postal_code' => $billing['postal_code'] ?: null,
+        ]);
+
+        foreach ($applied_coupons as $entry) {
+            $order->orderCoupons()->create([
+                'coupon_id'       => $entry['coupon']->id,
+                'discount_amount' => $entry['discount_amount'],
+            ]);
+        }
+
+        return [
+            'product_type' => 'content_brief',
+            'order_id'     => $order->id,
+            'total_amount' => $order_total,
+            'model'        => $order,
+        ];
+    }
+}

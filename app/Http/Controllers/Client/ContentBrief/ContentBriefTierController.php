@@ -11,7 +11,8 @@ class ContentBriefTierController extends Controller
 {
     public function index(): AnonymousResourceCollection
     {
-        $tiers = ContentBriefTier::where('is_hidden', false)
+        $tiers = ContentBriefTier::where('is_active', true)
+            ->where('is_hidden', false)
             ->orderBy('sort_order', 'asc')
             ->get();
 

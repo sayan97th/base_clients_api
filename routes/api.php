@@ -68,6 +68,7 @@ use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
+use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
@@ -245,6 +246,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
+        });
+
+        // Content Brief Tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-brief-tiers')->group(function () {
+            Route::get('/',        [AdminContentBriefTierController::class, 'index']);
+            Route::post('/',       [AdminContentBriefTierController::class, 'store']);
+            Route::get('/{id}',    [AdminContentBriefTierController::class, 'show']);
+            Route::patch('/{id}',  [AdminContentBriefTierController::class, 'update']);
+            Route::delete('/{id}', [AdminContentBriefTierController::class, 'destroy']);
         });
 
         // Content Optimization Tiers — super_admin, admin, staff

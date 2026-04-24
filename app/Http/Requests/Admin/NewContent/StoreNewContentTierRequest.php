@@ -6,33 +6,23 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class StoreNewContentTierRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            'name'                 => ['required', 'string', 'max:255'],
-            'price_per_month'      => ['required', 'numeric', 'min:0.01'],
-            'total_placements'     => ['required', 'integer', 'min:1'],
-            'exclusive_placements' => ['required', 'integer', 'min:0'],
-            'core_placements'      => ['required', 'integer', 'min:0'],
-            'support_placements'   => ['required', 'integer', 'min:0'],
-            'best_for'             => ['nullable', 'string'],
-            'tagline'              => ['nullable', 'string', 'max:500'],
-            'is_most_popular'      => ['required', 'boolean'],
-            'is_active'            => ['required', 'boolean'],
-            'sort_order'           => ['required', 'integer', 'min:0'],
+            'id'              => ['required', 'string', 'max:100', 'unique:new_content_tiers,id', 'regex:/^[a-z0-9_]+$/'],
+            'label'           => ['required', 'string', 'max:255'],
+            'turnaround_time' => ['required', 'string', 'max:255'],
+            'price'           => ['required', 'numeric', 'gt:0'],
+            'is_active'       => ['required', 'boolean'],
+            'is_most_popular' => ['required', 'boolean'],
+            'max_quantity'    => ['required', 'nullable', 'integer', 'min:1'],
+            'is_hidden'       => ['required', 'boolean'],
+            'sort_order'      => ['required', 'integer', 'min:0'],
         ];
     }
 }

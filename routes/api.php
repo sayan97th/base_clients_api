@@ -247,9 +247,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         });
 
         // New Content Tiers — super_admin, admin, staff
-        Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
+        Route::middleware('role:super_admin,admin,staff')->prefix('new-content-tiers')->group(function () {
             Route::get('/', [AdminNewContentTierController::class, 'index']);
             Route::post('/', [AdminNewContentTierController::class, 'store']);
+            Route::get('/{id}', [AdminNewContentTierController::class, 'show']);
             Route::patch('/{id}', [AdminNewContentTierController::class, 'update']);
             Route::delete('/{id}', [AdminNewContentTierController::class, 'destroy']);
         });

@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceControll
 use App\Http\Controllers\Admin\Invoice\InvoiceShareLinkController as AdminInvoiceShareLinkController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
+use App\Http\Controllers\Admin\ContentOptimization\AdminContentOptimizationTierController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentTierController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
@@ -244,6 +245,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
+        });
+
+        // Content Optimization Tiers — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-optimization-tiers')->group(function () {
+            Route::get('/', [AdminContentOptimizationTierController::class, 'index']);
+            Route::post('/', [AdminContentOptimizationTierController::class, 'store']);
+            Route::get('/{id}', [AdminContentOptimizationTierController::class, 'show']);
+            Route::patch('/{id}', [AdminContentOptimizationTierController::class, 'update']);
+            Route::delete('/{id}', [AdminContentOptimizationTierController::class, 'destroy']);
         });
 
         // New Content Tiers — super_admin, admin, staff

@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('dr_tiers', function (Blueprint $table) {
             $table->string('id')->primary();
-            $table->string('dr_label', 20);
+            $table->string('label', 20);
             $table->string('traffic_range', 50);
             $table->unsignedInteger('word_count');
             $table->decimal('price_per_link', 10, 2);

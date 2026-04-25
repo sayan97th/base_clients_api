@@ -65,7 +65,7 @@ class AdminLinkBuildingTierController extends Controller
 
         return response()->json([
             'id'              => $tier->id,
-            'dr_label'        => $tier->dr_label,
+            'label'           => $tier->label,
             'traffic_range'   => $tier->traffic_range,
             'word_count'      => $tier->word_count,
             'price_per_link'  => $tier->price_per_link,
@@ -156,7 +156,7 @@ class AdminLinkBuildingTierController extends Controller
     {
         return [
             'id'              => $tier->id,
-            'dr_label'        => $tier->dr_label,
+            'label'           => $tier->label,
             'traffic_range'   => $tier->traffic_range,
             'word_count'      => $tier->word_count,
             'price_per_link'  => $tier->price_per_link,

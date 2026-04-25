@@ -118,6 +118,7 @@ class ContentBriefOrderController extends Controller
         $order = DB::transaction(function () use ($request, $user, $tiers_map, $final_total, $applied_coupons, $payment_intent_id) {
             $order = ContentBriefOrder::create([
                 'user_id'           => $user->id,
+                'order_notes'       => $request->order_notes ?? null,
                 'total_amount'      => $final_total,
                 'status'            => 'pending',
                 'payment_intent_id' => $payment_intent_id,

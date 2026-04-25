@@ -121,7 +121,7 @@ class OrderReportController extends Controller
             $item      = $placement->orderItem;
             $tier      = $item->drTier;
 
-            $table_title = $tier?->dr_label ?? 'Links';
+            $table_title = $tier?->label ?? 'Links';
 
             // Reuse or create the table for this order item
             $table = OrderReportTable::firstOrCreate(

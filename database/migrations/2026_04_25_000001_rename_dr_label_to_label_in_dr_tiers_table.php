@@ -9,15 +9,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('dr_tiers', function (Blueprint $table) {
-            $table->unsignedSmallInteger('min_dr')->nullable()->after('label');
-            $table->unsignedSmallInteger('max_dr')->nullable()->after('min_dr');
+            $table->renameColumn('dr_label', 'label');
         });
     }
 
     public function down(): void
     {
         Schema::table('dr_tiers', function (Blueprint $table) {
-            $table->dropColumn(['min_dr', 'max_dr']);
+            $table->renameColumn('label', 'dr_label');
         });
     }
 };

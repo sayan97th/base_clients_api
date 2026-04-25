@@ -16,7 +16,7 @@ class DrTier extends Model
 
     protected $fillable = [
         'id',
-        'dr_label',
+        'label',
         'min_dr',
         'max_dr',
         'traffic_range',

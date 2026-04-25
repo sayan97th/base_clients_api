@@ -96,7 +96,7 @@ class CouponController extends Controller
             'discount_value'          => $coupon->discount_value,
             'applies_to'              => $coupon->applies_to,
             'dr_tier_id'              => $coupon->dr_tier_id,
-            'dr_tier_label'           => $coupon->drTier?->dr_label,
+            'dr_tier_label'           => $coupon->drTier?->label,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
             'starts_at'               => $coupon->starts_at?->format('Y-m-d'),
             'expires_at'              => $coupon->expires_at->format('Y-m-d'),

@@ -15,6 +15,7 @@ class StoreContentBriefOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'order_notes'               => ['nullable', 'string', 'max:1000'],
             'total_amount'              => ['required', 'numeric', 'gt:0'],
             'coupon_ids'                => ['nullable', 'array'],
             'coupon_ids.*'              => ['string', 'exists:coupons,id'],

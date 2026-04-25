@@ -171,7 +171,7 @@ class OrderController extends Controller
                 'subtotal'   => $item->subtotal,
                 'dr_tier'    => $item->drTier ? [
                     'id'             => $item->drTier->id,
-                    'dr_label'       => $item->drTier->dr_label,
+                    'label'          => $item->drTier->label,
                     'traffic_range'  => $item->drTier->traffic_range,
                     'word_count'     => $item->drTier->word_count,
                     'price_per_link' => $item->drTier->price_per_link,

@@ -34,7 +34,7 @@ class OrderPlacementsController extends Controller
             ->select([
                 'o.id as order_id',
                 'o.created_at as start_date',
-                'dt.dr_label as dr_type',
+                'dt.label as dr_type',
                 'p.keyword',
                 'p.landing_page',
                 'o.status',

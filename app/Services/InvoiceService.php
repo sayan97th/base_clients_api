@@ -65,7 +65,7 @@ class InvoiceService
 
             foreach ($order->items as $item) {
                 $item_name = $item->drTier
-                    ? $item->drTier->dr_label . ' Link Building'
+                    ? $item->drTier->label . ' Link Building'
                     : 'Link Building Service';
 
                 $invoice->lineItems()->create([

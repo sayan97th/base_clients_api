@@ -14,7 +14,7 @@ class StoreDrTierRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'dr_label'       => ['required', 'string', 'max:100'],
+            'label'          => ['required', 'string', 'max:100'],
             'traffic_range'  => ['nullable', 'string'],
             'word_count'     => ['required', 'integer', 'min:0'],
             'price_per_link' => ['required', 'numeric', 'min:0.01'],

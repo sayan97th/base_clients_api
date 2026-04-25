@@ -16,7 +16,7 @@ class LinkBuildingTierController extends Controller
             ->get()
             ->map(fn($tier) => [
                 'id'              => $tier->id,
-                'dr_label'        => $tier->dr_label,
+                'label'           => $tier->label,
                 'traffic_range'   => $tier->traffic_range,
                 'word_count'      => $tier->word_count,
                 'price_per_link'  => $tier->price_per_link,

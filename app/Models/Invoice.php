@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
+
 class Invoice extends Model
 {
     use HasUuids;
@@ -69,6 +70,11 @@ class Invoice extends Model
     public function billedTo(): HasOne
     {
         return $this->hasOne(InvoiceBilledTo::class);
+    }
+
+    public function couponDiscounts(): HasMany
+    {
+        return $this->hasMany(InvoiceCouponDiscount::class);
     }
 
     public function history(): HasMany

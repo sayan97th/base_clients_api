@@ -152,20 +152,31 @@ class CartController extends Controller
             $coupon->increment('times_used');
         }
 
-        // Fire events and create invoices for link building orders
+        // Fire events and create invoices for all order types
         foreach ($created_orders as $entry) {
-            if ($entry['product_type'] === 'link_building') {
-                $this->invoiceService->createForLinkBuildingOrder(
-                    $user,
-                    $entry['model'],
-                    'Credit Card',
-                    'usd',
-                    0.0,
-                    $entry['total_links']
-                );
-
-                event(new LinkBuildingOrderPlaced($user, $entry['model'], $entry['total_links']));
-            }
+            match ($entry['product_type']) {
+                'link_building' => (function () use ($user, $entry) {
+                    $this->invoiceService->createForLinkBuildingOrder(
+                        $user,
+                        $entry['model'],
+                        'Credit Card',
+                        'usd',
+                        0.0,
+                        $entry['total_links']
+                    );
+                    event(new LinkBuildingOrderPlaced($user, $entry['model'], $entry['total_links']));
+                })(),
+                'new_content' => $this->invoiceService->createForNewContentOrder(
+                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                ),
+                'content_optimization' => $this->invoiceService->createForContentOptimizationOrder(
+                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                ),
+                'content_brief' => $this->invoiceService->createForContentBriefOrder(
+                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                ),
+                default => null,
+            };
         }
 
         $response_orders = array_map(fn ($entry) => [

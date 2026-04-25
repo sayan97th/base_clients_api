@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Client\LinkBuilding;
 
 use App\Http\Controllers\Controller;
+use App\Models\ContentBriefOrder;
+use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
+use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +20,9 @@ class InvoiceController extends Controller
         protected InvoiceService $invoiceService
     ) {}
 
+    /**
+     * GET /api/invoices
+     */
     public function index(Request $request): JsonResponse
     {
         $request->validate([
@@ -27,15 +33,17 @@ class InvoiceController extends Controller
 
         /** @var User $user */
         $user     = auth()->user();
-        $per_page = min((int) $request->get('per_page', 10), 100);
-        $search   = $request->get('search');
+        $per_page = min((int) $request->input('per_page', 10), 100);
+        $search   = $request->input('search');
 
         $query = Invoice::where('user_id', $user->id)
+            ->with('lineItems')
             ->orderBy('date_issued', 'desc');
 
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('unique_id', 'like', "%{$search}%")
+                  ->orWhere('invoice_number', 'like', "%{$search}%")
                   ->orWhere('status', 'like', "%{$search}%")
                   ->orWhereRaw("DATE_FORMAT(date_issued, '%M %d, %Y') LIKE ?", ["%{$search}%"]);
             });
@@ -43,12 +51,18 @@ class InvoiceController extends Controller
 
         $paginator = $query->paginate($per_page);
 
-        $data = collect($paginator->items())->map(fn ($invoice) => [
-            'unique_id' => $invoice->unique_id,
-            'date'      => $invoice->date_issued?->format('M j, Y'),
-            'date_due'  => $invoice->date_due?->format('M j, Y'),
-            'total'     => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
-            'status'    => $invoice->status,
+        $data = collect($paginator->items())->map(fn (Invoice $invoice) => [
+            'unique_id'     => $invoice->unique_id,
+            'date'          => $invoice->date_issued?->format('M j, Y'),
+            'date_due'      => $invoice->date_due?->format('M j, Y'),
+            'total'         => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
+            'status'        => $invoice->status,
+            'product_types' => $invoice->lineItems
+                ->pluck('product_type')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all(),
         ]);
 
         return response()->json([
@@ -60,6 +74,9 @@ class InvoiceController extends Controller
         ]);
     }
 
+    /**
+     * GET /api/invoices/{unique_id}
+     */
     public function show(string $unique_id): JsonResponse
     {
         /** @var User $user */
@@ -67,16 +84,23 @@ class InvoiceController extends Controller
 
         $invoice = Invoice::where('unique_id', $unique_id)
             ->where('user_id', $user->id)
-            ->with(['lineItems', 'billedTo', 'order.items', 'order.orderCoupons.coupon'])
+            ->with(['lineItems', 'billedTo', 'couponDiscounts'])
             ->first();
 
-        if (!$invoice) {
-            return response()->json(['message' => 'Invoice not found.'], 404);
+        if (! $invoice) {
+            $exists = Invoice::where('unique_id', $unique_id)->exists();
+
+            return $exists
+                ? response()->json(['message' => 'This invoice does not belong to your account.'], 403)
+                : response()->json(['message' => 'Invoice not found.'], 404);
         }
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)]);
     }
 
+    /**
+     * POST /api/invoices
+     */
     public function store(Request $request): JsonResponse
     {
         $request->validate([
@@ -87,50 +111,92 @@ class InvoiceController extends Controller
         ]);
 
         /** @var User $user */
-        $user  = auth()->user();
-        $order = LinkBuildingOrder::where('id', $request->order_id)
-            ->where('user_id', $user->id)
-            ->with(['items.drTier', 'billing'])
-            ->first();
+        $user           = auth()->user();
+        $order_id       = $request->input('order_id');
+        $payment_method = $request->input('payment_method', 'Account Balance');
+        $currency_type  = $request->input('currency_type', 'usd');
+        $credit_amount  = (float) $request->input('credit_amount', 0);
 
-        if (!$order) {
-            return response()->json(['message' => 'Order not found.'], 404);
+        [$order, $product_type] = $this->resolveOrder($order_id, $user->id);
+
+        if (! $order) {
+            $any_order = $this->resolveOrderWithoutUser($order_id);
+
+            return $any_order
+                ? response()->json(['message' => 'This order does not belong to your account.'], 403)
+                : response()->json(['message' => 'Order not found.'], 404);
         }
 
         $existing = Invoice::where('order_id', $order->id)->first();
+
         if ($existing) {
             return response()->json(['message' => 'An invoice already exists for this order.'], 409);
         }
 
-        $invoice = $this->invoiceService->createForLinkBuildingOrder(
-            user:           $user,
-            order:          $order,
-            payment_method: $request->payment_method ?? 'Account Balance',
-            currency_type:  $request->currency_type ?? 'usd',
-            credit_amount:  (float) ($request->credit_amount ?? 0),
-        );
+        $invoice = match ($product_type) {
+            'link_building' => $this->invoiceService->createForLinkBuildingOrder(
+                $user, $order, $payment_method, $currency_type, $credit_amount
+            ),
+            'new_content' => $this->invoiceService->createForNewContentOrder(
+                $user, $order, $payment_method, $currency_type, $credit_amount
+            ),
+            'content_optimization' => $this->invoiceService->createForContentOptimizationOrder(
+                $user, $order, $payment_method, $currency_type, $credit_amount
+            ),
+            'content_brief' => $this->invoiceService->createForContentBriefOrder(
+                $user, $order, $payment_method, $currency_type, $credit_amount
+            ),
+        };
 
-        $invoice->load(['lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+        $invoice->loadMissing(['lineItems', 'billedTo', 'couponDiscounts']);
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)], 201);
+    }
+
+    private function resolveOrder(string $order_id, int|string $user_id): array
+    {
+        $order = LinkBuildingOrder::where('id', $order_id)->where('user_id', $user_id)->first();
+        if ($order) {
+            return [$order, 'link_building'];
+        }
+
+        $order = NewContentOrder::where('id', $order_id)->where('user_id', $user_id)->first();
+        if ($order) {
+            return [$order, 'new_content'];
+        }
+
+        $order = ContentOptimizationOrder::where('id', $order_id)->where('user_id', $user_id)->first();
+        if ($order) {
+            return [$order, 'content_optimization'];
+        }
+
+        $order = ContentBriefOrder::where('id', $order_id)->where('user_id', $user_id)->first();
+        if ($order) {
+            return [$order, 'content_brief'];
+        }
+
+        return [null, null];
+    }
+
+    private function resolveOrderWithoutUser(string $order_id): bool
+    {
+        return LinkBuildingOrder::where('id', $order_id)->exists()
+            || NewContentOrder::where('id', $order_id)->exists()
+            || ContentOptimizationOrder::where('id', $order_id)->exists()
+            || ContentBriefOrder::where('id', $order_id)->exists();
     }
 
     private function buildInvoiceDetail(Invoice $invoice): array
     {
         $billed_to        = $invoice->billedTo;
-        $order            = $invoice->order;
         $bulk_discount    = (float) ($invoice->discount_amount ?? 0);
-        $coupon_discounts = [];
-
-        if ($order && $order->orderCoupons->isNotEmpty()) {
-            $coupon_discounts = $order->orderCoupons->map(fn ($oc) => [
-                'code'            => $oc->coupon?->code ?? '',
-                'name'            => $oc->coupon?->name ?? '',
-                'discount_type'   => $oc->coupon?->discount_type ?? 'percentage',
-                'discount_value'  => $oc->coupon?->discount_value ?? 0,
-                'discount_amount' => '$' . number_format((float) $oc->discount_amount, 2),
-            ])->values()->all();
-        }
+        $coupon_discounts = $invoice->couponDiscounts->map(fn ($cd) => [
+            'code'            => $cd->code,
+            'name'            => $cd->name ?? '',
+            'discount_type'   => $cd->discount_type,
+            'discount_value'  => $cd->discount_value,
+            'discount_amount' => '$' . number_format($cd->discount_amount, 2),
+        ])->values()->all();
 
         return [
             'invoice_number' => $invoice->invoice_number,
@@ -153,11 +219,12 @@ class InvoiceController extends Controller
                 'state'               => $billed_to->state,
                 'country'             => $billed_to->country,
             ] : null,
-            'line_items'       => $invoice->lineItems->map(fn ($item) => [
-                'item_name'  => $item->item_name,
-                'price'      => $this->formatAmount($item->price, $invoice->currency_type),
-                'quantity'   => $item->quantity,
-                'item_total' => $this->formatAmount($item->item_total, $invoice->currency_type),
+            'line_items' => $invoice->lineItems->map(fn ($item) => [
+                'item_name'    => $item->item_name,
+                'price'        => $this->formatAmount($item->price, $invoice->currency_type),
+                'quantity'     => $item->quantity,
+                'item_total'   => $this->formatAmount($item->item_total, $invoice->currency_type),
+                'product_type' => $item->product_type,
             ])->values(),
             'coupon_discounts' => $coupon_discounts,
         ];

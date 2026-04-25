@@ -486,8 +486,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // New Content orders
     Route::prefix('new-content')->group(function () {
-        Route::get('/orders',  [NewContentOrderController::class, 'index']);
-        Route::post('/orders', [NewContentOrderController::class, 'store']);
+        Route::get('/orders',            [NewContentOrderController::class, 'index']);
+        Route::post('/orders',           [NewContentOrderController::class, 'store']);
+        Route::get('/orders/{order_id}', [NewContentOrderController::class, 'show']);
     });
 
     // Content Brief Tiers catalog
@@ -505,8 +506,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Optimization orders
     Route::prefix('content-optimization')->group(function () {
-        Route::get('/orders',  [ContentOptimizationOrderController::class, 'index']);
-        Route::post('/orders', [ContentOptimizationOrderController::class, 'store']);
+        Route::get('/orders',            [ContentOptimizationOrderController::class, 'index']);
+        Route::post('/orders',           [ContentOptimizationOrderController::class, 'store']);
+        Route::get('/orders/{order_id}', [ContentOptimizationOrderController::class, 'show']);
     });
 
     // Content Refresh Tiers catalog

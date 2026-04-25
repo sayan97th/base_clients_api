@@ -32,6 +32,59 @@ class ContentOptimizationOrderController extends Controller
         ]);
     }
 
+    public function show(string $order_id): JsonResponse
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        $order = ContentOptimizationOrder::where('id', $order_id)
+            ->with(['items.tier'])
+            ->first();
+
+        if (!$order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        if ($order->user_id !== $user->id) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        return response()->json(['data' => $this->buildOrderDetail($order)]);
+    }
+
+    private function buildOrderDetail(ContentOptimizationOrder $order): array
+    {
+        return [
+            'id'           => $order->id,
+            'order_notes'  => $order->order_notes,
+            'total_amount' => $order->total_amount,
+            'status'       => $order->status,
+            'created_at'   => $order->created_at,
+            'updated_at'   => $order->updated_at,
+            'items'        => $order->items->map(fn ($item) => [
+                'id'         => $item->id,
+                'tier_id'    => $item->tier_id,
+                'quantity'   => $item->quantity,
+                'unit_price' => $item->unit_price,
+                'subtotal'   => $item->subtotal,
+                'tier'       => $item->tier ? [
+                    'id'               => $item->tier->id,
+                    'label'            => $item->tier->label,
+                    'word_count_range' => $item->tier->word_count_range,
+                    'turnaround_days'  => $item->tier->turnaround_days,
+                    'price'            => $item->tier->price,
+                    'is_active'        => $item->tier->is_active,
+                    'is_most_popular'  => $item->tier->is_most_popular,
+                    'max_quantity'     => $item->tier->max_quantity,
+                    'is_hidden'        => $item->tier->is_hidden,
+                    'sort_order'       => $item->tier->sort_order,
+                    'created_at'       => $item->tier->created_at,
+                    'updated_at'       => $item->tier->updated_at,
+                ] : null,
+            ])->values(),
+        ];
+    }
+
     public function store(StoreContentOptimizationOrderRequest $request): JsonResponse
     {
         /** @var User $user */

@@ -495,7 +495,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Brief orders
     Route::prefix('content-briefs')->group(function () {
-        Route::post('/orders',          [ContentBriefOrderController::class, 'store']);
+        Route::get('/orders',            [ContentBriefOrderController::class, 'index']);
+        Route::post('/orders',           [ContentBriefOrderController::class, 'store']);
         Route::get('/orders/{order_id}', [ContentBriefOrderController::class, 'show']);
     });
 

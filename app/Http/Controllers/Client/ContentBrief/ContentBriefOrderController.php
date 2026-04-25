@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Client\ContentBrief;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ContentBrief\StoreContentBriefOrderRequest;
+use App\Http\Resources\ContentBriefOrderResource;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentBriefTier;
 use App\Models\Coupon;
@@ -19,6 +20,21 @@ class ContentBriefOrderController extends Controller
         protected StripeService $stripeService,
         protected CouponService $couponService
     ) {}
+
+    public function index(): JsonResponse
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        $orders = ContentBriefOrder::where('user_id', $user->id)
+            ->withCount('items as items_count')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => ContentBriefOrderResource::collection($orders)->resolve(),
+        ]);
+    }
 
     public function store(StoreContentBriefOrderRequest $request): JsonResponse
     {

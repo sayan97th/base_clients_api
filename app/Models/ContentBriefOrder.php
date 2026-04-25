@@ -17,6 +17,7 @@ class ContentBriefOrder extends Model
 
     protected $fillable = [
         'user_id',
+        'order_notes',
         'total_amount',
         'status',
         'payment_intent_id',

@@ -174,11 +174,7 @@ class ContentBriefOrderController extends Controller
         $user = auth()->user();
 
         $order = ContentBriefOrder::where('id', $order_id)
-            ->with([
-                'items.tier',
-                'billing',
-                'orderCoupons.coupon',
-            ])
+            ->with(['items.tier'])
             ->first();
 
         if (!$order) {
@@ -195,29 +191,32 @@ class ContentBriefOrderController extends Controller
     private function buildOrderDetail(ContentBriefOrder $order): array
     {
         return [
-            'order_id'     => $order->id,
-            'status'       => $order->status,
+            'id'           => $order->id,
+            'order_notes'  => $order->order_notes,
             'total_amount' => $order->total_amount,
+            'status'       => $order->status,
             'created_at'   => $order->created_at,
+            'updated_at'   => $order->updated_at,
             'items'        => $order->items->map(fn ($item) => [
+                'id'         => $item->id,
                 'tier_id'    => $item->tier_id,
-                'label'      => $item->tier?->label ?? '',
                 'quantity'   => $item->quantity,
                 'unit_price' => $item->unit_price,
                 'subtotal'   => $item->subtotal,
+                'tier'       => $item->tier ? [
+                    'id'              => $item->tier->id,
+                    'label'           => $item->tier->label,
+                    'turnaround_days' => $item->tier->turnaround_days,
+                    'price'           => $item->tier->price,
+                    'is_active'       => $item->tier->is_active,
+                    'is_most_popular' => $item->tier->is_most_popular,
+                    'max_quantity'    => $item->tier->max_quantity,
+                    'is_hidden'       => $item->tier->is_hidden,
+                    'sort_order'      => $item->tier->sort_order,
+                    'created_at'      => $item->tier->created_at,
+                    'updated_at'      => $item->tier->updated_at,
+                ] : null,
             ])->values(),
-            'discounts' => $order->orderCoupons->map(fn ($oc) => [
-                'coupon_code'     => $oc->coupon?->code ?? '',
-                'discount_amount' => round((float) $oc->discount_amount, 2),
-            ])->values(),
-            'billing' => $order->billing ? [
-                'company'     => $order->billing->company,
-                'address'     => $order->billing->address,
-                'city'        => $order->billing->city,
-                'state'       => $order->billing->state,
-                'country'     => $order->billing->country,
-                'postal_code' => $order->billing->postal_code,
-            ] : null,
         ];
     }
 }

@@ -77,6 +77,8 @@ class NewContentOrderController extends Controller
                     'max_quantity'    => $item->tier->max_quantity,
                     'is_hidden'       => $item->tier->is_hidden,
                     'sort_order'      => $item->tier->sort_order,
+                    'created_at'      => $item->tier->created_at,
+                    'updated_at'      => $item->tier->updated_at,
                 ] : null,
             ])->values(),
         ];

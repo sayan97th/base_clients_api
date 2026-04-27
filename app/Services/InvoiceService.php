@@ -40,10 +40,11 @@ class InvoiceService
             ? round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 
-        $line_items_data = $order->items->map(function ($item) {
+        $line_items_data = $order->items->map(function ($item) use ($order) {
             return [
                 'item_name'    => $item->drTier ? $item->drTier->label . ' Link Building' : 'Link Building Service',
                 'product_type' => 'link_building',
+                'order_id'     => $order->id,
                 'price'        => $item->unit_price,
                 'quantity'     => $item->quantity,
                 'item_total'   => $item->subtotal,
@@ -60,18 +61,18 @@ class InvoiceService
         ];
 
         $invoice = $this->buildInvoice(
-            user:           $user,
-            order_id:       $order->id,
-            payment_method: $payment_method,
-            currency_type:  $currency_type,
+            user:            $user,
+            order_id:        $order->id,
+            payment_method:  $payment_method,
+            currency_type:   $currency_type,
             subtotal_amount: $subtotal_amount,
             discount_amount: $bulk_discount_amount,
-            discount_type:  $bulk_discount_amount > 0 ? 'bulk_10' : null,
-            total_amount:   $order->total_amount,
-            credit_amount:  $credit_amount,
-            line_items:     $line_items_data,
-            billing_data:   $billing_data,
-            order_coupons:  $order->orderCoupons,
+            discount_type:   $bulk_discount_amount > 0 ? 'bulk_10' : null,
+            total_amount:    $order->total_amount,
+            credit_amount:   $credit_amount,
+            line_items:      $line_items_data,
+            billing_data:    $billing_data,
+            order_coupons:   $order->orderCoupons,
         );
 
         $payer_name = $user->full_name ?? $user->email;
@@ -102,10 +103,11 @@ class InvoiceService
 
         $subtotal_amount = (float) $order->items->sum('subtotal');
 
-        $line_items_data = $order->items->map(function ($item) {
+        $line_items_data = $order->items->map(function ($item) use ($order) {
             return [
                 'item_name'    => $item->tier ? $item->tier->label : 'New Content Article',
                 'product_type' => 'new_content',
+                'order_id'     => $order->id,
                 'price'        => $item->unit_price,
                 'quantity'     => $item->quantity,
                 'item_total'   => $item->subtotal,
@@ -148,10 +150,11 @@ class InvoiceService
 
         $subtotal_amount = (float) $order->items->sum('subtotal');
 
-        $line_items_data = $order->items->map(function ($item) {
+        $line_items_data = $order->items->map(function ($item) use ($order) {
             return [
                 'item_name'    => $item->tier ? $item->tier->label : 'Content Optimization',
                 'product_type' => 'content_optimization',
+                'order_id'     => $order->id,
                 'price'        => $item->unit_price,
                 'quantity'     => $item->quantity,
                 'item_total'   => $item->subtotal,
@@ -194,10 +197,11 @@ class InvoiceService
 
         $subtotal_amount = (float) $order->items->sum('subtotal');
 
-        $line_items_data = $order->items->map(function ($item) {
+        $line_items_data = $order->items->map(function ($item) use ($order) {
             return [
                 'item_name'    => $item->tier ? $item->tier->label : 'Content Brief',
                 'product_type' => 'content_brief',
+                'order_id'     => $order->id,
                 'price'        => $item->unit_price,
                 'quantity'     => $item->quantity,
                 'item_total'   => $item->subtotal,
@@ -229,9 +233,145 @@ class InvoiceService
         );
     }
 
+    /**
+     * Create a single invoice covering all products in a multi-product cart session.
+     *
+     * @param array $product_entries  Each entry: ['product_type' => string, 'model' => Order, 'total_links' => ?int]
+     */
+    public function createForMultiProductSession(
+        User $user,
+        string $session_id,
+        ?string $session_title,
+        array $product_entries,
+        string $payment_method = 'Credit Card',
+        string $currency_type = 'usd',
+        float $credit_amount = 0.0
+    ): Invoice {
+        $all_line_items    = [];
+        $subtotal_amount   = 0.0;
+        $discount_amount   = 0.0;
+        $total_amount      = 0.0;
+        $primary_order_id  = null;
+        $billing_data      = null;
+        $all_order_coupons = collect();
+
+        $label_map = [
+            'link_building'        => 'Link Building',
+            'new_content'          => 'New Content',
+            'content_optimization' => 'Content Optimization',
+            'content_brief'        => 'Content Brief',
+        ];
+
+        foreach ($product_entries as $entry) {
+            /** @var LinkBuildingOrder|NewContentOrder|ContentOptimizationOrder|ContentBriefOrder $order */
+            $order        = $entry['model'];
+            $product_type = $entry['product_type'];
+
+            $relations = match ($product_type) {
+                'link_building' => ['items.drTier', 'billing', 'orderCoupons.coupon'],
+                default         => ['items.tier', 'billing', 'orderCoupons.coupon'],
+            };
+
+            $order->loadMissing($relations);
+
+            if ($primary_order_id === null) {
+                $primary_order_id = $order->id;
+            }
+
+            if ($billing_data === null && $order->billing) {
+                $billing_data = [
+                    'company_name'        => $order->billing->company ?? $user->organization?->name,
+                    'company_description' => $user->job_title ?? null,
+                    'address_line_1'      => $order->billing->address,
+                    'address_line_2'      => null,
+                    'state'               => $order->billing->state,
+                    'country'             => $order->billing->country,
+                ];
+            }
+
+            $all_order_coupons = $all_order_coupons->merge($order->orderCoupons);
+            $total_amount     += (float) $order->total_amount;
+
+            if ($product_type === 'link_building') {
+                $total_links = isset($entry['total_links']) ? (int) $entry['total_links'] : (int) $order->items->sum('quantity');
+                $order_subtotal = (float) $order->items->sum('subtotal');
+                $subtotal_amount += $order_subtotal;
+
+                if ($total_links >= self::BULK_DISCOUNT_THRESHOLD) {
+                    $discount_amount += round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2);
+                }
+
+                foreach ($order->items as $item) {
+                    $all_line_items[] = [
+                        'item_name'    => $item->drTier ? $item->drTier->label . ' Link Building' : 'Link Building Service',
+                        'product_type' => $product_type,
+                        'order_id'     => $order->id,
+                        'price'        => $item->unit_price,
+                        'quantity'     => $item->quantity,
+                        'item_total'   => $item->subtotal,
+                    ];
+                }
+            } else {
+                $subtotal_amount += (float) $order->items->sum('subtotal');
+
+                foreach ($order->items as $item) {
+                    $item_name = $item->tier
+                        ? $item->tier->label
+                        : ($label_map[$product_type] ?? ucwords(str_replace('_', ' ', $product_type)));
+
+                    $all_line_items[] = [
+                        'item_name'    => $item_name,
+                        'product_type' => $product_type,
+                        'order_id'     => $order->id,
+                        'price'        => $item->unit_price,
+                        'quantity'     => $item->quantity,
+                        'item_total'   => $item->subtotal,
+                    ];
+                }
+            }
+        }
+
+        $subtotal_amount = round($subtotal_amount, 2);
+        $discount_amount = round($discount_amount, 2);
+        $total_amount    = round($total_amount, 2);
+
+        $invoice = $this->buildInvoice(
+            user:            $user,
+            order_id:        $primary_order_id,
+            session_id:      $session_id,
+            session_title:   $session_title,
+            payment_method:  $payment_method,
+            currency_type:   $currency_type,
+            subtotal_amount: $subtotal_amount,
+            discount_amount: $discount_amount,
+            discount_type:   $discount_amount > 0 ? 'bulk' : null,
+            total_amount:    $total_amount,
+            credit_amount:   $credit_amount,
+            line_items:      $all_line_items,
+            billing_data:    $billing_data ?? [],
+            order_coupons:   $all_order_coupons,
+        );
+
+        $payer_name = $user->full_name ?? $user->email;
+
+        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
+                event(new PaymentCompleted(
+                    $admin,
+                    $payer_name,
+                    $total_amount,
+                    $invoice->invoice_number,
+                    '/invoices/' . $invoice->unique_id,
+                    $invoice,
+                ));
+            });
+
+        return $invoice;
+    }
+
     private function buildInvoice(
         User $user,
-        string $order_id,
+        ?string $order_id,
         string $payment_method,
         string $currency_type,
         float $subtotal_amount,
@@ -241,10 +381,13 @@ class InvoiceService
         float $credit_amount,
         array $line_items,
         array $billing_data,
-        $order_coupons
+        $order_coupons,
+        ?string $session_id = null,
+        ?string $session_title = null
     ): Invoice {
         return DB::transaction(function () use (
-            $user, $order_id, $payment_method, $currency_type,
+            $user, $order_id, $session_id, $session_title,
+            $payment_method, $currency_type,
             $subtotal_amount, $discount_amount, $discount_type,
             $total_amount, $credit_amount, $line_items,
             $billing_data, $order_coupons
@@ -257,6 +400,8 @@ class InvoiceService
                 'invoice_number'  => $invoice_number,
                 'user_id'         => $user->id,
                 'order_id'        => $order_id,
+                'session_id'      => $session_id,
+                'session_title'   => $session_title,
                 'status'          => 'paid',
                 'payment_method'  => $payment_method,
                 'currency_type'   => $currency_type,
@@ -272,6 +417,7 @@ class InvoiceService
 
             foreach ($line_items as $item) {
                 $invoice->lineItems()->create([
+                    'order_id'     => $item['order_id'] ?? null,
                     'item_name'    => $item['item_name'],
                     'product_type' => $item['product_type'] ?? null,
                     'price'        => $item['price'],
@@ -280,7 +426,9 @@ class InvoiceService
                 ]);
             }
 
-            $invoice->billedTo()->create($billing_data);
+            if (! empty($billing_data)) {
+                $invoice->billedTo()->create($billing_data);
+            }
 
             foreach ($order_coupons as $order_coupon) {
                 $coupon = $order_coupon->coupon;

@@ -22,6 +22,8 @@ class Invoice extends Model
         'invoice_number',
         'user_id',
         'order_id',
+        'session_id',
+        'session_title',
         'status',
         'payment_method',
         'currency_type',

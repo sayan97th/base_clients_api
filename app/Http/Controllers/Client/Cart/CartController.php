@@ -170,20 +170,24 @@ class CartController extends Controller
             $coupon->increment('times_used');
         }
 
-        // Fire events and create invoices for all order types
+        // Fire product-specific events
         foreach ($created_orders as $entry) {
+            if ($entry['product_type'] === 'link_building') {
+                event(new LinkBuildingOrderPlaced($user, $entry['model'], $entry['total_links']));
+            }
+        }
+
+        // Create invoice(s): one combined invoice for multi-product, one per order for single-product
+        if ($session_id && count($created_orders) > 1) {
+            $this->invoiceService->createForMultiProductSession(
+                $user, $session_id, $session_title, $created_orders, 'Credit Card', 'usd', 0.0
+            );
+        } else {
+            $entry = $created_orders[0];
             match ($entry['product_type']) {
-                'link_building' => (function () use ($user, $entry) {
-                    $this->invoiceService->createForLinkBuildingOrder(
-                        $user,
-                        $entry['model'],
-                        'Credit Card',
-                        'usd',
-                        0.0,
-                        $entry['total_links']
-                    );
-                    event(new LinkBuildingOrderPlaced($user, $entry['model'], $entry['total_links']));
-                })(),
+                'link_building' => $this->invoiceService->createForLinkBuildingOrder(
+                    $user, $entry['model'], 'Credit Card', 'usd', 0.0, $entry['total_links']
+                ),
                 'new_content' => $this->invoiceService->createForNewContentOrder(
                     $user, $entry['model'], 'Credit Card', 'usd', 0.0
                 ),

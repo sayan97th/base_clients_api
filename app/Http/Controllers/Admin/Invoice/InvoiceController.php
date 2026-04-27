@@ -22,6 +22,13 @@ use Illuminate\Support\Facades\DB;
 
 class InvoiceController extends Controller
 {
+    private const PRODUCT_LABELS = [
+        'link_building'        => 'Link Building',
+        'new_content'          => 'New Content',
+        'content_optimization' => 'Content Optimization',
+        'content_brief'        => 'Content Brief',
+    ];
+
     public function __construct(
         protected NotificationService $notificationService
     ) {}
@@ -31,7 +38,7 @@ class InvoiceController extends Controller
      */
     public function index(ListInvoicesRequest $request): JsonResponse
     {
-        $query = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $query = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->join('users', 'invoices.user_id', '=', 'users.id')
             ->select('invoices.*');
 
@@ -72,7 +79,7 @@ class InvoiceController extends Controller
         $per_page = (int) $request->input('per_page', 15);
         $invoices = $query->paginate($per_page);
 
-        $data = $invoices->map(fn (Invoice $invoice) => $this->formatInvoice($invoice))->values();
+        $data = $invoices->map(fn (Invoice $invoice) => $this->formatInvoice($invoice, false))->values();
 
         return response()->json([
             'data' => $data,
@@ -141,6 +148,8 @@ class InvoiceController extends Controller
                 'invoice_number'  => $invoice_number,
                 'user_id'         => $user->id,
                 'order_id'        => null,
+                'session_id'      => null,
+                'session_title'   => null,
                 'status'          => 'unpaid',
                 'payment_method'  => 'Account Balance',
                 'currency_type'   => $currency,
@@ -184,7 +193,7 @@ class InvoiceController extends Controller
                 'actor_type'     => 'admin',
             ]);
 
-            return $invoice->load(['lineItems', 'billedTo', 'user']);
+            return $invoice->load(['lineItems', 'billedTo', 'user', 'couponDiscounts']);
         });
 
         if ($request->boolean('send_client_notification')) {
@@ -215,7 +224,7 @@ class InvoiceController extends Controller
                 });
         }
 
-        return response()->json($this->formatInvoice($invoice->load(['order.orderCoupons.coupon'])), 201);
+        return response()->json($this->formatInvoice($invoice), 201);
     }
 
     /**
@@ -223,7 +232,7 @@ class InvoiceController extends Controller
      */
     public function show(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -238,7 +247,7 @@ class InvoiceController extends Controller
      */
     public function update(UpdateInvoiceRequest $request, string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -320,7 +329,7 @@ class InvoiceController extends Controller
                 'actor_type'     => 'admin',
             ]);
 
-            return $invoice->load(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+            return $invoice->load(['user', 'lineItems', 'billedTo', 'couponDiscounts']);
         });
 
         if ($request->boolean('send_update_notification')) {
@@ -345,7 +354,7 @@ class InvoiceController extends Controller
      */
     public function updateBilling(UpdateInvoiceBillingRequest $request, string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -382,7 +391,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -391,7 +400,7 @@ class InvoiceController extends Controller
      */
     public function markPaid(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -421,7 +430,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -430,7 +439,7 @@ class InvoiceController extends Controller
      */
     public function markUnpaid(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -460,7 +469,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -469,7 +478,7 @@ class InvoiceController extends Controller
      */
     public function markOverdue(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -498,7 +507,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -507,7 +516,7 @@ class InvoiceController extends Controller
      */
     public function refundInvoice(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -536,7 +545,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -545,7 +554,7 @@ class InvoiceController extends Controller
      */
     public function voidInvoice(string $invoice_id): JsonResponse
     {
-        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $invoice) {
@@ -574,7 +583,7 @@ class InvoiceController extends Controller
         ]);
 
         return response()->json($this->formatInvoice(
-            $invoice->fresh(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon'])
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
     }
 
@@ -583,7 +592,7 @@ class InvoiceController extends Controller
      */
     public function duplicate(string $invoice_id): JsonResponse
     {
-        $original = Invoice::with(['user', 'lineItems', 'billedTo'])
+        $original = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
 
         if (! $original) {
@@ -601,6 +610,8 @@ class InvoiceController extends Controller
                 'invoice_number'  => $invoice_number,
                 'user_id'         => $original->user_id,
                 'order_id'        => null,
+                'session_id'      => null,
+                'session_title'   => null,
                 'status'          => 'unpaid',
                 'payment_method'  => $original->payment_method,
                 'currency_type'   => $original->currency_type,
@@ -618,6 +629,7 @@ class InvoiceController extends Controller
             foreach ($original->lineItems as $item) {
                 $new_invoice->lineItems()->create([
                     'item_name'        => $item->item_name,
+                    'product_type'     => $item->product_type,
                     'description'      => $item->description,
                     'price'            => $item->price,
                     'quantity'         => $item->quantity,
@@ -650,7 +662,7 @@ class InvoiceController extends Controller
                 'actor_type'     => 'admin',
             ]);
 
-            return $new_invoice->load(['user', 'lineItems', 'billedTo', 'order.orderCoupons.coupon']);
+            return $new_invoice->load(['user', 'lineItems', 'billedTo', 'couponDiscounts']);
         });
 
         return response()->json($this->formatInvoice($new_invoice), 201);
@@ -731,10 +743,15 @@ class InvoiceController extends Controller
         return response()->json($entries);
     }
 
-    private function formatInvoice(Invoice $invoice): array
+    /**
+     * Formats a full AdminInvoice response object.
+     *
+     * @param bool $include_item_details  When false, invoice_products items arrays are empty (list view optimization).
+     */
+    private function formatInvoice(Invoice $invoice, bool $include_item_details = true): array
     {
-        $billed_to        = $invoice->billedTo;
-        $coupon_discounts = $this->buildCouponDiscounts($invoice);
+        $billed_to     = $invoice->billedTo;
+        $product_data  = $this->buildProductData($invoice, $include_item_details);
 
         return [
             'id'              => $invoice->id,
@@ -742,6 +759,8 @@ class InvoiceController extends Controller
             'invoice_number'  => $invoice->invoice_number,
             'user_id'         => $invoice->user_id,
             'order_id'        => $invoice->order_id,
+            'session_id'      => $invoice->session_id,
+            'session_title'   => $invoice->session_title,
             'status'          => $invoice->status,
             'payment_method'  => $invoice->payment_method,
             'currency_type'   => $invoice->currency_type,
@@ -762,6 +781,14 @@ class InvoiceController extends Controller
                 'last_name'  => $invoice->user->last_name,
                 'email'      => $invoice->user->email,
             ],
+            'billed_to' => $billed_to ? [
+                'company_name'        => $billed_to->company_name,
+                'company_description' => $billed_to->company_description,
+                'address_line_1'      => $billed_to->address_line_1,
+                'address_line_2'      => $billed_to->address_line_2,
+                'state'               => $billed_to->state,
+                'country'             => $billed_to->country,
+            ] : null,
             'line_items' => $invoice->lineItems->map(fn ($item) => [
                 'id'               => $item->id,
                 'item_name'        => $item->item_name,
@@ -771,40 +798,83 @@ class InvoiceController extends Controller
                 'discount_percent' => $item->discount_percent,
                 'item_total'       => $item->item_total,
             ])->values(),
-            'billed_to' => $billed_to ? [
-                'company_name'        => $billed_to->company_name,
-                'company_description' => $billed_to->company_description,
-                'address_line_1'      => $billed_to->address_line_1,
-                'address_line_2'      => $billed_to->address_line_2,
-                'state'               => $billed_to->state,
-                'country'             => $billed_to->country,
-            ] : null,
-            'coupon_discounts' => $coupon_discounts,
+            'product_type'     => $product_data['product_type'],
+            'invoice_products' => $product_data['invoice_products'],
+            'coupon_discounts' => $this->buildCouponDiscounts($invoice),
+        ];
+    }
+
+    /**
+     * Determines product_type and builds the invoice_products grouping from line items.
+     *
+     * Single product → product_type = "link_building", invoice_products = null
+     * Multi-product  → product_type = null, invoice_products = [grouped array]
+     * Manual invoice → product_type = null, invoice_products = null
+     */
+    private function buildProductData(Invoice $invoice, bool $include_items): array
+    {
+        $typed_items = $invoice->lineItems->filter(fn ($item) => ! empty($item->product_type));
+
+        if ($typed_items->isEmpty()) {
+            return ['product_type' => null, 'invoice_products' => null];
+        }
+
+        $distinct_types     = $typed_items->pluck('product_type')->unique();
+        $distinct_order_ids = $typed_items->pluck('order_id')->filter()->unique();
+
+        if ($distinct_types->count() === 1 && $distinct_order_ids->count() <= 1) {
+            return [
+                'product_type'     => $distinct_types->first(),
+                'invoice_products' => null,
+            ];
+        }
+
+        // Group by order_id when available, otherwise fall back to product_type
+        $groups = $typed_items->groupBy(fn ($item) => $item->order_id ?? $item->product_type);
+
+        $invoice_products = $groups->map(function ($items, $group_key) use ($include_items) {
+            $product_type = $items->first()->product_type;
+            $order_id     = $items->first()->order_id;
+            $subtotal     = round($items->sum('item_total'), 2);
+            $label        = self::PRODUCT_LABELS[$product_type]
+                ?? ucwords(str_replace('_', ' ', (string) $product_type));
+
+            return [
+                'product_type' => $product_type,
+                'order_id'     => $order_id,
+                'label'        => $label,
+                'subtotal'     => $subtotal,
+                'items'        => $include_items
+                    ? $items->map(fn ($item) => [
+                        'id'         => $item->id,
+                        'item_name'  => $item->item_name,
+                        'price'      => $item->price,
+                        'quantity'   => $item->quantity,
+                        'item_total' => $item->item_total,
+                    ])->values()->toArray()
+                    : [],
+            ];
+        })->values()->toArray();
+
+        return [
+            'product_type'     => null,
+            'invoice_products' => $invoice_products,
         ];
     }
 
     private function buildCouponDiscounts(Invoice $invoice): array
     {
-        $order = $invoice->relationLoaded('order') ? $invoice->order : null;
-
-        if (! $order) {
+        if (! $invoice->relationLoaded('couponDiscounts')) {
             return [];
         }
 
-        return $order->orderCoupons->map(function ($order_coupon) {
-            $coupon = $order_coupon->coupon;
-
-            if (! $coupon) {
-                return null;
-            }
-
-            return [
-                'code'            => $coupon->code,
-                'discount_type'   => $coupon->discount_type,
-                'discount_value'  => $coupon->discount_value,
-                'discount_amount' => $order_coupon->discount_amount,
-            ];
-        })->filter()->values()->all();
+        return $invoice->couponDiscounts->map(fn ($cd) => [
+            'code'            => $cd->code,
+            'name'            => $cd->name,
+            'discount_type'   => $cd->discount_type,
+            'discount_value'  => $cd->discount_value,
+            'discount_amount' => $cd->discount_amount,
+        ])->values()->all();
     }
 
     private function buildInitials(string $name): string

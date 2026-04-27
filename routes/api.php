@@ -8,7 +8,7 @@ use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
-use App\Http\Controllers\Admin\DrTier\AdminLinkBuildingTierController;
+use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;

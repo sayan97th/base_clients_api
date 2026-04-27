@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin\DrTier;
+namespace App\Http\Controllers\Admin\LinkBuilding;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DrTier\StoreDrTierRequest;

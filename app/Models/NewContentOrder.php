@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\Invoice;
 
 class NewContentOrder extends Model
 {
@@ -17,16 +18,21 @@ class NewContentOrder extends Model
 
     protected $fillable = [
         'user_id',
+        'order_title',
         'order_notes',
+        'subtotal_before_discount',
         'total_amount',
         'status',
         'payment_intent_id',
+        'session_id',
+        'session_title',
     ];
 
     protected function casts(): array
     {
         return [
-            'total_amount' => 'float',
+            'subtotal_before_discount' => 'float',
+            'total_amount'             => 'float',
         ];
     }
 
@@ -43,6 +49,11 @@ class NewContentOrder extends Model
     public function billing(): HasOne
     {
         return $this->hasOne(NewContentOrderBilling::class, 'order_id');
+    }
+
+    public function invoice(): HasOne
+    {
+        return $this->hasOne(Invoice::class, 'order_id');
     }
 
     public function orderCoupons(): HasMany

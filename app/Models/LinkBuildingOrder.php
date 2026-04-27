@@ -23,6 +23,8 @@ class LinkBuildingOrder extends Model
         'total_amount',
         'status',
         'payment_intent_id',
+        'session_id',
+        'session_title',
         'coupon_id',
         'coupon_discount_amount',
         'is_hidden',

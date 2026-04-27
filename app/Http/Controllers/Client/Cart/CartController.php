@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 class CartController extends Controller
@@ -93,41 +94,58 @@ class CartController extends Controller
         $order_notes   = $request->input('order_notes');
         $created_orders = [];
 
+        $link_building_items        = $request->input('link_building_items');
+        $content_optimization_items = $request->input('content_optimization_items');
+        $new_content_items          = $request->input('new_content_items');
+        $content_brief_items        = $request->input('content_brief_items');
+
+        $types_present = count(array_filter([
+            $link_building_items,
+            $content_optimization_items,
+            $new_content_items,
+            $content_brief_items,
+        ]));
+
+        $session_id    = $types_present > 1 ? (string) Str::uuid() : null;
+        $session_title = $session_id ? ($order_title ?? null) : null;
+
         try {
             DB::transaction(function () use (
-                $request, $user, $payment_method_id, $billing,
-                $order_title, $order_notes, $coupon_models, &$created_orders
+                $user, $payment_method_id, $billing, $order_title, $order_notes,
+                $coupon_models, $session_id, $session_title,
+                $link_building_items, $content_optimization_items,
+                $new_content_items, $content_brief_items,
+                &$created_orders
             ) {
-                $link_building_items       = $request->input('link_building_items');
-                $content_optimization_items = $request->input('content_optimization_items');
-                $new_content_items         = $request->input('new_content_items');
-                $content_brief_items       = $request->input('content_brief_items');
-
-                if (!empty($link_building_items)) {
+                if (! empty($link_building_items)) {
                     $created_orders[] = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $billing,
-                        $payment_method_id, $coupon_models, $order_title, $order_notes
+                        $payment_method_id, $coupon_models,
+                        $order_title, $order_notes, $session_id, $session_title
                     );
                 }
 
-                if (!empty($content_optimization_items)) {
+                if (! empty($content_optimization_items)) {
                     $created_orders[] = $this->createContentOptimizationOrder(
                         $user, $content_optimization_items, $billing,
-                        $payment_method_id, $coupon_models
+                        $payment_method_id, $coupon_models,
+                        $order_title, $order_notes, $session_id, $session_title
                     );
                 }
 
-                if (!empty($new_content_items)) {
+                if (! empty($new_content_items)) {
                     $created_orders[] = $this->createNewContentOrder(
                         $user, $new_content_items, $billing,
-                        $payment_method_id, $coupon_models
+                        $payment_method_id, $coupon_models,
+                        $order_title, $order_notes, $session_id, $session_title
                     );
                 }
 
-                if (!empty($content_brief_items)) {
+                if (! empty($content_brief_items)) {
                     $created_orders[] = $this->createContentBriefOrder(
                         $user, $content_brief_items, $billing,
-                        $payment_method_id, $coupon_models
+                        $payment_method_id, $coupon_models,
+                        $order_title, $order_notes, $session_id, $session_title
                     );
                 }
 
@@ -195,7 +213,9 @@ class CartController extends Controller
         string $payment_method_id,
         array $coupon_models,
         ?string $order_title,
-        ?string $order_notes
+        ?string $order_notes,
+        ?string $session_id,
+        ?string $session_title
     ): array {
         $total_links = 0;
         $subtotal    = 0.0;
@@ -240,6 +260,8 @@ class CartController extends Controller
             'total_amount'             => $order_total,
             'status'                   => 'pending',
             'payment_intent_id'        => $payment_method_id,
+            'session_id'               => $session_id,
+            'session_title'            => $session_title,
         ]);
 
         foreach ($applied_coupons as $entry) {
@@ -292,7 +314,11 @@ class CartController extends Controller
         array $items,
         array $billing,
         string $payment_method_id,
-        array $coupon_models
+        array $coupon_models,
+        ?string $order_title,
+        ?string $order_notes,
+        ?string $session_id,
+        ?string $session_title
     ): array {
         $subtotal = 0.0;
 
@@ -322,10 +348,15 @@ class CartController extends Controller
         $order_total           = round($subtotal - $total_coupon_discount, 2);
 
         $order = ContentOptimizationOrder::create([
-            'user_id'           => $user->id,
-            'total_amount'      => $order_total,
-            'status'            => 'pending',
-            'payment_intent_id' => $payment_method_id,
+            'user_id'                  => $user->id,
+            'order_title'              => $order_title,
+            'order_notes'              => $order_notes,
+            'subtotal_before_discount' => $subtotal,
+            'total_amount'             => $order_total,
+            'status'                   => 'pending',
+            'payment_intent_id'        => $payment_method_id,
+            'session_id'               => $session_id,
+            'session_title'            => $session_title,
         ]);
 
         foreach ($items as $item_data) {
@@ -368,7 +399,11 @@ class CartController extends Controller
         array $items,
         array $billing,
         string $payment_method_id,
-        array $coupon_models
+        array $coupon_models,
+        ?string $order_title,
+        ?string $order_notes,
+        ?string $session_id,
+        ?string $session_title
     ): array {
         $subtotal = 0.0;
 
@@ -398,10 +433,15 @@ class CartController extends Controller
         $order_total           = round($subtotal - $total_coupon_discount, 2);
 
         $order = NewContentOrder::create([
-            'user_id'           => $user->id,
-            'total_amount'      => $order_total,
-            'status'            => 'pending',
-            'payment_intent_id' => $payment_method_id,
+            'user_id'                  => $user->id,
+            'order_title'              => $order_title,
+            'order_notes'              => $order_notes,
+            'subtotal_before_discount' => $subtotal,
+            'total_amount'             => $order_total,
+            'status'                   => 'pending',
+            'payment_intent_id'        => $payment_method_id,
+            'session_id'               => $session_id,
+            'session_title'            => $session_title,
         ]);
 
         foreach ($items as $item_data) {
@@ -444,7 +484,11 @@ class CartController extends Controller
         array $items,
         array $billing,
         string $payment_method_id,
-        array $coupon_models
+        array $coupon_models,
+        ?string $order_title,
+        ?string $order_notes,
+        ?string $session_id,
+        ?string $session_title
     ): array {
         $subtotal = 0.0;
 
@@ -474,10 +518,15 @@ class CartController extends Controller
         $order_total           = round($subtotal - $total_coupon_discount, 2);
 
         $order = ContentBriefOrder::create([
-            'user_id'           => $user->id,
-            'total_amount'      => $order_total,
-            'status'            => 'pending',
-            'payment_intent_id' => $payment_method_id,
+            'user_id'                  => $user->id,
+            'order_title'              => $order_title,
+            'order_notes'              => $order_notes,
+            'subtotal_before_discount' => $subtotal,
+            'total_amount'             => $order_total,
+            'status'                   => 'pending',
+            'payment_intent_id'        => $payment_method_id,
+            'session_id'               => $session_id,
+            'session_title'            => $session_title,
         ]);
 
         foreach ($items as $item_data) {

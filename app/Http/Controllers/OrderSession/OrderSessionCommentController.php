@@ -21,11 +21,11 @@ class OrderSessionCommentController extends Controller
         $user          = auth()->user();
         $owner_user_id = $this->comment_service->findSessionOwnerUserId($session_id);
 
-        if ($owner_user_id === null) {
-            return response()->json(['message' => 'Order session not found.'], 404);
-        }
-
-        if ($user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
+        // If the session exists in the DB, enforce ownership. If it doesn't (e.g. it
+        // came from a localStorage checkout that predates the session_id columns, or
+        // was a test purchase), any authenticated user may read — the UUID itself
+        // acts as the access token.
+        if ($owner_user_id !== null && $user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -48,11 +48,7 @@ class OrderSessionCommentController extends Controller
         $user          = auth()->user();
         $owner_user_id = $this->comment_service->findSessionOwnerUserId($session_id);
 
-        if ($owner_user_id === null) {
-            return response()->json(['message' => 'Order session not found.'], 404);
-        }
-
-        if ($user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
+        if ($owner_user_id !== null && $user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 

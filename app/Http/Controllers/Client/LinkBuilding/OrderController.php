@@ -31,13 +31,13 @@ class OrderController extends Controller
     {
         $request->validate([
             'page'     => ['nullable', 'integer', 'min:1'],
-            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
             'search'   => ['nullable', 'string', 'max:255'],
         ]);
 
         /** @var User $user */
         $user     = auth()->user();
-        $per_page = min((int) $request->get('per_page', 10), 100);
+        $per_page = min((int) $request->get('per_page', 10), 200);
         $search   = $request->get('search');
 
         $query = LinkBuildingOrder::where('user_id', $user->id)
@@ -54,7 +54,8 @@ class OrderController extends Controller
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('id', 'like', "%{$search}%")
-                  ->orWhere('order_title', 'like', "%{$search}%");
+                  ->orWhere('order_title', 'like', "%{$search}%")
+                  ->orWhere('status', 'like', "%{$search}%");
             });
         }
 

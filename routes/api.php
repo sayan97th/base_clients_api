@@ -79,6 +79,8 @@ use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
+use App\Http\Controllers\OrderSession\OrderCommentController;
+use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
 
@@ -592,6 +594,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('authored-services',      [AuthoredContentController::class,       'index']);
         Route::get('enhanced-services',      [EnhancedContentController::class,       'index']);
     });
+
+    // Order session comments
+    Route::get('order-sessions/{session_id}/comments',  [OrderSessionCommentController::class, 'index']);
+    Route::post('order-sessions/{session_id}/comments', [OrderSessionCommentController::class, 'store']);
+
+    // Individual comment management
+    Route::patch('order-comments/{comment}', [OrderCommentController::class, 'update']);
+    Route::delete('order-comments/{comment}', [OrderCommentController::class, 'destroy']);
 
     // Broadcasting auth (JWT-based)
     Route::post('/broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);

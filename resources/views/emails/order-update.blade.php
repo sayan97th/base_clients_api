@@ -12,6 +12,29 @@
     @php
         $brand_color = '#ec3c89';
         $brand_bg    = '#fce7f3';
+
+        $category_labels = [
+            'link_building'         => 'Link Building',
+            'new_content'           => 'New Content',
+            'content_optimizations' => 'Content Optimizations',
+            'content_briefs'        => 'Content Briefs',
+        ];
+        $category_colors = [
+            'link_building'         => '#ec3c89',
+            'new_content'           => '#3b82f6',
+            'content_optimizations' => '#8b5cf6',
+            'content_briefs'        => '#f59e0b',
+        ];
+        $category_bgs = [
+            'link_building'         => '#fdf2f8',
+            'new_content'           => '#eff6ff',
+            'content_optimizations' => '#f5f3ff',
+            'content_briefs'        => '#fffbeb',
+        ];
+
+        $purchase_items = $purchase_items ?? [];
+        $purchase_title = $purchase_title ?? null;
+        $is_multi       = !empty($purchase_items);
     @endphp
 
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -53,7 +76,11 @@
                                 {{-- Sub-heading --}}
                                 <p align="center"
                                     style="margin:0 0 28px;font-weight:normal;color:#6b7280;font-size:13px;">
-                                    There has been an update to one of your orders.
+                                    @if ($purchase_title)
+                                        {{ $purchase_title }}
+                                    @else
+                                        There has been an update to one of your orders.
+                                    @endif
                                 </p>
 
                                 <hr style="border:none;border-top:1px solid #f3e8ef;margin:0 0 24px;">
@@ -67,6 +94,36 @@
                                 <p style="margin:0 0 24px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
                                     {{ $update_message }}
                                 </p>
+
+                                {{-- Multi-purchase item breakdown --}}
+                                @if ($is_multi)
+                                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                        style="margin:0 0 28px;border-collapse:collapse;">
+                                        @foreach ($purchase_items as $p_item)
+                                            @php
+                                                $p_cat   = $p_item['category'] ?? 'link_building';
+                                                $p_color = $category_colors[$p_cat] ?? $brand_color;
+                                                $p_bg    = $category_bgs[$p_cat] ?? $brand_bg;
+                                                $p_label = $category_labels[$p_cat] ?? $p_cat;
+                                            @endphp
+                                            <tr>
+                                                <td style="padding:10px 0;border-bottom:1px solid #f3e8ef;vertical-align:top;">
+                                                    <span style="display:inline-block;background-color:{{ $p_bg }};color:{{ $p_color }};font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;white-space:nowrap;margin-right:8px;">
+                                                        {{ $p_label }}
+                                                    </span>
+                                                    <span style="font-size:13px;color:#374151;font-weight:600;">
+                                                        {{ $p_item['title'] ?? '' }}
+                                                    </span>
+                                                    @if (!empty($p_item['update']))
+                                                        <p style="margin:4px 0 0;font-size:12px;color:#6b7280;line-height:1.5;">
+                                                            {{ $p_item['update'] }}
+                                                        </p>
+                                                    @endif
+                                                </td>
+                                            </tr>
+                                        @endforeach
+                                    </table>
+                                @endif
 
                                 {{-- Info box --}}
                                 <div style="box-sizing:border-box;background-color:#fdf2f8;border-radius:6px;padding:16px 20px;margin:0 0 28px;">

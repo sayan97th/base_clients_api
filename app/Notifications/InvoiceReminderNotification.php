@@ -32,14 +32,18 @@ class InvoiceReminderNotification extends Notification
         return (new MailMessage())
             ->subject("Payment Reminder: Invoice {$this->invoice->invoice_number}")
             ->view('emails.invoice-reminder', [
-                'user_name'      => $this->client->first_name,
-                'invoice_number' => $this->invoice->invoice_number,
-                'invoice_url'    => $invoice_url,
-                'total_amount'   => $this->invoice->total_amount,
-                'currency_type'  => $this->invoice->currency_type,
-                'date_due'       => $this->invoice->date_due?->format('F j, Y'),
-                'line_items'     => $line_items,
-                'notes'          => $this->invoice->notes,
+                'user_name'       => $this->client->first_name,
+                'user_email'      => $this->client->email,
+                'invoice_number'  => $this->invoice->invoice_number,
+                'invoice_url'     => $invoice_url,
+                'subtotal_amount' => $this->invoice->subtotal_amount ?? $this->invoice->total_amount,
+                'discount_amount' => $this->invoice->discount_amount ?? 0,
+                'total_amount'    => $this->invoice->total_amount,
+                'currency_type'   => $this->invoice->currency_type,
+                'date_due'        => $this->invoice->date_due?->format('F j, Y'),
+                'line_items'      => $line_items,
+                'notes'           => $this->invoice->notes,
+                'app_name'        => config('app.name'),
             ]);
     }
 }

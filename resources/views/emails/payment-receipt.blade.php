@@ -13,6 +13,30 @@
         $brand_color = '#ec3c89';
         $brand_bg    = '#fce7f3';
         $is_credits  = ($currency_type ?? 'usd') === 'credits';
+
+        $category_labels = [
+            'link_building'         => 'Link Building',
+            'new_content'           => 'New Content',
+            'content_optimizations' => 'Content Optimizations',
+            'content_briefs'        => 'Content Briefs',
+        ];
+        $category_colors = [
+            'link_building'         => '#ec3c89',
+            'new_content'           => '#3b82f6',
+            'content_optimizations' => '#8b5cf6',
+            'content_briefs'        => '#f59e0b',
+        ];
+        $category_bgs = [
+            'link_building'         => '#fdf2f8',
+            'new_content'           => '#eff6ff',
+            'content_optimizations' => '#f5f3ff',
+            'content_briefs'        => '#fffbeb',
+        ];
+
+        $subtotal_amount  = $subtotal_amount ?? 0;
+        $discount_amount  = $discount_amount ?? 0;
+        $coupon_discounts = $coupon_discounts ?? [];
+        $has_discounts    = !empty($coupon_discounts) || $discount_amount > 0;
     @endphp
 
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -62,9 +86,20 @@
                                         style="margin:0;box-sizing:border-box;width:100%;">
                                         <tbody>
                                             @foreach ($line_items as $item)
+                                                @php
+                                                    $item_cat   = $item['category'] ?? null;
+                                                    $item_color = $item_cat ? ($category_colors[$item_cat] ?? $brand_color) : null;
+                                                    $item_bg    = $item_cat ? ($category_bgs[$item_cat] ?? $brand_bg) : null;
+                                                    $item_label = $item_cat ? ($category_labels[$item_cat] ?? $item_cat) : null;
+                                                @endphp
                                                 <tr>
                                                     <td align="left"
                                                         style="margin:0;box-sizing:border-box;vertical-align:top;text-align:left;border-top:1px dashed #e5e7eb;padding:8px 4px;">
+                                                        @if ($item_label)
+                                                            <span style="display:inline-block;background-color:{{ $item_bg }};color:{{ $item_color }};font-size:10px;font-weight:700;padding:1px 7px;border-radius:8px;margin-bottom:4px;white-space:nowrap;">
+                                                                {{ $item_label }}
+                                                            </span><br>
+                                                        @endif
                                                         <a href="{{ $invoice_url }}"
                                                             style="color:{{ $brand_color }};text-decoration:none;">
                                                             {{ $item['name'] }}
@@ -91,32 +126,50 @@
                                             @endforeach
                                         </tbody>
                                         <tfoot>
-                                            @if (!empty($coupon_discounts))
-                                                @foreach ($coupon_discounts as $coupon)
-                                                    <tr>
-                                                        <td style="padding:6px 4px 2px;border-top:1px dashed #e5e7eb;" colspan="2">
-                                                            <span style="font-size:12px;color:#6b7280;">
-                                                                {{ $coupon['name'] }}
-                                                                @if ($coupon['discount_type'] === 'percentage')
-                                                                    ({{ $coupon['discount_value'] }}% off)
-                                                                @endif
-                                                            </span><br>
-                                                            <span style="font-size:11px;color:#9ca3af;letter-spacing:0.05em;">{{ $coupon['code'] }}</span>
-                                                        </td>
-                                                        <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#6b7280;font-size:13px;font-weight:normal;">
-                                                            Discount
-                                                        </td>
-                                                        <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#10b981;font-size:13px;white-space:nowrap;">
-                                                            &minus;${{ number_format($coupon['discount_amount'], 2) }}
-                                                        </td>
-                                                    </tr>
-                                                @endforeach
+                                            {{-- Subtotal (shown only when there are discounts or credits) --}}
+                                            @if ($has_discounts || $credit_amount > 0)
+                                                <tr>
+                                                    <td style="padding:8px 4px 2px;border-top:1px dashed #e5e7eb;" colspan="2">&nbsp;</td>
+                                                    <td style="text-align:right;border-top:1px dashed #e5e7eb;padding:8px 4px 2px;color:#6b7280;font-size:13px;">
+                                                        Subtotal
+                                                    </td>
+                                                    <td style="text-align:right;border-top:1px dashed #e5e7eb;padding:8px 4px 2px;color:#6b7280;font-size:13px;white-space:nowrap;">
+                                                        @if ($is_credits)
+                                                            {{ number_format($subtotal_amount) }} credits
+                                                        @else
+                                                            ${{ number_format($subtotal_amount, 2) }}
+                                                        @endif
+                                                    </td>
+                                                </tr>
                                             @endif
+
+                                            {{-- Coupon discounts --}}
+                                            @foreach ($coupon_discounts as $coupon)
+                                                <tr>
+                                                    <td style="padding:6px 4px 2px;border-top:1px dashed #e5e7eb;" colspan="2">
+                                                        <span style="font-size:12px;color:#6b7280;">
+                                                            {{ $coupon['name'] }}
+                                                            @if ($coupon['discount_type'] === 'percentage')
+                                                                ({{ $coupon['discount_value'] }}% off)
+                                                            @endif
+                                                        </span><br>
+                                                        <span style="font-size:11px;color:#9ca3af;letter-spacing:0.05em;">{{ $coupon['code'] }}</span>
+                                                    </td>
+                                                    <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#6b7280;font-size:13px;font-weight:normal;">
+                                                        Discount
+                                                    </td>
+                                                    <td style="text-align:right;vertical-align:middle;border-top:1px dashed #e5e7eb;padding:6px 4px 2px;color:#10b981;font-size:13px;white-space:nowrap;">
+                                                        &minus;${{ number_format($coupon['discount_amount'], 2) }}
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+
+                                            {{-- Total paid --}}
                                             <tr>
                                                 <td style="padding:10px 4px 4px;border-top:1px dashed #e5e7eb;">&nbsp;</td>
                                                 <td style="padding:10px 4px 4px;border-top:1px dashed #e5e7eb;">&nbsp;</td>
                                                 <th style="text-align:right;border-top:1px dashed #e5e7eb;padding:10px 4px 4px;font-weight:600;color:#374151;">
-                                                    Paid
+                                                    Total Paid
                                                 </th>
                                                 <th style="text-align:right;border-top:1px dashed #e5e7eb;padding:10px 4px 4px;font-weight:700;color:#111827;">
                                                     @if ($is_credits)
@@ -126,6 +179,8 @@
                                                     @endif
                                                 </th>
                                             </tr>
+
+                                            {{-- Credit applied --}}
                                             @if ($credit_amount > 0)
                                                 <tr>
                                                     <td style="padding:4px;">&nbsp;</td>
@@ -133,11 +188,11 @@
                                                     <td style="text-align:right;padding:4px;color:#6b7280;font-size:13px;font-weight:normal;">
                                                         Credit Applied
                                                     </td>
-                                                    <td style="text-align:right;padding:4px;color:#6b7280;font-size:13px;">
+                                                    <td style="text-align:right;padding:4px;color:#10b981;font-size:13px;white-space:nowrap;">
                                                         @if ($is_credits)
-                                                            {{ number_format($credit_amount) }} credits
+                                                            &minus;{{ number_format($credit_amount) }} credits
                                                         @else
-                                                            ${{ number_format($credit_amount, 2) }}
+                                                            &minus;${{ number_format($credit_amount, 2) }}
                                                         @endif
                                                     </td>
                                                 </tr>

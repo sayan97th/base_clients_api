@@ -79,6 +79,7 @@ use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
+use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Public\PublicInvoiceController;
@@ -593,6 +594,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('collaboration-services', [InternalCollaborationController::class, 'index']);
         Route::get('authored-services',      [AuthoredContentController::class,       'index']);
         Route::get('enhanced-services',      [EnhancedContentController::class,       'index']);
+    });
+
+    // Purchase groups
+    Route::prefix('purchase-groups')->group(function () {
+        Route::post('/',                       [PurchaseGroupController::class, 'store']);
+        Route::get('/',                        [PurchaseGroupController::class, 'index']);
+        Route::get('/{purchase_group_id}',     [PurchaseGroupController::class, 'show']);
     });
 
     // Order session comments

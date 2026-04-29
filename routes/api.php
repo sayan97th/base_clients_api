@@ -59,6 +59,7 @@ use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
 use App\Http\Controllers\Admin\SmeAppointment\AdminSmeAppointmentController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Admin\PremiumMentions\AdminPremiumMentionsPlanController;
+use App\Http\Controllers\Client\PremiumMentions\AppointmentController as PremiumMentionsAppointmentController;
 use App\Http\Controllers\Client\PremiumMentions\OrderController as PremiumMentionsOrderController;
 use App\Http\Controllers\Client\PremiumMentions\PlanController as PremiumMentionsPlanController;
 use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
@@ -572,6 +573,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::prefix('premium-mentions')->group(function () {
         Route::get('plans', [PremiumMentionsPlanController::class, 'index']);
         Route::post('orders', [PremiumMentionsOrderController::class, 'store']);
+        Route::post('appointments', [PremiumMentionsAppointmentController::class, 'store']);
+        Route::get('appointments/{id}', [PremiumMentionsAppointmentController::class, 'show']);
     });
 
     // SEO Packages

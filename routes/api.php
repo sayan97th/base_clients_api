@@ -81,6 +81,7 @@ use App\Http\Controllers\Client\Cart\CartController as UnifiedCartController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
+use App\Http\Controllers\Client\SeoPackages\SeoPackageAppointmentController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
@@ -600,8 +601,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // SEO Packages
     Route::prefix('seo-packages')->group(function () {
-        Route::get('/',             [SeoPackageController::class,      'index']);
-        Route::post('subscriptions', [SeoSubscriptionController::class, 'store']);
+        Route::get('/',                      [SeoPackageController::class,             'index']);
+        Route::post('subscriptions',         [SeoSubscriptionController::class,        'store']);
+        Route::post('appointments',          [SeoPackageAppointmentController::class,  'store']);
+        Route::get('appointments/{id}',      [SeoPackageAppointmentController::class,  'show']);
     });
 
 

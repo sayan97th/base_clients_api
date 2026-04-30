@@ -11,7 +11,7 @@ class PlanController extends Controller
     public function index(): JsonResponse
     {
         $plans = PremiumMentionsPlan::where('is_active', true)
-            ->orderBy('price_per_month', 'asc')
+            ->orderBy('sort_order', 'asc')
             ->get();
 
         $data = $plans->map(fn ($plan) => [

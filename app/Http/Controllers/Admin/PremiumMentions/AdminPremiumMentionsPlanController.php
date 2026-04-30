@@ -32,7 +32,7 @@ class AdminPremiumMentionsPlanController extends Controller
             return response()->json(['message' => 'Plan not found.'], 404);
         }
 
-        return response()->json($this->formatPlan($plan));
+        return response()->json(['data' => $this->formatPlan($plan)]);
     }
 
     public function store(StorePremiumMentionsPlanRequest $request): JsonResponse
@@ -52,7 +52,7 @@ class AdminPremiumMentionsPlanController extends Controller
         $plan->loadCount('orders as orders_count')
             ->loadSum('orders as revenue_total', 'total_amount');
 
-        return response()->json($this->formatPlan($plan), 201);
+        return response()->json(['data' => $this->formatPlan($plan)], 201);
     }
 
     public function update(UpdatePremiumMentionsPlanRequest $request, string $id): JsonResponse
@@ -79,7 +79,7 @@ class AdminPremiumMentionsPlanController extends Controller
             ->loadCount('orders as orders_count')
             ->loadSum('orders as revenue_total', 'total_amount');
 
-        return response()->json($this->formatPlan($plan));
+        return response()->json(['data' => $this->formatPlan($plan)]);
     }
 
     public function destroy(string $id): JsonResponse
@@ -102,7 +102,7 @@ class AdminPremiumMentionsPlanController extends Controller
 
         $plan->delete();
 
-        return response()->json(null, 204);
+        return response()->json(['message' => 'Plan deleted successfully.']);
     }
 
     private function formatPlan(PremiumMentionsPlan $plan): array

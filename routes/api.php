@@ -59,6 +59,7 @@ use App\Http\Controllers\Admin\SmeContent\SmeEnhancedServiceController;
 use App\Http\Controllers\Admin\SmeAppointment\AdminSmeAppointmentController;
 use App\Http\Controllers\Client\SmeAppointment\SmeAppointmentController;
 use App\Http\Controllers\Admin\PremiumMentions\AdminPremiumMentionsPlanController;
+use App\Http\Controllers\Admin\PremiumMentions\AdminPremiumMentionsAppointmentController;
 use App\Http\Controllers\Client\PremiumMentions\AppointmentController as PremiumMentionsAppointmentController;
 use App\Http\Controllers\Client\PremiumMentions\OrderController as PremiumMentionsOrderController;
 use App\Http\Controllers\Client\PremiumMentions\PlanController as PremiumMentionsPlanController;
@@ -186,13 +187,21 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/{id}', [AdminSeoPackageController::class, 'destroy']);
         });
 
-        // Premium Mentions plans — super_admin, admin, staff
+        // Premium Mentions — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('premium-mentions')->group(function () {
-            Route::get('plans',        [AdminPremiumMentionsPlanController::class, 'index']);
-            Route::get('plans/{id}',   [AdminPremiumMentionsPlanController::class, 'show']);
-            Route::post('plans',       [AdminPremiumMentionsPlanController::class, 'store']);
-            Route::patch('plans/{id}', [AdminPremiumMentionsPlanController::class, 'update']);
+            // Plans (A1–A5)
+            Route::get('plans',         [AdminPremiumMentionsPlanController::class, 'index']);
+            Route::post('plans',        [AdminPremiumMentionsPlanController::class, 'store']);
+            Route::get('plans/{id}',    [AdminPremiumMentionsPlanController::class, 'show']);
+            Route::patch('plans/{id}',  [AdminPremiumMentionsPlanController::class, 'update']);
             Route::delete('plans/{id}', [AdminPremiumMentionsPlanController::class, 'destroy']);
+
+            // Appointments (B1–B5) — stats must be registered before {id}
+            Route::get('appointments',          [AdminPremiumMentionsAppointmentController::class, 'index']);
+            Route::get('appointments/stats',    [AdminPremiumMentionsAppointmentController::class, 'stats']);
+            Route::get('appointments/{id}',     [AdminPremiumMentionsAppointmentController::class, 'show']);
+            Route::put('appointments/{id}',     [AdminPremiumMentionsAppointmentController::class, 'update']);
+            Route::delete('appointments/{id}',  [AdminPremiumMentionsAppointmentController::class, 'destroy']);
         });
 
         // SME Content service tiers — super_admin, admin, staff

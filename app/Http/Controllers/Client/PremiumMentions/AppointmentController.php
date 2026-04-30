@@ -39,8 +39,12 @@ class AppointmentController extends Controller
     {
         $appointment = PremiumMentionsAppointment::find($id);
 
-        if (!$appointment || $appointment->user_id !== auth()->id()) {
+        if (!$appointment) {
             return response()->json(['message' => 'Appointment not found.'], 404);
+        }
+
+        if ($appointment->user_id !== auth()->user()?->id) {
+            return response()->json(['message' => 'This appointment does not belong to you.'], 403);
         }
 
         return response()->json(

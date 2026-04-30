@@ -72,6 +72,7 @@ use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
+use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationTierController;
@@ -180,6 +181,17 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
         // SEO Packages — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('seo-packages')->group(function () {
+            // Appointments — stats and export must be before {appointment_id} wildcard
+            Route::prefix('appointments')->group(function () {
+                Route::get('stats',                     [AdminSeoPackageAppointmentController::class, 'stats']);
+                Route::get('export',                    [AdminSeoPackageAppointmentController::class, 'export']);
+                Route::get('/',                         [AdminSeoPackageAppointmentController::class, 'index']);
+                Route::get('{appointment_id}',          [AdminSeoPackageAppointmentController::class, 'show']);
+                Route::put('{appointment_id}',          [AdminSeoPackageAppointmentController::class, 'update']);
+                Route::patch('{appointment_id}/status', [AdminSeoPackageAppointmentController::class, 'updateStatus']);
+                Route::delete('{appointment_id}',       [AdminSeoPackageAppointmentController::class, 'destroy']);
+            });
+
             Route::get('/',        [AdminSeoPackageController::class, 'index']);
             Route::post('/',       [AdminSeoPackageController::class, 'store']);
             Route::get('/{id}',    [AdminSeoPackageController::class, 'show']);

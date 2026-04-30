@@ -73,6 +73,8 @@ use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
+use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageSubscriptionController;
+use App\Http\Controllers\Client\SeoPackages\SeoPackageSubscriptionController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationTierController;
@@ -191,6 +193,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
                 Route::put('{appointment_id}',          [AdminSeoPackageAppointmentController::class, 'update']);
                 Route::patch('{appointment_id}/status', [AdminSeoPackageAppointmentController::class, 'updateStatus']);
                 Route::delete('{appointment_id}',       [AdminSeoPackageAppointmentController::class, 'destroy']);
+            });
+
+            // Subscriptions — stats must be before {id} wildcard
+            Route::prefix('subscriptions')->group(function () {
+                Route::get('stats',        [AdminSeoPackageSubscriptionController::class, 'stats']);
+                Route::get('/',            [AdminSeoPackageSubscriptionController::class, 'index']);
+                Route::post('/',           [AdminSeoPackageSubscriptionController::class, 'store']);
+                Route::patch('{id}/cancel', [AdminSeoPackageSubscriptionController::class, 'cancel']);
             });
 
             Route::get('/',        [AdminSeoPackageController::class, 'index']);
@@ -601,10 +611,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // SEO Packages
     Route::prefix('seo-packages')->group(function () {
-        Route::get('/',                      [SeoPackageController::class,             'index']);
-        Route::post('subscriptions',         [SeoSubscriptionController::class,        'store']);
-        Route::post('appointments',          [SeoPackageAppointmentController::class,  'store']);
-        Route::get('appointments/{id}',      [SeoPackageAppointmentController::class,  'show']);
+        Route::get('/',                           [SeoPackageController::class,             'index']);
+        Route::get('subscriptions/active',        [SeoPackageSubscriptionController::class, 'active']);
+        Route::post('subscriptions',              [SeoSubscriptionController::class,        'store']);
+        Route::post('appointments',               [SeoPackageAppointmentController::class,  'store']);
+        Route::get('appointments/{id}',           [SeoPackageAppointmentController::class,  'show']);
     });
 
 

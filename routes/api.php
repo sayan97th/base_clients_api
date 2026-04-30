@@ -50,6 +50,7 @@ use App\Http\Controllers\Client\Notification\NotificationController;
 use App\Http\Controllers\Client\Notification\NotificationPreferenceController;
 use App\Http\Controllers\Client\Organization\OrganizationController;
 use App\Http\Controllers\Client\ScheduledCall\ScheduledCallController;
+use App\Http\Controllers\Client\ScheduledCall\AppointmentController as ScheduledCallAppointmentController;
 use App\Http\Controllers\Profile\PasswordController;
 use App\Http\Controllers\Profile\ProfileController;
 use App\Http\Controllers\Profile\ProfilePhotoController;
@@ -473,6 +474,16 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/{scheduled_call}', [ScheduledCallController::class, 'show']);
         Route::put('/{scheduled_call}', [ScheduledCallController::class, 'update']);
         Route::delete('/{scheduled_call}', [ScheduledCallController::class, 'destroy']);
+
+        // Appointments — stats must be registered before /{id} to avoid wildcard capture
+        Route::prefix('appointments')->group(function () {
+            Route::get('stats',                        [ScheduledCallAppointmentController::class, 'stats']);
+            Route::get('/',                            [ScheduledCallAppointmentController::class, 'index']);
+            Route::post('/',                           [ScheduledCallAppointmentController::class, 'store']);
+            Route::get('/{id}',                        [ScheduledCallAppointmentController::class, 'show']);
+            Route::patch('/{id}/cancel',               [ScheduledCallAppointmentController::class, 'cancel']);
+            Route::post('/{id}/reschedule-request',    [ScheduledCallAppointmentController::class, 'rescheduleRequest']);
+        });
     });
 
     // Support tickets

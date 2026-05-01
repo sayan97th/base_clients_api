@@ -605,6 +605,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/', [InvoiceController::class, 'index']);
         Route::post('/', [InvoiceController::class, 'store']);
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
+        Route::post('/{unique_id}/pay', [InvoiceController::class, 'pay']);
+        Route::post('/{unique_id}/send-notification', [InvoiceController::class, 'sendNotification']);
     });
 
     // Payment profiles

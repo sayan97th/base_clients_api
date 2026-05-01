@@ -82,13 +82,11 @@ class InvoiceController extends Controller
         $data = $invoices->map(fn (Invoice $invoice) => $this->formatInvoice($invoice, false))->values();
 
         return response()->json([
-            'data' => $data,
-            'meta' => [
-                'current_page' => $invoices->currentPage(),
-                'last_page'    => $invoices->lastPage(),
-                'per_page'     => $invoices->perPage(),
-                'total'        => $invoices->total(),
-            ],
+            'data'         => $data,
+            'current_page' => $invoices->currentPage(),
+            'last_page'    => $invoices->lastPage(),
+            'per_page'     => $invoices->perPage(),
+            'total'        => $invoices->total(),
         ]);
     }
 

@@ -20,6 +20,7 @@ class ScheduledCallAppointment extends Model
         'status',
         'scheduled_at',
         'notes',
+        'admin_notes',
         'cancellation_reason',
         'reschedule_reason',
         'preferred_dates',

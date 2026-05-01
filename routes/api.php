@@ -75,6 +75,7 @@ use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageSubscriptionController;
+use App\Http\Controllers\Admin\ScheduledCall\AdminScheduledCallAppointmentController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageSubscriptionController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
@@ -170,6 +171,17 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
             Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
+        });
+
+        // Scheduled Call Appointments — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('scheduled-calls/appointments')->group(function () {
+            Route::get('stats',                          [AdminScheduledCallAppointmentController::class, 'stats']);
+            Route::get('export',                         [AdminScheduledCallAppointmentController::class, 'export']);
+            Route::get('/',                              [AdminScheduledCallAppointmentController::class, 'index']);
+            Route::get('{appointment_id}',               [AdminScheduledCallAppointmentController::class, 'show']);
+            Route::patch('{appointment_id}/status',      [AdminScheduledCallAppointmentController::class, 'updateStatus']);
+            Route::put('{appointment_id}',               [AdminScheduledCallAppointmentController::class, 'update']);
+            Route::delete('{appointment_id}',            [AdminScheduledCallAppointmentController::class, 'destroy']);
         });
 
         // SME Appointments — super_admin, admin, staff

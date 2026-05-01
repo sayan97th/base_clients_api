@@ -186,11 +186,11 @@ class InvoiceController extends Controller
         }
 
         if ($invoice->status === 'paid') {
-            return response()->json(['message' => 'This invoice has already been paid.'], 422);
+            return response()->json(['message' => 'This invoice has already been paid.'], 409);
         }
 
         if (! in_array($invoice->status, ['unpaid', 'overdue'], true)) {
-            return response()->json(['message' => 'This invoice cannot be paid in its current status.'], 422);
+            return response()->json(['message' => 'This invoice cannot be paid in its current status.'], 409);
         }
 
         $payment_method = $request->input('payment_method');
@@ -198,11 +198,11 @@ class InvoiceController extends Controller
         if ($payment_method === 'account_balance') {
             $result = $this->payViaAccountBalance($invoice, $user);
         } else {
-            $result = $this->payViaCreditCard($invoice, $user, $request->input('stripe_token'));
+            $result = $this->payViaCreditCard($invoice, $user, $request->input('payment_intent_id'));
         }
 
         if (! $result['success']) {
-            return response()->json(['message' => $result['message']], 422);
+            return response()->json(['message' => $result['message']], $result['status_code'] ?? 422);
         }
 
         $invoice->refresh()->load(['lineItems', 'billedTo', 'couponDiscounts']);
@@ -246,7 +246,7 @@ class InvoiceController extends Controller
             'actor_type'     => 'client',
         ]);
 
-        return response()->json(['message' => 'Invoice notification sent successfully.']);
+        return response()->json(null, 204);
     }
 
     private function payViaAccountBalance(Invoice $invoice, User $user): array
@@ -269,31 +269,16 @@ class InvoiceController extends Controller
         return ['success' => true];
     }
 
-    private function payViaCreditCard(Invoice $invoice, User $user, string $stripe_token): array
+    private function payViaCreditCard(Invoice $invoice, User $user, string $payment_intent_id): array
     {
-        $amount_cents = (int) round($invoice->total_amount * 100);
-
-        $customer_result = $this->stripeService->findOrCreateCustomer($user);
-
-        if (! $customer_result['success']) {
-            return ['success' => false, 'message' => 'Unable to process payment. Please try again.'];
-        }
-
-        $intent_result = $this->stripeService->createPaymentIntent(
-            amount_cents: $amount_cents,
-            stripe_payment_method_id: $stripe_token,
-            stripe_customer_id: $customer_result['customer_id'],
-            metadata: ['invoice_unique_id' => $invoice->unique_id],
-        );
-
-        if (! $intent_result['success']) {
-            return ['success' => false, 'message' => 'Payment processing failed. Please try again.'];
-        }
-
-        $verify_result = $this->stripeService->verifyPaymentIntent($intent_result['payment_intent_id']);
+        $verify_result = $this->stripeService->verifyPaymentIntent($payment_intent_id);
 
         if (! $verify_result['verified']) {
-            return ['success' => false, 'message' => $verify_result['message']];
+            return [
+                'success'     => false,
+                'message'     => $verify_result['message'],
+                'status_code' => 402,
+            ];
         }
 
         $invoice->status         = 'paid';
@@ -304,7 +289,7 @@ class InvoiceController extends Controller
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
             'event'          => 'invoice_paid',
-            'description'    => 'Invoice paid via Credit Card.',
+            'description'    => "Invoice paid via Credit Card. PaymentIntent: {$payment_intent_id}",
             'actor_id'       => $user->id,
             'actor_name'     => $user->full_name ?? $user->email,
             'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),

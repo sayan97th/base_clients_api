@@ -70,7 +70,7 @@ class StripePublicPaymentService
             return [
                 'success'     => false,
                 'error'       => 'Payment verification failed.',
-                'status_code' => 400,
+                'status_code' => 402,
             ];
         }
 
@@ -78,8 +78,8 @@ class StripePublicPaymentService
         if ($payment_intent->status !== 'succeeded') {
             return [
                 'success'     => false,
-                'error'       => 'Payment verification failed.',
-                'status_code' => 400,
+                'error'       => 'Payment verification failed. The payment was not completed successfully.',
+                'status_code' => 402,
             ];
         }
 
@@ -89,7 +89,7 @@ class StripePublicPaymentService
             return [
                 'success'     => false,
                 'error'       => 'Payment verification failed.',
-                'status_code' => 400,
+                'status_code' => 402,
             ];
         }
 
@@ -99,7 +99,7 @@ class StripePublicPaymentService
             return [
                 'success'     => false,
                 'error'       => 'Payment verification failed.',
-                'status_code' => 400,
+                'status_code' => 402,
             ];
         }
 

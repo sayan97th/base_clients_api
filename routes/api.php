@@ -471,11 +471,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::prefix('scheduled-calls')->group(function () {
         Route::get('/', [ScheduledCallController::class, 'index']);
         Route::post('/', [ScheduledCallController::class, 'store']);
-        Route::get('/{scheduled_call}', [ScheduledCallController::class, 'show']);
-        Route::put('/{scheduled_call}', [ScheduledCallController::class, 'update']);
-        Route::delete('/{scheduled_call}', [ScheduledCallController::class, 'destroy']);
 
-        // Appointments — stats must be registered before /{id} to avoid wildcard capture
+        // Appointments — registered before /{scheduled_call} wildcard to prevent capture
         Route::prefix('appointments')->group(function () {
             Route::get('stats',                        [ScheduledCallAppointmentController::class, 'stats']);
             Route::get('/',                            [ScheduledCallAppointmentController::class, 'index']);
@@ -484,6 +481,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('/{id}/cancel',               [ScheduledCallAppointmentController::class, 'cancel']);
             Route::post('/{id}/reschedule-request',    [ScheduledCallAppointmentController::class, 'rescheduleRequest']);
         });
+
+        Route::get('/{scheduled_call}', [ScheduledCallController::class, 'show']);
+        Route::put('/{scheduled_call}', [ScheduledCallController::class, 'update']);
+        Route::delete('/{scheduled_call}', [ScheduledCallController::class, 'destroy']);
     });
 
     // Support tickets

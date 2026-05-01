@@ -11,11 +11,12 @@ use App\Models\InvoiceHistory;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\User;
-use App\Notifications\InvoiceCreatedNotification;
+use App\Mail\PaymentSuccessfulEmail;
 use App\Services\InvoiceService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
@@ -234,19 +235,23 @@ class InvoiceController extends Controller
                 : response()->json(['message' => 'Invoice not found.'], 404);
         }
 
-        $user->notify(new InvoiceCreatedNotification($invoice, $user));
+        if ($invoice->status !== 'paid') {
+            return response()->json(['message' => 'Payment confirmation can only be sent for paid invoices.'], 400);
+        }
+
+        Mail::to($user->email)->queue(new PaymentSuccessfulEmail($user, $invoice));
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
-            'event'          => 'notification resent',
-            'description'    => 'Invoice notification resent at client request.',
+            'event'          => 'payment_confirmation_resent',
+            'description'    => 'Payment confirmation email resent at client request.',
             'actor_id'       => $user->id,
             'actor_name'     => $user->full_name ?? $user->email,
             'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
             'actor_type'     => 'client',
         ]);
 
-        return response()->json(null, 204);
+        return response()->json(['message' => 'Payment notification sent successfully.']);
     }
 
     private function payViaAccountBalance(Invoice $invoice, User $user): array

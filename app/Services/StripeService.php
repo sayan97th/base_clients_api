@@ -56,10 +56,11 @@ class StripeService
 
     /**
      * Verify that a PaymentIntent exists and has status 'succeeded' or 'requires_capture'.
+     * When $expected_amount is provided, the PaymentIntent amount (in USD) must match.
      *
      * Returns ['verified' => true] or ['verified' => false, 'message' => '...']
      */
-    public function verifyPaymentIntent(string $payment_intent_id): array
+    public function verifyPaymentIntent(string $payment_intent_id, ?float $expected_amount = null): array
     {
         try {
             $intent = $this->client->paymentIntents->retrieve($payment_intent_id);
@@ -71,6 +72,16 @@ class StripeService
                     'verified' => false,
                     'message'  => 'Payment verification failed. The payment was not completed successfully.',
                 ];
+            }
+
+            if ($expected_amount !== null) {
+                $expected_cents = (int) round($expected_amount * 100);
+                if ($intent->amount !== $expected_cents) {
+                    return [
+                        'verified' => false,
+                        'message'  => 'Payment verification failed. Amount does not match the invoice total.',
+                    ];
+                }
             }
 
             return ['verified' => true];

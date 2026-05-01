@@ -26,12 +26,12 @@ class PublicInvoiceController extends Controller
 
         $token = $request->query('token');
 
-        if (! $invoice->sharing_enabled) {
-            return response()->json(['message' => 'Access denied.'], 403);
+        if (! $token) {
+            return response()->json(['message' => 'Token is required.'], 401);
         }
 
-        if (! $token || $token !== $invoice->share_key) {
-            return response()->json(['message' => 'Unauthorized.'], 401);
+        if (! $invoice->sharing_enabled || $token !== $invoice->share_key) {
+            return response()->json(['message' => 'Access denied.'], 403);
         }
 
         return response()->json(['data' => $this->buildInvoiceDetail($invoice)]);
@@ -86,18 +86,21 @@ class PublicInvoiceController extends Controller
             'discount_amount' => $this->formatMoney((float) $cd->discount_amount, $is_usd),
         ])->values()->all();
 
-        $data = [
-            'invoice_number' => $invoice->invoice_number,
-            'unique_id'      => $invoice->unique_id,
-            'date_issued'    => $invoice->date_issued?->format('M j, Y'),
-            'date_paid'      => $invoice->date_paid?->format('M j, Y'),
-            'date_due'       => $invoice->date_due?->format('M j, Y'),
-            'payment_method' => $invoice->payment_method,
-            'status'         => $invoice->status,
-            'subtotal'       => $this->formatMoney((float) $invoice->subtotal_amount, $is_usd),
-            'total'          => $this->formatMoney((float) $invoice->total_amount, $is_usd),
-            'credit'         => $this->formatMoney((float) $invoice->credit_amount, $is_usd),
-            'billed_to'      => $billed_to ? [
+        return [
+            'invoice_number'   => $invoice->invoice_number,
+            'unique_id'        => $invoice->unique_id,
+            'date_issued'      => $invoice->date_issued?->format('M j, Y'),
+            'date_paid'        => $invoice->date_paid?->format('M j, Y'),
+            'date_due'         => $invoice->date_due?->format('M j, Y'),
+            'payment_method'   => $invoice->payment_method,
+            'status'           => $invoice->status,
+            'subtotal'         => $this->formatMoney((float) $invoice->subtotal_amount, $is_usd),
+            'discount'         => $bulk_discount > 0 ? $this->formatMoney($bulk_discount, $is_usd) : null,
+            'discount_type'    => $invoice->discount_type,
+            'total'            => $this->formatMoney((float) $invoice->total_amount, $is_usd),
+            'credit'           => $this->formatMoney((float) ($invoice->credit_amount ?? 0), $is_usd),
+            'notes'            => $invoice->notes,
+            'billed_to'        => $billed_to ? [
                 'company_name'        => $billed_to->company_name,
                 'company_description' => $billed_to->company_description,
                 'address_line_1'      => $billed_to->address_line_1,
@@ -105,29 +108,15 @@ class PublicInvoiceController extends Controller
                 'state'               => $billed_to->state,
                 'country'             => $billed_to->country,
             ] : null,
-            'line_items'     => $invoice->lineItems->map(fn ($item) => [
+            'line_items'       => $invoice->lineItems->map(fn ($item) => [
                 'item_name'    => $item->item_name,
                 'price'        => $this->formatMoney((float) $item->price, $is_usd),
                 'quantity'     => $item->quantity,
                 'item_total'   => $this->formatMoney((float) $item->item_total, $is_usd),
                 'product_type' => $item->product_type,
             ])->values()->all(),
+            'coupon_discounts' => $coupon_discounts,
         ];
-
-        if ($bulk_discount > 0) {
-            $data['discount']      = $this->formatMoney($bulk_discount, $is_usd);
-            $data['discount_type'] = $invoice->discount_type;
-        }
-
-        if ($invoice->notes) {
-            $data['notes'] = $invoice->notes;
-        }
-
-        if (! empty($coupon_discounts)) {
-            $data['coupon_discounts'] = $coupon_discounts;
-        }
-
-        return $data;
     }
 
     private function formatMoney(float $amount, bool $is_usd): string

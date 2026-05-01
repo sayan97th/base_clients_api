@@ -54,12 +54,12 @@ class StripePublicPaymentService
             ];
         }
 
-        // Check if invoice is already paid
-        if ($invoice->status === 'paid') {
+        // Reject any status that cannot be paid
+        if (! in_array($invoice->status, ['unpaid', 'overdue'], true)) {
             return [
                 'success'     => false,
-                'error'       => 'This invoice has already been paid.',
-                'status_code' => 409,
+                'error'       => 'This invoice cannot be paid in its current status.',
+                'status_code' => 400,
             ];
         }
 

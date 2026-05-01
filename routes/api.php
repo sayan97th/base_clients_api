@@ -90,6 +90,7 @@ use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
+use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
 
@@ -118,9 +119,11 @@ Route::prefix('auth')->group(function () {
 Route::get('/news', [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
 
-// ─── Public invoice view (no auth required) ───────────────────────────────────
+// ─── Public invoice view & unified pay (no auth required) ────────────────────
 Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show']);
-Route::post('/invoices/{invoice_id}/pay', [PublicInvoiceController::class, 'pay']);
+// Handles both authenticated (Endpoint 3) and public share-link (Endpoint 6) pay flows.
+// The controller inspects the Authorization header to select the correct flow.
+Route::post('/invoices/{unique_id}/pay', [InvoicePayController::class, 'pay']);
 
 // ─── Admin public routes (no auth required) ───────────────────────────────────
 Route::prefix('admin')->group(function () {
@@ -605,7 +608,6 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/', [InvoiceController::class, 'index']);
         Route::post('/', [InvoiceController::class, 'store']);
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
-        Route::post('/{unique_id}/pay', [InvoiceController::class, 'pay']);
         Route::post('/{unique_id}/send-notification', [InvoiceController::class, 'sendNotification']);
     });
 

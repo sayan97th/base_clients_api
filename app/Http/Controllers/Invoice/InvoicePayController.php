@@ -1,0 +1,257 @@
+<?php
+
+namespace App\Http\Controllers\Invoice;
+
+use App\Http\Controllers\Controller;
+use App\Models\Invoice;
+use App\Models\InvoiceHistory;
+use App\Models\User;
+use App\Services\StripePublicPaymentService;
+use App\Services\StripeService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+
+class InvoicePayController extends Controller
+{
+    private const PAYABLE_STATUSES = ['unpaid', 'overdue'];
+
+    public function __construct(
+        protected StripeService $stripe_service,
+        protected StripePublicPaymentService $public_payment_service,
+    ) {}
+
+    /**
+     * POST /api/invoices/{unique_id}/pay
+     *
+     * Unified endpoint for Endpoint 3 (authenticated) and Endpoint 6 (public share link).
+     * Presence of an Authorization header determines which flow runs.
+     */
+    public function pay(Request $request, string $unique_id): JsonResponse
+    {
+        if ($request->hasHeader('Authorization')) {
+            return $this->payAuthenticated($request, $unique_id);
+        }
+
+        return $this->payPublic($request, $unique_id);
+    }
+
+    private function payAuthenticated(Request $request, string $unique_id): JsonResponse
+    {
+        try {
+            /** @var User|null $user */
+            $user = auth('api')->user();
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        if (! $user->is_active) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $request->validate([
+            'payment_method'    => ['required', 'string', Rule::in(['account_balance', 'credit_card'])],
+            'payment_intent_id' => [
+                Rule::requiredIf(fn () => $request->input('payment_method') === 'credit_card'),
+                'nullable',
+                'string',
+            ],
+        ]);
+
+        $invoice = Invoice::where('unique_id', $unique_id)
+            ->where('user_id', $user->id)
+            ->with(['lineItems', 'billedTo', 'couponDiscounts'])
+            ->first();
+
+        if (! $invoice) {
+            $exists = Invoice::where('unique_id', $unique_id)->exists();
+
+            return $exists
+                ? response()->json(['message' => 'This invoice does not belong to your account.'], 403)
+                : response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if (! in_array($invoice->status, self::PAYABLE_STATUSES, true)) {
+            return response()->json(['message' => 'This invoice cannot be paid in its current status.'], 400);
+        }
+
+        $payment_method = $request->input('payment_method');
+
+        if ($payment_method === 'account_balance') {
+            $result = $this->payViaAccountBalance($invoice, $user);
+        } else {
+            $result = $this->payViaCreditCard($invoice, $user, $request->input('payment_intent_id'));
+        }
+
+        if (! $result['success']) {
+            return response()->json(['message' => $result['message']], $result['status_code'] ?? 422);
+        }
+
+        $invoice->refresh()->load(['lineItems', 'billedTo', 'couponDiscounts']);
+
+        return response()->json([
+            'data'    => $this->buildInvoiceDetail($invoice),
+            'message' => 'Payment processed successfully.',
+        ]);
+    }
+
+    private function payPublic(Request $request, string $unique_id): JsonResponse
+    {
+        $request->validate([
+            'payment_intent_id' => ['required', 'string'],
+            'token'             => ['required', 'string'],
+        ]);
+
+        $invoice = Invoice::where('unique_id', $unique_id)->first();
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $result = $this->public_payment_service->confirmPublicInvoicePayment(
+            $invoice,
+            $request->input('payment_intent_id'),
+            $request->input('token')
+        );
+
+        $status_code = $result['status_code'] ?? 200;
+
+        if (! $result['success']) {
+            return response()->json(['message' => $result['error']], $status_code);
+        }
+
+        return response()->json(['message' => $result['message']]);
+    }
+
+    private function payViaAccountBalance(Invoice $invoice, User $user): array
+    {
+        $invoice->status         = 'paid';
+        $invoice->date_paid      = now();
+        $invoice->payment_method = 'Account Balance';
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'invoice_paid',
+            'description'    => 'Invoice paid via Account Balance.',
+            'actor_id'       => $user->id,
+            'actor_name'     => $user->full_name ?? $user->email,
+            'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
+            'actor_type'     => 'client',
+        ]);
+
+        return ['success' => true];
+    }
+
+    private function payViaCreditCard(Invoice $invoice, User $user, string $payment_intent_id): array
+    {
+        $verify_result = $this->stripe_service->verifyPaymentIntent($payment_intent_id, $invoice->total_amount);
+
+        if (! $verify_result['verified']) {
+            return [
+                'success'     => false,
+                'message'     => $verify_result['message'],
+                'status_code' => 402,
+            ];
+        }
+
+        $invoice->status         = 'paid';
+        $invoice->date_paid      = now();
+        $invoice->payment_method = 'Credit Card';
+        $invoice->save();
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'invoice_paid',
+            'description'    => "Invoice paid via Credit Card. PaymentIntent: {$payment_intent_id}",
+            'actor_id'       => $user->id,
+            'actor_name'     => $user->full_name ?? $user->email,
+            'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
+            'actor_type'     => 'client',
+        ]);
+
+        return ['success' => true];
+    }
+
+    private function buildInvoiceDetail(Invoice $invoice): array
+    {
+        $billed_to        = $invoice->billedTo;
+        $bulk_discount    = (float) ($invoice->discount_amount ?? 0);
+        $coupon_discounts = $invoice->couponDiscounts->map(fn ($cd) => [
+            'code'            => $cd->code,
+            'name'            => $cd->name ?? '',
+            'discount_type'   => $cd->discount_type,
+            'discount_value'  => $cd->discount_value,
+            'discount_amount' => '$' . number_format($cd->discount_amount, 2),
+        ])->values()->all();
+
+        return [
+            'invoice_number'   => $invoice->invoice_number,
+            'unique_id'        => $invoice->unique_id,
+            'date_issued'      => $invoice->date_issued?->format('M j, Y'),
+            'date_paid'        => $invoice->date_paid?->format('M j, Y'),
+            'date_due'         => $invoice->date_due?->format('M j, Y'),
+            'payment_method'   => $invoice->payment_method,
+            'status'           => $invoice->status,
+            'subtotal'         => $this->formatAmount($invoice->subtotal_amount, $invoice->currency_type),
+            'discount'         => $bulk_discount > 0 ? $this->formatAmount($bulk_discount, $invoice->currency_type) : null,
+            'discount_type'    => $invoice->discount_type,
+            'total'            => $this->formatAmount($invoice->total_amount, $invoice->currency_type),
+            'credit'           => $this->formatCredit((float) ($invoice->credit_amount ?? 0), $invoice->currency_type),
+            'notes'            => $invoice->notes,
+            'billed_to'        => $billed_to ? [
+                'company_name'        => $billed_to->company_name,
+                'company_description' => $billed_to->company_description,
+                'address_line_1'      => $billed_to->address_line_1,
+                'address_line_2'      => $billed_to->address_line_2,
+                'state'               => $billed_to->state,
+                'country'             => $billed_to->country,
+            ] : null,
+            'line_items'       => $invoice->lineItems->map(fn ($item) => [
+                'item_name'    => $item->item_name,
+                'price'        => $this->formatAmount($item->price, $invoice->currency_type),
+                'quantity'     => $item->quantity,
+                'item_total'   => $this->formatAmount($item->item_total, $invoice->currency_type),
+                'product_type' => $item->product_type,
+            ])->values(),
+            'coupon_discounts' => $coupon_discounts,
+        ];
+    }
+
+    private function formatAmount(float $amount, string $currency_type): string
+    {
+        if ($currency_type === 'credits') {
+            return (int) $amount . ' credits';
+        }
+
+        return '$' . number_format($amount, 2);
+    }
+
+    private function formatCredit(float $credit_amount, string $currency_type): string
+    {
+        if ($credit_amount <= 0) {
+            return $currency_type === 'credits' ? '0 credits' : '$0.00';
+        }
+
+        if ($currency_type === 'credits') {
+            return '-' . (int) $credit_amount . ' credits';
+        }
+
+        return '-$' . number_format($credit_amount, 2);
+    }
+
+    private function buildInitials(string $name): string
+    {
+        $parts = array_filter(explode(' ', trim($name)));
+
+        if (count($parts) >= 2) {
+            return strtoupper(mb_substr($parts[0], 0, 1) . mb_substr(end($parts), 0, 1));
+        }
+
+        return strtoupper(mb_substr($name, 0, 2));
+    }
+}

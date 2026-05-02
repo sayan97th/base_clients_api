@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class NewContentOrderItem extends Model
 {
@@ -34,5 +35,10 @@ class NewContentOrderItem extends Model
     public function tier(): BelongsTo
     {
         return $this->belongsTo(NewContentTier::class, 'tier_id');
+    }
+
+    public function intakeRows(): HasMany
+    {
+        return $this->hasMany(NewContentIntakeRow::class, 'item_id')->orderBy('row_index');
     }
 }

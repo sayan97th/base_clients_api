@@ -45,10 +45,14 @@ class CheckoutCartRequest extends FormRequest
             'content_optimization_items.*.quantity'   => ['required_with:content_optimization_items', 'integer', 'min:1'],
             'content_optimization_items.*.unit_price' => ['required_with:content_optimization_items', 'numeric', 'min:0'],
 
-            'new_content_items'              => ['nullable', 'array'],
-            'new_content_items.*.tier_id'    => ['required_with:new_content_items', 'string', 'exists:new_content_tiers,id'],
-            'new_content_items.*.quantity'   => ['required_with:new_content_items', 'integer', 'min:1'],
-            'new_content_items.*.unit_price' => ['required_with:new_content_items', 'numeric', 'min:0'],
+            'new_content_items'                                      => ['nullable', 'array'],
+            'new_content_items.*.tier_id'                            => ['required_with:new_content_items', 'string', 'exists:new_content_tiers,id'],
+            'new_content_items.*.quantity'                           => ['required_with:new_content_items', 'integer', 'min:1'],
+            'new_content_items.*.unit_price'                         => ['required_with:new_content_items', 'numeric', 'min:0'],
+            'new_content_items.*.intake_rows'                        => ['nullable', 'array'],
+            'new_content_items.*.intake_rows.*.keyword_phrase'       => ['required_with:new_content_items.*.intake_rows', 'string', 'max:500'],
+            'new_content_items.*.intake_rows.*.type_of_content'      => ['required_with:new_content_items.*.intake_rows', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
+            'new_content_items.*.intake_rows.*.notes'                => ['nullable', 'string', 'max:1000'],
 
             'content_brief_items'              => ['nullable', 'array'],
             'content_brief_items.*.tier_id'    => ['required_with:content_brief_items', 'string', 'exists:content_brief_tiers,id'],

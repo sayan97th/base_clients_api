@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuilding
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\ContentOptimization\AdminContentOptimizationTierController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentTierController;
+use App\Http\Controllers\Admin\NewContent\AdminNewContentOrderController;
+use App\Http\Controllers\Admin\NewContent\AdminNewContentIntakeRowController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
 use App\Http\Controllers\Admin\Order\ReportTableController as AdminReportTableController;

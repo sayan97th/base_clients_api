@@ -14,12 +14,13 @@ class NewContentOrder extends Model
 {
     use HasUuids;
 
-    const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
+    public const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
 
     protected $fillable = [
         'user_id',
         'order_title',
         'order_notes',
+        'admin_notes',
         'subtotal_before_discount',
         'total_amount',
         'status',

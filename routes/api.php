@@ -329,6 +329,16 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/{id}', [AdminNewContentTierController::class, 'destroy']);
         });
 
+        // New Content Orders — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('new-content')->group(function () {
+            Route::get('orders',                                                            [AdminNewContentOrderController::class,     'index']);
+            Route::get('orders/{order_id}',                                                [AdminNewContentOrderController::class,     'show']);
+            Route::patch('orders/{order_id}/status',                                       [AdminNewContentOrderController::class,     'updateStatus']);
+            Route::patch('orders/{order_id}/intake-rows/{row_id}',                        [AdminNewContentIntakeRowController::class, 'update']);
+            Route::delete('orders/{order_id}/intake-rows/{row_id}',                       [AdminNewContentIntakeRowController::class, 'destroy']);
+            Route::post('orders/{order_id}/items/{item_id}/intake-rows',                  [AdminNewContentIntakeRowController::class, 'store']);
+        });
+
         // Content Refresh Tiers — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
             Route::get('/', [AdminContentRefreshTierController::class, 'index']);

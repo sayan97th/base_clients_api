@@ -22,6 +22,7 @@ class IndexOrderRequest extends FormRequest
             'sort_direction' => 'nullable|string|in:asc,desc',
             'date_from'      => 'nullable|date_format:Y-m-d|before_or_equal:date_to',
             'date_to'        => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
+            'product_type'   => 'nullable|string|in:link_building,new_content,content_optimization,content_brief',
         ];
     }
 }

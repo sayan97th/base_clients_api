@@ -333,6 +333,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('new-content')->group(function () {
             Route::get('orders',                                                            [AdminNewContentOrderController::class,     'index']);
             Route::get('orders/{order_id}',                                                [AdminNewContentOrderController::class,     'show']);
+            Route::patch('orders/{order_id}',                                              [AdminNewContentOrderController::class,     'updateStatus']);
             Route::patch('orders/{order_id}/status',                                       [AdminNewContentOrderController::class,     'updateStatus']);
             Route::patch('orders/{order_id}/intake-rows/{row_id}',                        [AdminNewContentIntakeRowController::class, 'update']);
             Route::delete('orders/{order_id}/intake-rows/{row_id}',                       [AdminNewContentIntakeRowController::class, 'destroy']);

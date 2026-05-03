@@ -40,13 +40,14 @@ class OrderController extends Controller
      */
     public function index(IndexOrderRequest $request): JsonResponse
     {
-        $search         = $request->input('search');
-        $status         = $request->input('status');
-        $sort_field     = $request->input('sort_field', 'created_at');
-        $sort_direction = $request->input('sort_direction', 'desc');
-        $date_from      = $request->input('date_from');
-        $date_to        = $request->input('date_to');
-        $per_page       = (int) $request->input('per_page', 15);
+        $search              = $request->input('search');
+        $status              = $request->input('status');
+        $sort_field          = $request->input('sort_field', 'created_at');
+        $sort_direction      = $request->input('sort_direction', 'desc');
+        $date_from           = $request->input('date_from');
+        $date_to             = $request->input('date_to');
+        $per_page            = (int) $request->input('per_page', 15);
+        $product_type_filter = $request->input('product_type');
 
         $cols = implode(', ', [
             'id', 'user_id', 'order_title', 'order_notes',
@@ -55,12 +56,24 @@ class OrderController extends Controller
             'created_at', 'updated_at',
         ]);
 
-        $union_sql = implode(' UNION ALL ', [
-            "SELECT {$cols}, 'link_building' AS product_type FROM link_building_orders",
-            "SELECT {$cols}, 'new_content' AS product_type FROM new_content_orders",
-            "SELECT {$cols}, 'content_optimization' AS product_type FROM content_optimization_orders",
-            "SELECT {$cols}, 'content_brief' AS product_type FROM content_brief_orders",
-        ]);
+        $table_map = [
+            'link_building'        => 'link_building_orders',
+            'new_content'          => 'new_content_orders',
+            'content_optimization' => 'content_optimization_orders',
+            'content_brief'        => 'content_brief_orders',
+        ];
+
+        if (filled($product_type_filter) && isset($table_map[$product_type_filter])) {
+            $table     = $table_map[$product_type_filter];
+            $union_sql = "SELECT {$cols}, '{$product_type_filter}' AS product_type FROM {$table}";
+        } else {
+            $union_sql = implode(' UNION ALL ', [
+                "SELECT {$cols}, 'link_building' AS product_type FROM link_building_orders",
+                "SELECT {$cols}, 'new_content' AS product_type FROM new_content_orders",
+                "SELECT {$cols}, 'content_optimization' AS product_type FROM content_optimization_orders",
+                "SELECT {$cols}, 'content_brief' AS product_type FROM content_brief_orders",
+            ]);
+        }
 
         $query = DB::table(DB::raw("({$union_sql}) AS all_orders"))
             ->join('users', 'users.id', '=', 'all_orders.user_id')
@@ -202,6 +215,14 @@ class OrderController extends Controller
                 'user:id,first_name,last_name,email',
                 'items.drTier',
                 'items.placements',
+                'billing',
+                'orderCoupons.coupon',
+            ], $shared_invoice_relations));
+        } elseif ($product_type === 'new_content') {
+            $order->load(array_merge([
+                'user:id,first_name,last_name,email',
+                'items.tier',
+                'items.intakeRows',
                 'billing',
                 'orderCoupons.coupon',
             ], $shared_invoice_relations));
@@ -363,16 +384,24 @@ class OrderController extends Controller
             $tier_label = $item->tier?->label;
             $item_name  = $tier_label ? "{$label_prefix} – {$tier_label}" : $label_prefix;
 
-            return [
+            $item_data = [
                 'id'         => $item->id,
                 'dr_tier_id' => null,
                 'quantity'   => $item->quantity,
                 'unit_price' => (float) $item->unit_price,
                 'subtotal'   => (float) $item->subtotal,
                 'item_name'  => $item_name,
-                'dr_tier'    => null,
-                'placements' => [],
             ];
+
+            if ($product_type === 'new_content' && $item->relationLoaded('intakeRows')) {
+                $item_data['intake_rows'] = $item->intakeRows->map(fn ($row) => [
+                    'keyword_phrase'  => $row->keyword_phrase,
+                    'type_of_content' => $row->type_of_content,
+                    'notes'           => $row->notes,
+                ])->values()->all();
+            }
+
+            return $item_data;
         })->values()->all();
     }
 

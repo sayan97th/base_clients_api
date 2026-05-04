@@ -325,6 +325,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('content-optimization')->group(function () {
             Route::get('orders',                          [AdminContentOptimizationOrderController::class, 'index']);
             Route::get('orders/{order_id}',               [AdminContentOptimizationOrderController::class, 'show']);
+            Route::patch('orders/{order_id}',             [AdminContentOptimizationOrderController::class, 'updateStatus']);
             Route::patch('orders/{order_id}/status',      [AdminContentOptimizationOrderController::class, 'updateStatus']);
         });
 

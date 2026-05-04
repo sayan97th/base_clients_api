@@ -25,6 +25,11 @@ class UpsertCartRequest extends FormRequest
             'items.*.keyword_data.*.keyword'                    => ['nullable', 'string', 'max:500'],
             'items.*.keyword_data.*.landing_page'               => ['nullable', 'string', 'max:2048'],
             'items.*.keyword_data.*.exact_match'                => ['nullable', 'boolean'],
+            'items.*.co_intake_data'                                   => ['nullable', 'array'],
+            'items.*.co_intake_data.*.primary_keyword'             => ['nullable', 'string', 'max:500'],
+            'items.*.co_intake_data.*.secondary_keywords'          => ['nullable', 'string', 'max:1000'],
+            'items.*.co_intake_data.*.content_page_url'            => ['nullable', 'string', 'max:2048'],
+
             'items.*.intake_data'                               => ['nullable', 'array'],
             'items.*.intake_data.*'                             => ['nullable', 'array'],
             'items.*.intake_data.*.*.keyword_phrase'            => ['nullable', 'string', 'max:500'],

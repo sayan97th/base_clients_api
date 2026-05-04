@@ -40,10 +40,14 @@ class CheckoutCartRequest extends FormRequest
             'link_building_items.*.placements.*.landing_page' => ['nullable', 'string', 'max:2048'],
             'link_building_items.*.placements.*.exact_match'  => ['required', 'boolean'],
 
-            'content_optimization_items'              => ['nullable', 'array'],
-            'content_optimization_items.*.tier_id'    => ['required_with:content_optimization_items', 'string', 'exists:content_optimization_tiers,id'],
-            'content_optimization_items.*.quantity'   => ['required_with:content_optimization_items', 'integer', 'min:1'],
-            'content_optimization_items.*.unit_price' => ['required_with:content_optimization_items', 'numeric', 'min:0'],
+            'content_optimization_items'                                         => ['nullable', 'array'],
+            'content_optimization_items.*.tier_id'                               => ['required_with:content_optimization_items', 'string', 'exists:content_optimization_tiers,id'],
+            'content_optimization_items.*.quantity'                              => ['required_with:content_optimization_items', 'integer', 'min:1'],
+            'content_optimization_items.*.unit_price'                            => ['required_with:content_optimization_items', 'numeric', 'min:0'],
+            'content_optimization_items.*.intake_rows'                           => ['nullable', 'array'],
+            'content_optimization_items.*.intake_rows.*.primary_keyword'         => ['required_with:content_optimization_items.*.intake_rows', 'string', 'max:500'],
+            'content_optimization_items.*.intake_rows.*.secondary_keywords'      => ['nullable', 'string', 'max:1000'],
+            'content_optimization_items.*.intake_rows.*.content_page_url'        => ['required_with:content_optimization_items.*.intake_rows', 'string', 'max:2048'],
 
             'new_content_items'                                      => ['nullable', 'array'],
             'new_content_items.*.tier_id'                            => ['required_with:new_content_items', 'string', 'exists:new_content_tiers,id'],

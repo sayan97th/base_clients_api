@@ -38,7 +38,7 @@ class NewContentOrderController extends Controller
         $user = auth()->user();
 
         $order = NewContentOrder::where('id', $order_id)
-            ->with(['items.tier'])
+            ->with(['items.tier', 'items.intakeRows'])
             ->first();
 
         if (!$order) {
@@ -56,18 +56,19 @@ class NewContentOrderController extends Controller
     {
         return [
             'id'           => $order->id,
+            'order_title'  => $order->order_title,
             'order_notes'  => $order->order_notes,
             'total_amount' => $order->total_amount,
             'status'       => $order->status,
             'created_at'   => $order->created_at,
             'updated_at'   => $order->updated_at,
             'items'        => $order->items->map(fn ($item) => [
-                'id'         => $item->id,
-                'tier_id'    => $item->tier_id,
-                'quantity'   => $item->quantity,
-                'unit_price' => $item->unit_price,
-                'subtotal'   => $item->subtotal,
-                'tier'       => $item->tier ? [
+                'id'          => $item->id,
+                'tier_id'     => $item->tier_id,
+                'quantity'    => $item->quantity,
+                'unit_price'  => $item->unit_price,
+                'subtotal'    => $item->subtotal,
+                'tier'        => $item->tier ? [
                     'id'              => $item->tier->id,
                     'label'           => $item->tier->label,
                     'turnaround_time' => $item->tier->turnaround_time,
@@ -80,6 +81,11 @@ class NewContentOrderController extends Controller
                     'created_at'      => $item->tier->created_at,
                     'updated_at'      => $item->tier->updated_at,
                 ] : null,
+                'intake_rows' => $item->intakeRows->map(fn ($row) => [
+                    'keyword_phrase'  => $row->keyword_phrase,
+                    'type_of_content' => $row->type_of_content,
+                    'notes'           => $row->notes,
+                ])->values(),
             ])->values(),
         ];
     }

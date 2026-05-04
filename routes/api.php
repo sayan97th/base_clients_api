@@ -75,6 +75,7 @@ use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
+use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefOrderController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageSubscriptionController;
@@ -310,6 +311,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}',    [AdminContentBriefTierController::class, 'show']);
             Route::patch('/{id}',  [AdminContentBriefTierController::class, 'update']);
             Route::delete('/{id}', [AdminContentBriefTierController::class, 'destroy']);
+        });
+
+        // Content Brief Orders — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-briefs')->group(function () {
+            Route::patch('orders/{order_id}', [AdminContentBriefOrderController::class, 'updateStatus']);
         });
 
         // Content Optimization Tiers — super_admin, admin, staff

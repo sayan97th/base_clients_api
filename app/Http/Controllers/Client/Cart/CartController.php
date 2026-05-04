@@ -555,12 +555,21 @@ class CartController extends Controller
         foreach ($items as $item_data) {
             $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
 
-            $order->items()->create([
+            $item = $order->items()->create([
                 'tier_id'    => $item_data['tier_id'],
                 'quantity'   => $item_data['quantity'],
                 'unit_price' => (float) $item_data['unit_price'],
                 'subtotal'   => $item_subtotal,
             ]);
+
+            foreach ($item_data['intake_rows'] ?? [] as $index => $row) {
+                $item->intakeRows()->create([
+                    'row_index'          => $index + 1,
+                    'primary_keyword'    => $row['primary_keyword'],
+                    'secondary_keywords' => $row['secondary_keywords'] ?? null,
+                    'content_page_url'   => $row['content_page_url'],
+                ]);
+            }
         }
 
         $order->billing()->create([

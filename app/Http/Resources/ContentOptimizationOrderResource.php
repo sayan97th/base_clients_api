@@ -15,7 +15,7 @@ class ContentOptimizationOrderResource extends JsonResource
             'total_amount' => $this->total_amount,
             'status'       => $this->status,
             'created_at'   => $this->created_at,
-            'items_count'  => (int) ($this->items_count ?? $this->items->count()),
+            'items_count'  => (int) ($this->items_count ?? 0),
         ];
     }
 }

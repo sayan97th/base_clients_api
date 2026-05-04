@@ -8,13 +8,14 @@ use App\Models\Invoice;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ContentOptimizationOrder extends Model
 {
     use HasUuids;
 
-    const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
+    public const STATUSES = ['pending', 'processing', 'completed', 'cancelled'];
 
     protected $fillable = [
         'user_id',
@@ -66,5 +67,15 @@ class ContentOptimizationOrder extends Model
         return $this->belongsToMany(Coupon::class, 'content_optimization_order_coupons', 'order_id', 'coupon_id')
             ->withPivot('discount_amount')
             ->withTimestamps();
+    }
+
+    public function intakeRows(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            ContentOptimizationIntakeRow::class,
+            ContentOptimizationOrderItem::class,
+            'order_id',
+            'item_id',
+        );
     }
 }

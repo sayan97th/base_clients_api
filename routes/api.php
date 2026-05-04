@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\Invoice\InvoiceShareLinkController as AdminInvoic
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderUpdateController as AdminOrderUpdateController;
 use App\Http\Controllers\Admin\ContentOptimization\AdminContentOptimizationTierController;
+use App\Http\Controllers\Admin\ContentOptimization\AdminContentOptimizationOrderController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentTierController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentOrderController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentIntakeRowController;
@@ -318,6 +319,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminContentOptimizationTierController::class, 'show']);
             Route::patch('/{id}', [AdminContentOptimizationTierController::class, 'update']);
             Route::delete('/{id}', [AdminContentOptimizationTierController::class, 'destroy']);
+        });
+
+        // Content Optimization Orders — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('content-optimization')->group(function () {
+            Route::get('orders',                          [AdminContentOptimizationOrderController::class, 'index']);
+            Route::get('orders/{order_id}',               [AdminContentOptimizationOrderController::class, 'show']);
+            Route::patch('orders/{order_id}/status',      [AdminContentOptimizationOrderController::class, 'updateStatus']);
         });
 
         // New Content Tiers — super_admin, admin, staff

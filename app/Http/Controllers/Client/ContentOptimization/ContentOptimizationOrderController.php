@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Client\ContentOptimization;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ContentOptimization\StoreContentOptimizationOrderRequest;
-use App\Http\Resources\ContentOptimizationOrderResource;
 use App\Models\Coupon;
 use App\Models\ContentOptimizationOrder;
 use App\Models\ContentOptimizationTier;
@@ -23,13 +22,20 @@ class ContentOptimizationOrderController extends Controller
         $user = auth()->user();
 
         $orders = ContentOptimizationOrder::where('user_id', $user->id)
-            ->withCount('items as items_count')
+            ->withCount('intakeRows as items_count')
             ->orderBy('created_at', 'desc')
             ->get();
 
-        return response()->json([
-            'data' => ContentOptimizationOrderResource::collection($orders)->resolve(),
-        ]);
+        $data = $orders->map(fn ($order) => [
+            'id'           => $order->id,
+            'order_notes'  => $order->order_notes,
+            'total_amount' => $order->total_amount,
+            'status'       => $order->status,
+            'created_at'   => $order->created_at,
+            'items_count'  => (int) $order->items_count,
+        ])->values();
+
+        return response()->json(['data' => $data]);
     }
 
     public function show(string $order_id): JsonResponse
@@ -38,7 +44,7 @@ class ContentOptimizationOrderController extends Controller
         $user = auth()->user();
 
         $order = ContentOptimizationOrder::where('id', $order_id)
-            ->with(['items.tier'])
+            ->with(['items.tier', 'items.intakeRows'])
             ->first();
 
         if (!$order) {
@@ -62,12 +68,17 @@ class ContentOptimizationOrderController extends Controller
             'created_at'   => $order->created_at,
             'updated_at'   => $order->updated_at,
             'items'        => $order->items->map(fn ($item) => [
-                'id'         => $item->id,
-                'tier_id'    => $item->tier_id,
-                'quantity'   => $item->quantity,
-                'unit_price' => $item->unit_price,
-                'subtotal'   => $item->subtotal,
-                'tier'       => $item->tier ? [
+                'id'          => $item->id,
+                'tier_id'     => $item->tier_id,
+                'quantity'    => $item->quantity,
+                'unit_price'  => $item->unit_price,
+                'subtotal'    => $item->subtotal,
+                'intake_rows' => $item->intakeRows->map(fn ($row) => [
+                    'primary_keyword'    => $row->primary_keyword,
+                    'secondary_keywords' => $row->secondary_keywords,
+                    'content_page_url'   => $row->content_page_url,
+                ])->values(),
+                'tier' => $item->tier ? [
                     'id'               => $item->tier->id,
                     'label'            => $item->tier->label,
                     'word_count_range' => $item->tier->word_count_range,
@@ -90,7 +101,7 @@ class ContentOptimizationOrderController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        $tier_ids  = collect($request->items)->pluck('tier_id')->unique()->values()->all();
+        $tier_ids  = collect($request->content_optimization_items)->pluck('tier_id')->unique()->values()->all();
         $tiers_map = ContentOptimizationTier::whereIn('id', $tier_ids)
             ->where('is_active', true)
             ->get()
@@ -98,7 +109,7 @@ class ContentOptimizationOrderController extends Controller
 
         $calculated_total = 0.0;
 
-        foreach ($request->items as $item) {
+        foreach ($request->content_optimization_items as $item) {
             $tier              = $tiers_map->get($item['tier_id']);
             $calculated_total += (float) $tier->price * (int) $item['quantity'];
         }
@@ -125,38 +136,48 @@ class ContentOptimizationOrderController extends Controller
             ], 422);
         }
 
-        $payment_intent_id = $request->payment['payment_method_id'];
-        $stripe_result     = $this->stripeService->verifyPaymentIntent($payment_intent_id);
+        $payment_method_id = $request->payment_method_id;
+        $stripe_result     = $this->stripeService->verifyPaymentIntent($payment_method_id);
 
         if (!$stripe_result['verified']) {
             return response()->json([
                 'message' => 'Payment verification failed. The payment was not completed successfully.',
-                'errors'  => ['payment.payment_method_id' => ['The provided payment could not be verified.']],
+                'errors'  => ['payment_method_id' => ['The provided payment could not be verified.']],
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $user, $tiers_map, $calculated_total, $applied_coupons, $payment_intent_id) {
+        $order = DB::transaction(function () use ($request, $user, $tiers_map, $calculated_total, $applied_coupons, $payment_method_id) {
             $order = ContentOptimizationOrder::create([
                 'user_id'           => $user->id,
+                'order_title'       => $request->order_title ?? null,
                 'order_notes'       => $request->order_notes ?? null,
                 'total_amount'      => $calculated_total,
                 'status'            => 'pending',
-                'payment_intent_id' => $payment_intent_id,
+                'payment_intent_id' => $payment_method_id,
             ]);
 
-            foreach ($request->items as $item_data) {
+            foreach ($request->content_optimization_items as $item_data) {
                 $tier     = $tiers_map->get($item_data['tier_id']);
                 $subtotal = round((float) $tier->price * (int) $item_data['quantity'], 2);
 
-                $order->items()->create([
+                $order_item = $order->items()->create([
                     'tier_id'    => $item_data['tier_id'],
                     'quantity'   => $item_data['quantity'],
                     'unit_price' => (float) $tier->price,
                     'subtotal'   => $subtotal,
                 ]);
+
+                foreach ($item_data['intake_rows'] as $row_index => $row) {
+                    $order_item->intakeRows()->create([
+                        'row_index'          => $row_index + 1,
+                        'primary_keyword'    => $row['primary_keyword'],
+                        'secondary_keywords' => $row['secondary_keywords'] ?? null,
+                        'content_page_url'   => $row['content_page_url'],
+                    ]);
+                }
             }
 
-            $billing = $request->billing ?? [];
+            $billing     = $request->billing ?? [];
             $has_billing = !empty(array_filter([
                 $billing['address'] ?? null,
                 $billing['city'] ?? null,
@@ -187,12 +208,10 @@ class ContentOptimizationOrderController extends Controller
         });
 
         return response()->json([
-            'data' => [
-                'order_id'     => $order->id,
-                'status'       => $order->status,
-                'total_amount' => $order->total_amount,
-                'created_at'   => $order->created_at,
-            ],
+            'order_id'     => $order->id,
+            'status'       => $order->status,
+            'total_amount' => $order->total_amount,
+            'created_at'   => $order->created_at,
         ], 201);
     }
 }

@@ -126,10 +126,10 @@ class AdminContentOptimizationOrderController extends Controller
                         'turnaround_days'  => $item->tier->turnaround_days,
                         'price'            => $item->tier->price,
                     ] : null,
-                    'intake_rows' => $item->intakeRows->map(fn ($row) => [
+                    'co_intake_rows' => $item->intakeRows->map(fn ($row) => [
                         'row_index'          => $row->row_index,
                         'primary_keyword'    => $row->primary_keyword,
-                        'secondary_keywords' => $row->secondary_keywords,
+                        'secondary_keywords' => $row->secondary_keywords ?? '',
                         'content_page_url'   => $row->content_page_url,
                     ])->values(),
                 ])->values(),

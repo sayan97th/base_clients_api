@@ -226,6 +226,14 @@ class OrderController extends Controller
                 'billing',
                 'orderCoupons.coupon',
             ], $shared_invoice_relations));
+        } elseif ($product_type === 'content_optimization') {
+            $order->load(array_merge([
+                'user:id,first_name,last_name,email',
+                'items.tier',
+                'items.intakeRows',
+                'billing',
+                'orderCoupons.coupon',
+            ], $shared_invoice_relations));
         } else {
             $order->load(array_merge([
                 'user:id,first_name,last_name,email',
@@ -280,6 +288,7 @@ class OrderController extends Controller
                 ->with(array_merge([
                     'user:id,first_name,last_name,email',
                     'items.tier',
+                    'items.intakeRows',
                     'billing',
                     'orderCoupons.coupon',
                 ], $shared_invoice_withs))
@@ -398,6 +407,14 @@ class OrderController extends Controller
                     'keyword_phrase'  => $row->keyword_phrase,
                     'type_of_content' => $row->type_of_content,
                     'notes'           => $row->notes,
+                ])->values()->all();
+            }
+
+            if ($product_type === 'content_optimization' && $item->relationLoaded('intakeRows')) {
+                $item_data['co_intake_rows'] = $item->intakeRows->map(fn ($row) => [
+                    'primary_keyword'    => $row->primary_keyword,
+                    'secondary_keywords' => $row->secondary_keywords,
+                    'content_page_url'   => $row->content_page_url,
                 ])->values()->all();
             }
 

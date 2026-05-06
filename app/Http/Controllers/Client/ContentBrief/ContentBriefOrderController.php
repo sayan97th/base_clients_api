@@ -128,12 +128,21 @@ class ContentBriefOrderController extends Controller
                 $tier     = $tiers_map->get($item_data['tier_id']);
                 $subtotal = round((float) $tier->price * (int) $item_data['quantity'], 2);
 
-                $order->items()->create([
+                $order_item = $order->items()->create([
                     'tier_id'    => $item_data['tier_id'],
                     'quantity'   => $item_data['quantity'],
                     'unit_price' => (float) $tier->price,
                     'subtotal'   => $subtotal,
                 ]);
+
+                foreach ($item_data['intake_rows'] ?? [] as $row_index => $row) {
+                    $order_item->intakeRows()->create([
+                        'row_index'          => $row_index,
+                        'primary_keyword'    => $row['primary_keyword'],
+                        'secondary_keywords' => $row['secondary_keywords'] ?? '',
+                        'content_page_url'   => $row['content_page_url'],
+                    ]);
+                }
             }
 
             $order->billing()->create([
@@ -193,6 +202,7 @@ class ContentBriefOrderController extends Controller
     {
         return [
             'id'           => $order->id,
+            'order_title'  => $order->order_title,
             'order_notes'  => $order->order_notes,
             'total_amount' => $order->total_amount,
             'status'       => $order->status,

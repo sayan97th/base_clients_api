@@ -94,6 +94,8 @@ use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
+use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
+use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -395,6 +397,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/news-placements',        [AdminNewsPlacementController::class, 'store']);
             Route::put('/news-placements/{id}',    [AdminNewsPlacementController::class, 'update']);
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
+        });
+
+        // Order session comments — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->group(function () {
+            Route::get('order-sessions/{session_id}/comments',  [AdminOrderSessionCommentController::class, 'index']);
+            Route::post('order-sessions/{session_id}/comments', [AdminOrderSessionCommentController::class, 'store']);
+            Route::patch('order-comments/{comment}',            [AdminOrderCommentController::class, 'update']);
+            Route::delete('order-comments/{comment}',           [AdminOrderCommentController::class, 'destroy']);
         });
 
         // Staff portal — super_admin, admin, staff

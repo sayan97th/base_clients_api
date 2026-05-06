@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\OrderSessionComment;
-use App\Models\Role;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -45,23 +44,40 @@ class OrderSessionCommentService
 
     public function formatComment(OrderSessionComment $comment, bool $with_replies = false): array
     {
-        $user = $comment->relationLoaded('user') ? $comment->user : null;
-
         return [
             'id'                => $comment->id,
             'session_id'        => $comment->session_id,
             'user_id'           => $comment->user_id,
             'parent_id'         => $comment->parent_id,
             'content'           => $comment->content,
-            'is_admin_comment'  => $user ? $user->hasRole(self::ADMIN_ROLES) : false,
-            'author_name'       => $user ? trim($user->first_name . ' ' . $user->last_name) : null,
-            'author_avatar_url' => $user?->profile_photo_url,
+            'is_admin_comment'  => (bool) $comment->is_admin_comment,
+            'author_name'       => $comment->author_name,
+            'author_avatar_url' => $comment->author_avatar_url,
             'created_at'        => $comment->created_at,
             'updated_at'        => $comment->updated_at,
             'replies'           => $with_replies
-                ? $comment->replies->map(fn ($r) => $this->formatComment($r))->values()->all()
+                ? $this->formatReplies($comment->replies)
                 : [],
         ];
+    }
+
+    private function formatReplies($replies): array
+    {
+        return $replies->map(function (OrderSessionComment $reply) {
+            return [
+                'id'                => $reply->id,
+                'session_id'        => $reply->session_id,
+                'user_id'           => $reply->user_id,
+                'parent_id'         => $reply->parent_id,
+                'content'           => $reply->content,
+                'is_admin_comment'  => (bool) $reply->is_admin_comment,
+                'author_name'       => $reply->author_name,
+                'author_avatar_url' => $reply->author_avatar_url,
+                'created_at'        => $reply->created_at,
+                'updated_at'        => $reply->updated_at,
+                'replies'           => $this->formatReplies($reply->replies),
+            ];
+        })->values()->all();
     }
 
     public function notifyOnNewComment(

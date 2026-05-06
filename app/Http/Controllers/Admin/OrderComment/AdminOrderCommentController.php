@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\OrderSession;
+namespace App\Http\Controllers\Admin\OrderComment;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\UpdateOrderSessionCommentRequest;
@@ -9,7 +9,7 @@ use App\Services\OrderSessionCommentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
-class OrderCommentController extends Controller
+class AdminOrderCommentController extends Controller
 {
     public function __construct(
         protected OrderSessionCommentService $comment_service,
@@ -19,7 +19,10 @@ class OrderCommentController extends Controller
     {
         $user = auth()->user();
 
-        if ($comment->user_id !== $user->id) {
+        $is_super_admin = $user->hasRole('super_admin');
+        $is_own_comment = $comment->user_id === $user->id;
+
+        if (!$is_super_admin && !$is_own_comment) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -30,14 +33,8 @@ class OrderCommentController extends Controller
         return response()->json(['data' => $this->comment_service->formatComment($comment)]);
     }
 
-    public function destroy(OrderSessionComment $comment): Response|JsonResponse
+    public function destroy(OrderSessionComment $comment): Response
     {
-        $user = auth()->user();
-
-        if ($comment->user_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
         $comment->delete();
 
         return response()->noContent();

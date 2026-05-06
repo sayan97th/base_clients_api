@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\OrderSession;
+namespace App\Http\Controllers\Admin\OrderComment;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\StoreOrderSessionCommentRequest;
@@ -9,7 +9,7 @@ use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
 use Illuminate\Http\JsonResponse;
 
-class OrderSessionCommentController extends Controller
+class AdminOrderSessionCommentController extends Controller
 {
     public function __construct(
         protected OrderSessionCommentService $comment_service,
@@ -18,13 +18,6 @@ class OrderSessionCommentController extends Controller
 
     public function index(string $session_id): JsonResponse
     {
-        $user          = auth()->user();
-        $owner_user_id = $this->comment_service->findSessionOwnerUserId($session_id);
-
-        if ($owner_user_id !== null && $user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
         $comments = OrderSessionComment::where('session_id', $session_id)
             ->whereNull('parent_id')
             ->with(['user', 'replies.user'])
@@ -38,13 +31,7 @@ class OrderSessionCommentController extends Controller
 
     public function store(StoreOrderSessionCommentRequest $request, string $session_id): JsonResponse
     {
-        $user          = auth()->user();
-        $owner_user_id = $this->comment_service->findSessionOwnerUserId($session_id);
-
-        if ($owner_user_id !== null && $user->id !== $owner_user_id && !$this->comment_service->isAdminOrStaff($user)) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
+        $user      = auth()->user();
         $validated = $request->validated();
         $parent_id = $validated['parent_id'] ?? null;
 
@@ -64,7 +51,7 @@ class OrderSessionCommentController extends Controller
             'user_id'          => $user->id,
             'parent_id'        => $parent_id,
             'content'          => $validated['content'],
-            'is_admin_comment' => false,
+            'is_admin_comment' => true,
         ]);
 
         $comment->load(['user']);

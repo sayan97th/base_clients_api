@@ -13,7 +13,23 @@ class OrderSessionComment extends Model
         'user_id',
         'parent_id',
         'content',
+        'is_admin_comment',
     ];
+
+    protected $appends = [
+        'author_name',
+        'author_avatar_url',
+    ];
+
+    protected $casts = [
+        'is_admin_comment' => 'boolean',
+    ];
+
+    protected static function booted(): void
+    {
+        // Automatically eager-load nested replies so the tree resolves recursively.
+        static::with('replies');
+    }
 
     public function user(): BelongsTo
     {
@@ -27,6 +43,24 @@ class OrderSessionComment extends Model
 
     public function replies(): HasMany
     {
-        return $this->hasMany(OrderSessionComment::class, 'parent_id');
+        return $this->hasMany(OrderSessionComment::class, 'parent_id')->with('replies');
+    }
+
+    public function getAuthorNameAttribute(): ?string
+    {
+        if (!$this->relationLoaded('user') || !$this->user) {
+            return null;
+        }
+
+        return trim($this->user->first_name . ' ' . $this->user->last_name);
+    }
+
+    public function getAuthorAvatarUrlAttribute(): ?string
+    {
+        if (!$this->relationLoaded('user') || !$this->user) {
+            return null;
+        }
+
+        return $this->user->profile_photo_url;
     }
 }

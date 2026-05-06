@@ -92,6 +92,7 @@ use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageAppointmentController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
+use App\Http\Controllers\Client\OrderComment\ClientOrderBasedCommentController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
@@ -718,6 +719,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // Order session comments
     Route::get('order-sessions/{session_id}/comments',  [OrderSessionCommentController::class, 'index']);
     Route::post('order-sessions/{session_id}/comments', [OrderSessionCommentController::class, 'store']);
+
+    // Order-based comments (resolves session from order)
+    Route::get('orders/{order_id}/comments',  [ClientOrderBasedCommentController::class, 'index']);
+    Route::post('orders/{order_id}/comments', [ClientOrderBasedCommentController::class, 'store']);
 
     // Individual comment management
     Route::patch('order-comments/{comment}', [OrderCommentController::class, 'update']);

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Admin\OrderComment;
+namespace App\Http\Controllers\Client\OrderComment;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\StoreOrderSessionCommentRequest;
@@ -9,7 +9,7 @@ use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
 use Illuminate\Http\JsonResponse;
 
-class AdminOrderBasedCommentController extends Controller
+class ClientOrderBasedCommentController extends Controller
 {
     public function __construct(
         protected OrderSessionCommentService $comment_service,
@@ -18,10 +18,15 @@ class AdminOrderBasedCommentController extends Controller
 
     public function index(string $order_id): JsonResponse
     {
+        $user  = auth()->user();
         $order = $this->comment_service->findOrderDetails($order_id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        if ($user->id !== (int) $order->user_id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         if (!$order->session_id) {
@@ -41,11 +46,15 @@ class AdminOrderBasedCommentController extends Controller
 
     public function store(StoreOrderSessionCommentRequest $request, string $order_id): JsonResponse
     {
-        $user      = auth()->user();
-        $order     = $this->comment_service->findOrderDetails($order_id);
+        $user  = auth()->user();
+        $order = $this->comment_service->findOrderDetails($order_id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        if ($user->id !== (int) $order->user_id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         if (!$order->session_id) {
@@ -71,7 +80,7 @@ class AdminOrderBasedCommentController extends Controller
             'user_id'          => $user->id,
             'parent_id'        => $parent_id,
             'content'          => $validated['content'],
-            'is_admin_comment' => true,
+            'is_admin_comment' => false,
         ]);
 
         $comment->load(['user']);

@@ -17,15 +17,6 @@ class AdminOrderCommentController extends Controller
 
     public function update(UpdateOrderSessionCommentRequest $request, OrderSessionComment $comment): JsonResponse
     {
-        $user = auth()->user();
-
-        $is_super_admin = $user->hasRole('super_admin');
-        $is_own_comment = $comment->user_id === $user->id;
-
-        if (!$is_super_admin && !$is_own_comment) {
-            return response()->json(['message' => 'Forbidden.'], 403);
-        }
-
         $comment->update(['content' => $request->validated()['content']]);
 
         $comment->load(['user']);

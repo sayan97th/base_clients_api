@@ -29,11 +29,11 @@ class ClientOrderBasedCommentController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!$order->session_id) {
-            return response()->json(['message' => 'This order has no session associated.'], 422);
-        }
+        $query = $order->session_id
+            ? OrderSessionComment::where('session_id', $order->session_id)
+            : OrderSessionComment::where('order_id', $order_id);
 
-        $comments = OrderSessionComment::where('session_id', $order->session_id)
+        $comments = $query
             ->whereNull('parent_id')
             ->with(['user', 'replies.user'])
             ->orderBy('created_at', 'asc')
@@ -57,17 +57,16 @@ class ClientOrderBasedCommentController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        if (!$order->session_id) {
-            return response()->json(['message' => 'This order has no session associated.'], 422);
-        }
-
         $validated = $request->validated();
         $parent_id = $validated['parent_id'] ?? null;
 
         if ($parent_id !== null) {
-            $parent = OrderSessionComment::find($parent_id);
+            $parent     = OrderSessionComment::find($parent_id);
+            $same_scope = $order->session_id
+                ? ($parent?->session_id === $order->session_id)
+                : ($parent?->order_id === $order_id);
 
-            if (!$parent || $parent->session_id !== $order->session_id || $parent->parent_id !== null) {
+            if (!$parent || !$same_scope || $parent->parent_id !== null) {
                 return response()->json([
                     'message' => 'The given data was invalid.',
                     'errors'  => ['parent_id' => ['The selected parent_id is invalid.']],
@@ -75,14 +74,21 @@ class ClientOrderBasedCommentController extends Controller
             }
         }
 
-        $comment = OrderSessionComment::create([
-            'session_id'       => $order->session_id,
+        $attributes = [
             'user_id'          => $user->id,
             'parent_id'        => $parent_id,
             'content'          => $validated['content'],
             'is_admin_comment' => false,
-        ]);
+        ];
 
+        if ($order->session_id) {
+            $attributes['session_id'] = $order->session_id;
+        } else {
+            $attributes['session_id'] = null;
+            $attributes['order_id']   = $order_id;
+        }
+
+        $comment = OrderSessionComment::create($attributes);
         $comment->load(['user']);
 
         $this->comment_service->notifyOnNewComment($comment, $user, $this->notification_service);

@@ -107,26 +107,39 @@ class OrderSessionCommentService
         User $author,
         NotificationService $notification_service
     ): void {
+        $is_order_based = $comment->session_id === null && $comment->order_id !== null;
+
         if ($this->isAdminOrStaff($author)) {
-            $owner_user_id = $this->findSessionOwnerUserId($comment->session_id);
+            $owner_user_id = $is_order_based
+                ? $this->findOrderOwnerUserId($comment->order_id)
+                : $this->findSessionOwnerUserId($comment->session_id);
 
             if ($owner_user_id && $owner_user_id !== $author->id) {
                 $client = User::find($owner_user_id);
 
                 if ($client) {
+                    $client_link = $is_order_based
+                        ? "/orders/{$comment->order_id}"
+                        : "/orders/sessions/{$comment->session_id}";
+
                     $notification_service->createNotification(
                         $client,
                         'order_comment',
                         'A staff member replied to your order discussion.',
-                        ['link' => "/orders/sessions/{$comment->session_id}"]
+                        ['link' => $client_link]
                     );
                 }
             }
         } else {
+            /** @var \Illuminate\Database\Eloquent\Collection<int, User> $admins */
             $admins = User::whereHas(
                 'roles',
                 fn ($q) => $q->whereIn('name', self::ADMIN_ROLES)
             )->get();
+
+            $admin_link = $is_order_based
+                ? "/admin/orders/{$comment->order_id}"
+                : "/admin/orders/sessions/{$comment->session_id}";
 
             foreach ($admins as $admin) {
                 if ($admin->id !== $author->id) {
@@ -134,7 +147,7 @@ class OrderSessionCommentService
                         $admin,
                         'order_comment',
                         "{$author->first_name} {$author->last_name} posted a comment on an order.",
-                        ['link' => "/admin/orders/sessions/{$comment->session_id}"]
+                        ['link' => $admin_link]
                     );
                 }
             }

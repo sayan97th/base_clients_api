@@ -95,6 +95,7 @@ use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
+use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
@@ -399,12 +400,19 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
         });
 
-        // Order session comments — super_admin, admin, staff
+        // Order comments — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->group(function () {
+            // Session-based (multi-product purchase)
             Route::get('order-sessions/{session_id}/comments',  [AdminOrderSessionCommentController::class, 'index']);
             Route::post('order-sessions/{session_id}/comments', [AdminOrderSessionCommentController::class, 'store']);
-            Route::patch('order-comments/{comment}',            [AdminOrderCommentController::class, 'update']);
-            Route::delete('order-comments/{comment}',           [AdminOrderCommentController::class, 'destroy']);
+
+            // Order-based (standalone order, no session)
+            Route::get('orders/{order_id}/comments',  [AdminOrderBasedCommentController::class, 'index']);
+            Route::post('orders/{order_id}/comments', [AdminOrderBasedCommentController::class, 'store']);
+
+            // Comment-level operations (edit / delete)
+            Route::patch('order-comments/{comment}',  [AdminOrderCommentController::class, 'update']);
+            Route::delete('order-comments/{comment}', [AdminOrderCommentController::class, 'destroy']);
         });
 
         // Staff portal — super_admin, admin, staff

@@ -10,6 +10,7 @@ class OrderSessionComment extends Model
 {
     protected $fillable = [
         'session_id',
+        'order_id',
         'user_id',
         'parent_id',
         'content',

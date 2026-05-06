@@ -37,6 +37,21 @@ class OrderSessionCommentService
         return null;
     }
 
+    public function findOrderOwnerUserId(string $order_id): ?int
+    {
+        foreach (self::ORDER_TABLES as $table) {
+            $order = DB::table($table)
+                ->where('id', $order_id)
+                ->first(['user_id']);
+
+            if ($order) {
+                return (int) $order->user_id;
+            }
+        }
+
+        return null;
+    }
+
     public function isAdminOrStaff(User $user): bool
     {
         return $user->hasRole(self::ADMIN_ROLES);
@@ -47,6 +62,7 @@ class OrderSessionCommentService
         return [
             'id'                => $comment->id,
             'session_id'        => $comment->session_id,
+            'order_id'          => $comment->order_id,
             'user_id'           => $comment->user_id,
             'parent_id'         => $comment->parent_id,
             'content'           => $comment->content,
@@ -67,6 +83,7 @@ class OrderSessionCommentService
             return [
                 'id'                => $reply->id,
                 'session_id'        => $reply->session_id,
+                'order_id'          => $reply->order_id,
                 'user_id'           => $reply->user_id,
                 'parent_id'         => $reply->parent_id,
                 'content'           => $reply->content,
@@ -85,18 +102,26 @@ class OrderSessionCommentService
         User $author,
         NotificationService $notification_service
     ): void {
+        $is_order_based = $comment->session_id === null && $comment->order_id !== null;
+
         if ($this->isAdminOrStaff($author)) {
-            $owner_user_id = $this->findSessionOwnerUserId($comment->session_id);
+            $owner_user_id = $is_order_based
+                ? $this->findOrderOwnerUserId($comment->order_id)
+                : $this->findSessionOwnerUserId($comment->session_id);
 
             if ($owner_user_id && $owner_user_id !== $author->id) {
                 $client = User::find($owner_user_id);
 
                 if ($client) {
+                    $client_link = $is_order_based
+                        ? "/orders/{$comment->order_id}"
+                        : "/orders/sessions/{$comment->session_id}";
+
                     $notification_service->createNotification(
                         $client,
                         'order_comment',
                         'A staff member replied to your order discussion.',
-                        ['link' => "/orders/sessions/{$comment->session_id}"]
+                        ['link' => $client_link]
                     );
                 }
             }
@@ -106,13 +131,17 @@ class OrderSessionCommentService
                 fn ($q) => $q->whereIn('name', self::ADMIN_ROLES)
             )->get();
 
+            $admin_link = $is_order_based
+                ? "/admin/orders/{$comment->order_id}"
+                : "/admin/orders/sessions/{$comment->session_id}";
+
             foreach ($admins as $admin) {
                 if ($admin->id !== $author->id) {
                     $notification_service->createNotification(
                         $admin,
                         'order_comment',
                         "{$author->first_name} {$author->last_name} posted a comment on an order.",
-                        ['link' => "/admin/orders/sessions/{$comment->session_id}"]
+                        ['link' => $admin_link]
                     );
                 }
             }

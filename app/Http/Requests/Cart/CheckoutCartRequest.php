@@ -16,6 +16,7 @@ class CheckoutCartRequest extends FormRequest
         return [
             'payment_method_id'   => ['required', 'string'],
             'total_amount'        => ['required', 'numeric', 'min:0.01'],
+            'session_id'          => ['required', 'string', 'uuid'],
             'coupon_ids'          => ['nullable', 'array'],
             'coupon_ids.*'        => ['string', 'uuid'],
 

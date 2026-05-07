@@ -138,6 +138,7 @@ class OrderController extends Controller
             'data'         => $data,
             'current_page' => $paginated->currentPage(),
             'last_page'    => $paginated->lastPage(),
+            'per_page'     => $paginated->perPage(),
             'total'        => $paginated->total(),
         ]);
     }

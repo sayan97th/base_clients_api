@@ -20,7 +20,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Throwable;
 
 class CartController extends Controller
@@ -99,15 +98,8 @@ class CartController extends Controller
         $new_content_items          = $request->input('new_content_items');
         $content_brief_items        = $request->input('content_brief_items');
 
-        $types_present = count(array_filter([
-            $link_building_items,
-            $content_optimization_items,
-            $new_content_items,
-            $content_brief_items,
-        ]));
-
-        $session_id    = $types_present > 1 ? (string) Str::uuid() : null;
-        $session_title = $session_id ? ($order_title ?? null) : null;
+        $session_id    = $request->input('session_id');
+        $session_title = $order_title;
 
         try {
             DB::transaction(function () use (
@@ -202,12 +194,15 @@ class CartController extends Controller
         }
 
         $response_orders = array_map(fn ($entry) => [
-            'product_type' => $entry['product_type'],
             'order_id'     => $entry['order_id'],
+            'product_type' => $entry['product_type'],
             'total_amount' => $entry['total_amount'],
         ], $created_orders);
 
-        return response()->json(['data' => ['orders' => $response_orders]], 201);
+        return response()->json(['data' => [
+            'session_id' => $session_id,
+            'orders'     => $response_orders,
+        ]], 200);
     }
 
     private function createLinkBuildingOrder(

@@ -61,12 +61,15 @@ class PurchaseGroupController extends Controller
         $user = auth()->user();
 
         $group = PurchaseGroup::where('purchase_group_id', $purchase_group_id)
-            ->where('user_id', $user->id)
             ->with('orders')
             ->first();
 
         if (!$group) {
             return response()->json(['message' => 'Purchase group not found.'], 404);
+        }
+
+        if ($group->user_id !== $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         return response()->json(['data' => $this->buildGroupData($group)]);

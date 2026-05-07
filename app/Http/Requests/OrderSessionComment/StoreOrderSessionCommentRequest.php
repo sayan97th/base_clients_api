@@ -14,7 +14,7 @@ class StoreOrderSessionCommentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'content'   => ['required', 'string', 'min:1', 'max:1000'],
+            'content'   => ['required', 'string', 'min:1', 'max:5000'],
             'parent_id' => ['nullable', 'integer', 'exists:order_session_comments,id'],
         ];
     }

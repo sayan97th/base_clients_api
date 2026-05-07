@@ -15,6 +15,7 @@ use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
@@ -248,6 +249,10 @@ class OrderController extends Controller
 
     public function show(string $id): JsonResponse
     {
+        if (!Str::isUuid($id)) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
         $user = auth()->user();
 
         $order = LinkBuildingOrder::where('id', $id)

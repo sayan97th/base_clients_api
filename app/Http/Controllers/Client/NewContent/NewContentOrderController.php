@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class NewContentOrderController extends Controller
 {
@@ -34,6 +35,10 @@ class NewContentOrderController extends Controller
 
     public function show(string $order_id): JsonResponse
     {
+        if (!Str::isUuid($order_id)) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
         /** @var User $user */
         $user = auth()->user();
 

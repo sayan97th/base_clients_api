@@ -64,7 +64,7 @@ class OrderSessionCommentController extends Controller
             'user_id'          => $user->id,
             'parent_id'        => $parent_id,
             'content'          => $validated['content'],
-            'is_admin_comment' => false,
+            'is_admin_comment' => $this->comment_service->isAdminOrStaff($user),
         ]);
 
         $comment->load(['user']);

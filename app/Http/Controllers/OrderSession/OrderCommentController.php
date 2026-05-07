@@ -8,6 +8,7 @@ use App\Models\OrderSessionComment;
 use App\Services\OrderSessionCommentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use App\Models\User;
 
 class OrderCommentController extends Controller
 {
@@ -17,9 +18,10 @@ class OrderCommentController extends Controller
 
     public function update(UpdateOrderSessionCommentRequest $request, OrderSessionComment $comment): JsonResponse
     {
+        /** @var User $user */
         $user = auth()->user();
 
-        if ($comment->user_id !== $user->id) {
+        if ($comment->user_id !== $user->id && !$this->comment_service->isAdminOrStaff($user)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
@@ -32,9 +34,10 @@ class OrderCommentController extends Controller
 
     public function destroy(OrderSessionComment $comment): Response|JsonResponse
     {
+        /** @var User $user */
         $user = auth()->user();
 
-        if ($comment->user_id !== $user->id) {
+        if ($comment->user_id !== $user->id && !$this->comment_service->isAdminOrStaff($user)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 

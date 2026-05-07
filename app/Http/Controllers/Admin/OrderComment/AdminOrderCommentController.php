@@ -17,6 +17,10 @@ class AdminOrderCommentController extends Controller
 
     public function update(UpdateOrderSessionCommentRequest $request, OrderSessionComment $comment): JsonResponse
     {
+        if ($comment->user_id !== auth()->id()) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
         $comment->update(['content' => $request->validated()['content']]);
 
         $comment->load(['user']);

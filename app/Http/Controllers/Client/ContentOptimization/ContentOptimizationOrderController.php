@@ -8,6 +8,7 @@ use App\Models\Coupon;
 use App\Models\ContentOptimizationOrder;
 use App\Models\ContentOptimizationTier;
 use App\Models\User;
+use App\Services\CouponService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,10 @@ use Illuminate\Support\Str;
 
 class ContentOptimizationOrderController extends Controller
 {
-    public function __construct(protected StripeService $stripeService) {}
+    public function __construct(
+        protected StripeService $stripeService,
+        protected CouponService $couponService,
+    ) {}
 
     public function index(): JsonResponse
     {
@@ -113,17 +117,27 @@ class ContentOptimizationOrderController extends Controller
             ->get()
             ->keyBy('id');
 
-        $calculated_total = 0.0;
-
-        foreach ($request->items as $item) {
-            $tier              = $tiers_map->get($item['tier_id']);
-            $calculated_total += (float) $tier->price * (int) $item['quantity'];
+        foreach ($tier_ids as $tier_id) {
+            if (!$tiers_map->has($tier_id)) {
+                return response()->json([
+                    'message' => 'One or more selected tiers are not available.',
+                    'errors'  => ['items' => ['One or more selected tiers are not available.']],
+                ], 422);
+            }
         }
 
-        $calculated_total = round($calculated_total, 2);
+        $subtotal = 0.0;
+
+        foreach ($request->items as $item) {
+            $tier      = $tiers_map->get($item['tier_id']);
+            $subtotal += (float) $tier->price * (int) $item['quantity'];
+        }
+
+        $subtotal = round($subtotal, 2);
 
         $coupon_ids      = $request->coupon_ids ?? [];
         $applied_coupons = [];
+        $current_amount  = $subtotal;
 
         foreach ($coupon_ids as $coupon_id) {
             $coupon = Coupon::find($coupon_id);
@@ -132,10 +146,24 @@ class ContentOptimizationOrderController extends Controller
                 return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
             }
 
-            $applied_coupons[] = ['coupon' => $coupon];
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id
+            );
+
+            if (!$result['valid']) {
+                return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
+            }
+
+            $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+            $current_amount    = round($current_amount - $result['discount_amount'], 2);
         }
 
-        if (abs($calculated_total - (float) $request->total_amount) > 0.01) {
+        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
+        $final_total           = round($subtotal - $total_coupon_discount, 2);
+
+        if (abs($final_total - (float) $request->total_amount) > 0.01) {
             return response()->json([
                 'message' => 'Order total does not match the expected amount.',
                 'errors'  => ['total_amount' => ['The submitted total does not match the calculated order total.']],
@@ -148,61 +176,66 @@ class ContentOptimizationOrderController extends Controller
         if (!$stripe_result['verified']) {
             return response()->json([
                 'message' => 'Payment verification failed. The payment was not completed successfully.',
-                'errors'  => ['payment_method_id' => ['The provided payment could not be verified.']],
+                'errors'  => ['payment.payment_method_id' => ['The provided payment could not be verified.']],
             ], 422);
         }
 
-        $order = DB::transaction(function () use ($request, $user, $tiers_map, $calculated_total, $applied_coupons, $payment_method_id) {
+        $order = DB::transaction(function () use ($request, $user, $tiers_map, $subtotal, $final_total, $applied_coupons, $payment_method_id) {
             $order = ContentOptimizationOrder::create([
-                'user_id'           => $user->id,
-                'order_title'       => $request->order_title ?? null,
-                'order_notes'       => $request->order_notes ?? null,
-                'total_amount'      => $calculated_total,
-                'status'            => 'pending',
-                'payment_intent_id' => $payment_method_id,
+                'user_id'                  => $user->id,
+                'order_title'              => $request->order_title ?? null,
+                'order_notes'              => $request->order_notes ?? null,
+                'subtotal_before_discount' => $subtotal,
+                'total_amount'             => $final_total,
+                'status'                   => 'pending',
+                'payment_intent_id'        => $payment_method_id,
             ]);
 
             foreach ($request->items as $item_data) {
-                $tier     = $tiers_map->get($item_data['tier_id']);
-                $subtotal = round((float) $tier->price * (int) $item_data['quantity'], 2);
+                $tier          = $tiers_map->get($item_data['tier_id']);
+                $item_subtotal = round((float) $tier->price * (int) $item_data['quantity'], 2);
 
-                $order->items()->create([
+                $item = $order->items()->create([
                     'tier_id'    => $item_data['tier_id'],
                     'quantity'   => $item_data['quantity'],
                     'unit_price' => (float) $tier->price,
-                    'subtotal'   => $subtotal,
+                    'subtotal'   => $item_subtotal,
                 ]);
+
+                foreach ($item_data['intake_rows'] ?? [] as $index => $row) {
+                    $item->intakeRows()->create([
+                        'row_index'          => $index + 1,
+                        'primary_keyword'    => $row['primary_keyword'],
+                        'secondary_keywords' => $row['secondary_keywords'] ?? null,
+                        'content_page_url'   => $row['content_page_url'],
+                    ]);
+                }
             }
 
-            $billing     = $request->billing ?? [];
-            $has_billing = !empty(array_filter([
-                $billing['address'] ?? null,
-                $billing['city'] ?? null,
-                $billing['state'] ?? null,
-                $billing['country'] ?? null,
-                $billing['postal_code'] ?? null,
-            ]));
+            $billing = $request->billing ?? [];
 
-            if ($has_billing) {
-                $order->billing()->create([
-                    'company'     => $billing['company'] ?: null,
-                    'address'     => $billing['address'] ?: null,
-                    'city'        => $billing['city'] ?: null,
-                    'state'       => $billing['state'] ?: null,
-                    'country'     => $billing['country'] ?: null,
-                    'postal_code' => $billing['postal_code'] ?: null,
-                ]);
-            }
+            $order->billing()->create([
+                'company'     => ($billing['company'] ?? null) ?: null,
+                'address'     => ($billing['address'] ?? null) ?: null,
+                'city'        => ($billing['city'] ?? null) ?: null,
+                'state'       => ($billing['state'] ?? null) ?: null,
+                'country'     => ($billing['country'] ?? null) ?: null,
+                'postal_code' => ($billing['postal_code'] ?? null) ?: null,
+            ]);
 
             foreach ($applied_coupons as $entry) {
                 $order->orderCoupons()->create([
                     'coupon_id'       => $entry['coupon']->id,
-                    'discount_amount' => 0,
+                    'discount_amount' => $entry['discount_amount'],
                 ]);
             }
 
             return $order;
         });
+
+        foreach ($applied_coupons as $entry) {
+            $entry['coupon']->increment('times_used');
+        }
 
         return response()->json([
             'data' => [

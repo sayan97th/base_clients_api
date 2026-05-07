@@ -16,6 +16,7 @@ class NewContentOrderResource extends JsonResource
             'status'       => $this->status,
             'created_at'   => $this->created_at,
             'items_count'  => (int) ($this->items_count ?? $this->items->count()),
+            'order_title'  => $this->order_title,
         ];
     }
 }

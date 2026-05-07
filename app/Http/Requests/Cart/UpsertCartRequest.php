@@ -33,7 +33,7 @@ class UpsertCartRequest extends FormRequest
             'items.*.intake_data'                               => ['nullable', 'array'],
             'items.*.intake_data.*'                             => ['nullable', 'array'],
             'items.*.intake_data.*.*.keyword_phrase'            => ['nullable', 'string', 'max:500'],
-            'items.*.intake_data.*.*.type_of_content'           => ['nullable', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
+            'items.*.intake_data.*.*.type_of_content'           => ['nullable', 'string', 'max:255'],
             'items.*.intake_data.*.*.notes'                     => ['nullable', 'string', 'max:1000'],
 
             'applied_coupons'                    => ['nullable', 'array'],

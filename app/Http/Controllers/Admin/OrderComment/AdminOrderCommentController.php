@@ -28,8 +28,15 @@ class AdminOrderCommentController extends Controller
         return response()->json(['data' => $this->comment_service->formatComment($comment)]);
     }
 
-    public function destroy(OrderSessionComment $comment): Response
+    public function destroy(OrderSessionComment $comment): JsonResponse|Response
     {
+        $user = auth()->user();
+
+        if ($comment->user_id !== $user->id && ! $user->hasRole(['super_admin', 'admin'])) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        $comment->replies()->delete();
         $comment->delete();
 
         return response()->noContent();

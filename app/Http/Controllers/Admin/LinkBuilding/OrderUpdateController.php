@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin\LinkBuilding;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreOrderUpdateRequest;
-use App\Http\Requests\LinkBuilding\UpdateOrderStatusRequest;
-use App\Mail\OrderStatusChangeMail;
 use App\Mail\OrderUpdateMail;
+use Illuminate\Database\Eloquent\Model;
+use App\Models\ContentBriefOrder;
+use App\Models\ContentOptimizationOrder;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderUpdate;
+use App\Models\NewContentOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Mail;
 
@@ -16,11 +18,15 @@ class OrderUpdateController extends Controller
 {
     public function index(string $order_id): JsonResponse
     {
-        $order = LinkBuildingOrder::findOrFail($order_id);
+        $order = $this->findOrder($order_id);
 
-        $updates = $order->updates()
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $updates = LinkBuildingOrderUpdate::where('order_id', $order->id)
             ->with('createdBy:id,first_name,last_name')
-            ->orderBy('created_at', 'desc')
+            ->orderBy('created_at', 'asc')
             ->get()
             ->map(fn (LinkBuildingOrderUpdate $update) => $this->formatUpdate($update));
 
@@ -29,7 +35,13 @@ class OrderUpdateController extends Controller
 
     public function store(StoreOrderUpdateRequest $request, string $order_id): JsonResponse
     {
-        $order = LinkBuildingOrder::with('user')->findOrFail($order_id);
+        $order = $this->findOrder($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $order->load('user');
 
         $update = LinkBuildingOrderUpdate::create([
             'order_id'      => $order->id,
@@ -66,7 +78,7 @@ class OrderUpdateController extends Controller
             ->where('order_id', $order_id)
             ->first();
 
-        if (!$update) {
+        if (! $update) {
             return response()->json(['message' => 'Order update not found.'], 404);
         }
 
@@ -75,49 +87,25 @@ class OrderUpdateController extends Controller
         return response()->json(null, 204);
     }
 
-    public function updateStatus(UpdateOrderStatusRequest $request, string $order_id): JsonResponse
+    // ─── Private helpers ──────────────────────────────────────────────────────
+
+    private function findOrder(string $order_id): ?Model
     {
-        $order = LinkBuildingOrder::with('user')->findOrFail($order_id);
+        $models = [
+            LinkBuildingOrder::class,
+            NewContentOrder::class,
+            ContentOptimizationOrder::class,
+            ContentBriefOrder::class,
+        ];
 
-        $new_status = $request->input('status');
-
-        $order->update(['status' => $new_status]);
-
-        // Record the status change as a timeline entry
-        LinkBuildingOrderUpdate::create([
-            'order_id'      => $order->id,
-            'created_by_id' => auth()->id(),
-            'title'         => 'Order status changed to ' . ucfirst($new_status),
-            'message'       => $this->statusChangeMessage($new_status),
-            'status_change' => $new_status,
-            'send_email'    => false,
-        ]);
-
-        if ($request->boolean('notify_user') && $order->user) {
-            Mail::to($order->user->email)->queue(
-                new OrderStatusChangeMail(
-                    user: $order->user,
-                    new_status: $order->status,
-                    order_id: $order->id,
-                )
-            );
+        foreach ($models as $model_class) {
+            $order = $model_class::find($order_id);
+            if ($order) {
+                return $order;
+            }
         }
 
-        return response()->json([
-            'message' => 'Order status updated to ' . $new_status . '.',
-            'status'  => $order->status,
-        ]);
-    }
-
-    private function statusChangeMessage(string $status): string
-    {
-        return match ($status) {
-            'completed'  => 'Your order has been completed. Thank you for your business!',
-            'processing' => 'Great news — your order is now being actively processed.',
-            'cancelled'  => 'Your order has been cancelled. Please contact support if you have questions.',
-            'pending'    => 'Your order has been placed back in the pending queue.',
-            default      => 'Your order status has been updated to ' . ucfirst($status) . '.',
-        };
+        return null;
     }
 
     private function formatUpdate(LinkBuildingOrderUpdate $update): array

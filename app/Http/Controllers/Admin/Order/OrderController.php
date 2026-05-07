@@ -48,6 +48,7 @@ class OrderController extends Controller
         $date_to             = $request->input('date_to');
         $per_page            = (int) $request->input('per_page', 15);
         $product_type_filter = $request->input('product_type');
+        $session_id          = $request->input('session_id');
 
         $cols = implode(', ', [
             'id', 'user_id', 'order_title', 'order_notes',
@@ -100,6 +101,10 @@ class OrderController extends Controller
 
         if (filled($date_to)) {
             $query->whereDate('all_orders.created_at', '<=', $date_to);
+        }
+
+        if (filled($session_id)) {
+            $query->where('all_orders.session_id', $session_id);
         }
 
         if ($sort_field === 'customer') {
@@ -158,32 +163,39 @@ class OrderController extends Controller
     /**
      * PATCH /api/admin/orders/{order}/status
      *
-     * Updates the status of a link-building order and optionally notifies the client.
+     * Updates the status of any order type and optionally notifies the client.
+     * Does NOT create a tracking history entry — use POST /updates for that.
      */
-    public function updateStatus(Request $request, LinkBuildingOrder $order): JsonResponse
+    public function updateStatus(Request $request, string $order): JsonResponse
     {
-        $order->load('user');
+        [$order_model, ] = $this->findOrder($order);
+
+        if (! $order_model) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $order_model->load('user');
 
         $validated = $request->validate([
             'status'      => ['required', 'string', 'in:' . implode(',', LinkBuildingOrder::STATUSES)],
             'notify_user' => ['nullable', 'boolean'],
         ]);
 
-        $order->update(['status' => $validated['status']]);
+        $order_model->update(['status' => $validated['status']]);
 
-        if (($validated['notify_user'] ?? false) && $order->user) {
-            Mail::to($order->user->email)->queue(
+        if (($validated['notify_user'] ?? false) && $order_model->user) {
+            Mail::to($order_model->user->email)->queue(
                 new OrderStatusChangeMail(
-                    user: $order->user,
-                    new_status: $order->status,
-                    order_id: $order->id,
+                    user: $order_model->user,
+                    new_status: $order_model->status,
+                    order_id: $order_model->id,
                 )
             );
         }
 
         return response()->json([
-            'message' => 'Order status updated to ' . $validated['status'] . '.',
-            'status'  => $order->status,
+            'message' => 'Order status updated successfully.',
+            'status'  => $order_model->status,
         ]);
     }
 

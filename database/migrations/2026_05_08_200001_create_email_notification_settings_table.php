@@ -11,8 +11,8 @@ return new class extends Migration
         Schema::create('email_notification_settings', function (Blueprint $table) {
             $table->id();
             $table->boolean('notify_all_admins')->default(true);
-            $table->json('enabled_user_ids')->default('[]');
-            $table->json('custom_emails')->default('[]');
+            $table->json('enabled_user_ids')->nullable();
+            $table->json('custom_emails')->nullable();
             $table->timestamps();
         });
     }

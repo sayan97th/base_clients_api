@@ -12,6 +12,12 @@ class EmailNotificationSetting extends Model
         'custom_emails',
     ];
 
+    protected $attributes = [
+        'notify_all_admins' => true,
+        'enabled_user_ids'  => '[]',
+        'custom_emails'     => '[]',
+    ];
+
     protected function casts(): array
     {
         return [

@@ -15,9 +15,9 @@ class UpdateEmailNotificationSettingRequest extends FormRequest
     {
         return [
             'notify_all_admins'   => ['required', 'boolean'],
-            'enabled_user_ids'    => ['required', 'array'],
+            'enabled_user_ids'    => ['present', 'array'],
             'enabled_user_ids.*'  => ['integer', 'exists:users,id'],
-            'custom_emails'       => ['required', 'array'],
+            'custom_emails'       => ['present', 'array'],
             'custom_emails.*'     => ['string', 'email', 'max:255'],
         ];
     }

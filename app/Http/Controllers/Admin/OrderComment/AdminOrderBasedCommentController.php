@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Admin\OrderComment;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\StoreOrderSessionCommentRequest;
+use App\Jobs\SendClientCommentReplyNotificationJob;
 use App\Models\OrderSessionComment;
+use App\Models\User;
 use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
 use Illuminate\Http\JsonResponse;
@@ -41,8 +43,8 @@ class AdminOrderBasedCommentController extends Controller
 
     public function store(StoreOrderSessionCommentRequest $request, string $order_id): JsonResponse
     {
-        $user      = auth()->user();
-        $order     = $this->comment_service->findOrderDetails($order_id);
+        $user  = auth()->user();
+        $order = $this->comment_service->findOrderDetails($order_id);
 
         if (!$order) {
             return response()->json(['message' => 'Order not found.'], 404);
@@ -83,6 +85,39 @@ class AdminOrderBasedCommentController extends Controller
         $comment->load(['user']);
 
         $this->comment_service->notifyOnNewComment($comment, $user, $this->notification_service);
+
+        $client = User::find((int) $order->user_id);
+
+        if ($client) {
+            $original_comment_content = '';
+            $original_comment_date    = '';
+
+            if ($parent_id !== null) {
+                $parent_comment           = OrderSessionComment::find($parent_id);
+                $original_comment_content = $parent_comment?->content ?? '';
+                $original_comment_date    = $parent_comment?->created_at
+                    ? $parent_comment->created_at->format('F j, Y \a\t g:i A')
+                    : '';
+            }
+
+            $admin_name     = $user->first_name . ' ' . $user->last_name;
+            $admin_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
+            $reply_date     = $comment->created_at->format('F j, Y \a\t g:i A');
+
+            dispatch(new SendClientCommentReplyNotificationJob(
+                client_name:              $client->first_name,
+                client_email:             $client->email,
+                order_id:                 $order_id,
+                order_title:              $order->order_title ?? '',
+                original_comment_content: $original_comment_content,
+                original_comment_date:    $original_comment_date,
+                reply_content:            $comment->content,
+                reply_date:               $reply_date,
+                admin_name:               $admin_name,
+                admin_initials:           $admin_initials,
+                view_reply_url:           config('app.client_url') . '/orders/' . $order_id,
+            ))->onQueue('emails');
+        }
 
         return response()->json(
             ['data' => $this->comment_service->formatComment($comment)],

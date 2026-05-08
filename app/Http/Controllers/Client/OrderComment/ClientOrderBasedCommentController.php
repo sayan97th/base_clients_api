@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Client\OrderComment;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\StoreOrderSessionCommentRequest;
+use App\Jobs\SendAdminCommentNotificationJob;
 use App\Models\OrderSessionComment;
 use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
@@ -92,6 +93,22 @@ class ClientOrderBasedCommentController extends Controller
         $comment->load(['user']);
 
         $this->comment_service->notifyOnNewComment($comment, $user, $this->notification_service);
+
+        $client_name     = $user->first_name . ' ' . $user->last_name;
+        $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
+        $comment_date    = $comment->created_at->format('F j, Y \a\t g:i A');
+
+        dispatch(new SendAdminCommentNotificationJob(
+            order_id:         $order_id,
+            order_title:      $order->order_title ?? '',
+            client_name:      $client_name,
+            client_email:     $user->email,
+            client_initials:  $client_initials,
+            comment_content:  $comment->content,
+            comment_date:     $comment_date,
+            view_comment_url: config('app.admin_url') . '/admin/orders/' . $order_id,
+            settings_url:     config('app.admin_url') . '/admin/email-notifications',
+        ))->onQueue('emails');
 
         return response()->json(
             ['data' => $this->comment_service->formatComment($comment)],

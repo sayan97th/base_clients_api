@@ -4,6 +4,7 @@ namespace App\Http\Controllers\OrderSession;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OrderSessionComment\StoreOrderSessionCommentRequest;
+use App\Jobs\SendAdminCommentNotificationJob;
 use App\Models\OrderSessionComment;
 use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
@@ -59,17 +60,40 @@ class OrderSessionCommentController extends Controller
             }
         }
 
+        $is_admin = $this->comment_service->isAdminOrStaff($user);
+
         $comment = OrderSessionComment::create([
             'session_id'       => $session_id,
             'user_id'          => $user->id,
             'parent_id'        => $parent_id,
             'content'          => $validated['content'],
-            'is_admin_comment' => $this->comment_service->isAdminOrStaff($user),
+            'is_admin_comment' => $is_admin,
         ]);
 
         $comment->load(['user']);
 
         $this->comment_service->notifyOnNewComment($comment, $user, $this->notification_service);
+
+        if (!$is_admin) {
+            $session_details = $this->comment_service->findSessionDetails($session_id);
+            $order_id        = (string) ($session_details->id ?? '');
+            $order_title     = $session_details->order_title ?? '';
+            $client_name     = $user->first_name . ' ' . $user->last_name;
+            $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
+            $comment_date    = $comment->created_at->format('F j, Y \a\t g:i A');
+
+            dispatch(new SendAdminCommentNotificationJob(
+                order_id:         $order_id,
+                order_title:      $order_title,
+                client_name:      $client_name,
+                client_email:     $user->email,
+                client_initials:  $client_initials,
+                comment_content:  $comment->content,
+                comment_date:     $comment_date,
+                view_comment_url: config('app.admin_url') . '/admin/orders/' . $order_id,
+                settings_url:     config('app.admin_url') . '/admin/email-notifications',
+            ))->onQueue('emails');
+        }
 
         return response()->json(
             ['data' => $this->comment_service->formatComment($comment)],

@@ -56,6 +56,10 @@ return [
 
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
 
+    'admin_url' => env('APP_ADMIN_URL', 'http://localhost:3001'),
+
+    'client_url' => env('APP_CLIENT_URL', 'http://localhost:3000'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

@@ -49,7 +49,22 @@ class OrderSessionCommentService
         foreach (self::ORDER_TABLES as $table) {
             $order = DB::table($table)
                 ->where('id', $order_id)
-                ->first(['user_id', 'session_id']);
+                ->first(['user_id', 'session_id', 'order_title']);
+
+            if ($order) {
+                return $order;
+            }
+        }
+
+        return null;
+    }
+
+    public function findSessionDetails(string $session_id): ?object
+    {
+        foreach (self::ORDER_TABLES as $table) {
+            $order = DB::table($table)
+                ->where('session_id', $session_id)
+                ->first(['id', 'user_id', 'session_id', 'order_title']);
 
             if ($order) {
                 return $order;

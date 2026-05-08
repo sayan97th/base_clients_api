@@ -99,6 +99,7 @@ use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
+use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -401,6 +402,16 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::put('/news-placements/{id}',    [AdminNewsPlacementController::class, 'update']);
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
         });
+
+        // Email notification settings — GET: super_admin, admin, staff | PUT: super_admin, admin
+        Route::middleware('role:super_admin,admin,staff')->get(
+            'email-notification-settings',
+            [EmailNotificationSettingController::class, 'index']
+        );
+        Route::middleware('role:super_admin,admin')->put(
+            'email-notification-settings',
+            [EmailNotificationSettingController::class, 'update']
+        );
 
         // Order comments — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->group(function () {

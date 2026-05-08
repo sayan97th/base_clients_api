@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Invoice;
 
 use App\Http\Controllers\Controller;
+use App\Models\ContentBriefOrder;
+use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
+use App\Models\LinkBuildingOrder;
+use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
@@ -15,6 +19,13 @@ use Illuminate\Validation\Rule;
 class InvoicePayController extends Controller
 {
     private const PAYABLE_STATUSES = ['unpaid', 'overdue'];
+
+    private const ORDER_MODELS = [
+        LinkBuildingOrder::class,
+        NewContentOrder::class,
+        ContentOptimizationOrder::class,
+        ContentBriefOrder::class,
+    ];
 
     public function __construct(
         protected StripeService $stripe_service,
@@ -41,7 +52,7 @@ class InvoicePayController extends Controller
         try {
             /** @var User|null $user */
             $user = auth('api')->user();
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
@@ -79,23 +90,26 @@ class InvoicePayController extends Controller
             return response()->json(['message' => 'This invoice cannot be paid in its current status.'], 400);
         }
 
-        $payment_method = $request->input('payment_method');
+        $payment_method    = $request->input('payment_method');
+        $payment_intent_id = $request->input('payment_intent_id');
 
         if ($payment_method === 'account_balance') {
             $result = $this->payViaAccountBalance($invoice, $user);
         } else {
-            $result = $this->payViaCreditCard($invoice, $user, $request->input('payment_intent_id'));
+            $result = $this->payViaCreditCard($invoice, $user, $payment_intent_id);
         }
 
         if (! $result['success']) {
             return response()->json(['message' => $result['message']], $result['status_code'] ?? 422);
         }
 
+        $this->updatePaymentPendingOrders($invoice, $payment_intent_id);
+
         $invoice->refresh()->load(['lineItems', 'billedTo', 'couponDiscounts']);
 
         return response()->json([
             'data'    => $this->buildInvoiceDetail($invoice),
-            'message' => 'Payment processed successfully.',
+            'message' => 'Invoice paid successfully.',
         ]);
     }
 
@@ -123,6 +137,8 @@ class InvoicePayController extends Controller
         if (! $result['success']) {
             return response()->json(['message' => $result['error']], $status_code);
         }
+
+        $this->updatePaymentPendingOrders($invoice, $request->input('payment_intent_id'));
 
         return response()->json(['message' => $result['message']]);
     }
@@ -159,9 +175,10 @@ class InvoicePayController extends Controller
             ];
         }
 
-        $invoice->status         = 'paid';
-        $invoice->date_paid      = now();
-        $invoice->payment_method = 'Credit Card';
+        $invoice->status            = 'paid';
+        $invoice->date_paid         = now();
+        $invoice->payment_method    = 'Credit Card';
+        $invoice->payment_intent_id = $payment_intent_id;
         $invoice->save();
 
         InvoiceHistory::create([
@@ -175,6 +192,36 @@ class InvoicePayController extends Controller
         ]);
 
         return ['success' => true];
+    }
+
+    /**
+     * After a deferred invoice is paid, transition all associated
+     * payment_pending orders to pending so work can begin.
+     */
+    private function updatePaymentPendingOrders(Invoice $invoice, ?string $payment_intent_id): void
+    {
+        $attributes = [
+            'status'            => 'pending',
+            'payment_intent_id' => $payment_intent_id,
+        ];
+
+        if ($invoice->session_id) {
+            foreach (self::ORDER_MODELS as $model) {
+                $model::where('session_id', $invoice->session_id)
+                    ->where('status', 'payment_pending')
+                    ->update($attributes);
+            }
+
+            return;
+        }
+
+        if ($invoice->order_id) {
+            foreach (self::ORDER_MODELS as $model) {
+                $model::where('id', $invoice->order_id)
+                    ->where('status', 'payment_pending')
+                    ->update($attributes);
+            }
+        }
     }
 
     private function buildInvoiceDetail(Invoice $invoice): array

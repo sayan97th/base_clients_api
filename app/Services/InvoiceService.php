@@ -14,14 +14,14 @@ use Illuminate\Support\Facades\DB;
 
 class InvoiceService
 {
-    private const BULK_DISCOUNT_THRESHOLD = 10;
-    private const BULK_DISCOUNT_RATE      = 0.10;
+    private const BULK_DISCOUNT_THRESHOLD   = 10;
+    private const BULK_DISCOUNT_RATE        = 0.10;
+    public const DEFERRED_PAYMENT_DUE_DAYS = 7;
 
     /**
      * Create an invoice for a link building order.
      *
      * @param int|null $total_links  Total link quantity — used to determine bulk discount.
-     *                               When null, computed from order items.
      */
     public function createForLinkBuildingOrder(
         User $user,
@@ -29,7 +29,9 @@ class InvoiceService
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
         float $credit_amount = 0.0,
-        ?int $total_links = null
+        ?int $total_links = null,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         $order->loadMissing(['items.drTier', 'billing', 'orderCoupons.coupon']);
 
@@ -73,21 +75,25 @@ class InvoiceService
             line_items:      $line_items_data,
             billing_data:    $billing_data,
             order_coupons:   $order->orderCoupons,
+            invoice_status:  $invoice_status,
+            due_days:        $due_days,
         );
 
-        $payer_name = $user->full_name ?? $user->email;
+        if ($invoice_status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
 
-        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-            ->each(function (User $admin) use ($invoice, $payer_name, $order) {
-                event(new PaymentCompleted(
-                    $admin,
-                    $payer_name,
-                    $order->total_amount,
-                    $invoice->invoice_number,
-                    '/invoices/' . $invoice->unique_id,
-                    $invoice,
-                ));
-            });
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $order->total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
+        }
 
         return $invoice;
     }
@@ -97,7 +103,9 @@ class InvoiceService
         NewContentOrder $order,
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -136,6 +144,8 @@ class InvoiceService
             line_items:      $line_items_data,
             billing_data:    $billing_data,
             order_coupons:   $order->orderCoupons,
+            invoice_status:  $invoice_status,
+            due_days:        $due_days,
         );
     }
 
@@ -144,7 +154,9 @@ class InvoiceService
         ContentOptimizationOrder $order,
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -183,6 +195,8 @@ class InvoiceService
             line_items:      $line_items_data,
             billing_data:    $billing_data,
             order_coupons:   $order->orderCoupons,
+            invoice_status:  $invoice_status,
+            due_days:        $due_days,
         );
     }
 
@@ -191,7 +205,9 @@ class InvoiceService
         ContentBriefOrder $order,
         string $payment_method = 'Account Balance',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -230,6 +246,8 @@ class InvoiceService
             line_items:      $line_items_data,
             billing_data:    $billing_data,
             order_coupons:   $order->orderCoupons,
+            invoice_status:  $invoice_status,
+            due_days:        $due_days,
         );
     }
 
@@ -245,7 +263,9 @@ class InvoiceService
         array $product_entries,
         string $payment_method = 'Credit Card',
         string $currency_type = 'usd',
-        float $credit_amount = 0.0
+        float $credit_amount = 0.0,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         $all_line_items    = [];
         $subtotal_amount   = 0.0;
@@ -350,21 +370,25 @@ class InvoiceService
             line_items:      $all_line_items,
             billing_data:    $billing_data ?? [],
             order_coupons:   $all_order_coupons,
+            invoice_status:  $invoice_status,
+            due_days:        $due_days,
         );
 
-        $payer_name = $user->full_name ?? $user->email;
+        if ($invoice_status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
 
-        User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-            ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
-                event(new PaymentCompleted(
-                    $admin,
-                    $payer_name,
-                    $total_amount,
-                    $invoice->invoice_number,
-                    '/invoices/' . $invoice->unique_id,
-                    $invoice,
-                ));
-            });
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
+        }
 
         return $invoice;
     }
@@ -383,14 +407,17 @@ class InvoiceService
         array $billing_data,
         $order_coupons,
         ?string $session_id = null,
-        ?string $session_title = null
+        ?string $session_title = null,
+        string $invoice_status = 'paid',
+        int $due_days = 30
     ): Invoice {
         return DB::transaction(function () use (
             $user, $order_id, $session_id, $session_title,
             $payment_method, $currency_type,
             $subtotal_amount, $discount_amount, $discount_type,
             $total_amount, $credit_amount, $line_items,
-            $billing_data, $order_coupons
+            $billing_data, $order_coupons,
+            $invoice_status, $due_days
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
@@ -402,8 +429,8 @@ class InvoiceService
                 'order_id'        => $order_id,
                 'session_id'      => $session_id,
                 'session_title'   => $session_title,
-                'status'          => 'paid',
-                'payment_method'  => $payment_method,
+                'status'          => $invoice_status,
+                'payment_method'  => $invoice_status === 'paid' ? $payment_method : 'Pending',
                 'currency_type'   => $currency_type,
                 'subtotal_amount' => $subtotal_amount,
                 'discount_amount' => $discount_amount,
@@ -411,8 +438,8 @@ class InvoiceService
                 'total_amount'    => $total_amount,
                 'credit_amount'   => $credit_amount,
                 'date_issued'     => now(),
-                'date_due'        => now()->addDays(30),
-                'date_paid'       => now(),
+                'date_due'        => now()->addDays($due_days),
+                'date_paid'       => $invoice_status === 'paid' ? now() : null,
             ]);
 
             foreach ($line_items as $item) {

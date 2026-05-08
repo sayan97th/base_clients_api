@@ -20,6 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 class CartController extends Controller
@@ -50,11 +51,11 @@ class CartController extends Controller
         return response()->json(['message' => 'Cart saved successfully.']);
     }
 
-    public function destroy(Request $request): JsonResponse
+    public function destroy(Request $request): \Illuminate\Http\Response
     {
         Cart::where('user_id', $request->user()->id)->delete();
 
-        return response()->json(['message' => 'Cart cleared successfully.']);
+        return response()->noContent();
     }
 
     public function checkout(CheckoutCartRequest $request): JsonResponse
@@ -98,7 +99,7 @@ class CartController extends Controller
         $new_content_items          = $request->input('new_content_items');
         $content_brief_items        = $request->input('content_brief_items');
 
-        $session_id    = $request->input('session_id');
+        $session_id    = $request->input('session_id') ?? (string) Str::uuid();
         $session_title = $order_title;
 
         try {

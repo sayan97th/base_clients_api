@@ -16,7 +16,7 @@ class CheckoutCartRequest extends FormRequest
         return [
             'payment_method_id'   => ['required', 'string'],
             'total_amount'        => ['required', 'numeric', 'min:0.01'],
-            'session_id'          => ['required', 'string', 'uuid'],
+            'session_id'          => ['nullable', 'string', 'uuid'],
             'coupon_ids'          => ['nullable', 'array'],
             'coupon_ids.*'        => ['string', 'uuid'],
 
@@ -56,7 +56,7 @@ class CheckoutCartRequest extends FormRequest
             'new_content_items.*.unit_price'                         => ['required_with:new_content_items', 'numeric', 'min:0'],
             'new_content_items.*.intake_rows'                        => ['nullable', 'array'],
             'new_content_items.*.intake_rows.*.keyword_phrase'       => ['required_with:new_content_items.*.intake_rows', 'string', 'max:500'],
-            'new_content_items.*.intake_rows.*.type_of_content'      => ['required_with:new_content_items.*.intake_rows', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
+            'new_content_items.*.intake_rows.*.type_of_content'      => ['required_with:new_content_items.*.intake_rows', 'string', 'max:255'],
             'new_content_items.*.intake_rows.*.notes'                => ['nullable', 'string', 'max:1000'],
 
             'content_brief_items'                                         => ['nullable', 'array'],

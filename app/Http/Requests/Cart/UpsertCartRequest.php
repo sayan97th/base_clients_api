@@ -14,7 +14,7 @@ class UpsertCartRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'items'                              => ['required', 'array'],
+            'items'                              => ['present', 'array'],
             'items.*.cart_item_id'               => ['required', 'string', 'uuid'],
             'items.*.product_type'               => ['required', 'string', 'in:link_building,content_optimization,new_content,content_brief'],
             'items.*.tier_id'                    => ['required', 'string', 'max:255'],

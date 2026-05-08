@@ -141,7 +141,7 @@ class OrderSessionCommentService
                         $client,
                         'order_comment',
                         'A staff member replied to your order discussion.',
-                        ['link' => $client_link]
+                        ['link' => $client_link, 'mail_data' => ['skip_email' => true]]
                     );
                 }
             }
@@ -162,7 +162,7 @@ class OrderSessionCommentService
                         $admin,
                         'order_comment',
                         "{$author->first_name} {$author->last_name} posted a comment on an order.",
-                        ['link' => $admin_link]
+                        ['link' => $admin_link, 'mail_data' => ['skip_email' => true]]
                     );
                 }
             }

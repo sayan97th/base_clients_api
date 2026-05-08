@@ -175,6 +175,10 @@ class NotificationService
 
     protected function sendEmailIfEnabled(User $user, Notification $notification, array $mail_data = []): void
     {
+        if ($mail_data['skip_email'] ?? false) {
+            return;
+        }
+
         $preference = $user->notificationPreference;
 
         if (!$preference || $preference->shouldSendEmail()) {

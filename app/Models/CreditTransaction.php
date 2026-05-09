@@ -13,6 +13,7 @@ class CreditTransaction extends Model
         'type',
         'description',
         'created_by',
+        'payment_intent_id',
     ];
 
     protected function casts(): array

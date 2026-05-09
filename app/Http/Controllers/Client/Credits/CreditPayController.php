@@ -14,16 +14,16 @@ class CreditPayController extends Controller
     public function pay(Request $request): JsonResponse
     {
         $request->validate([
-            'amount'      => ['required', 'numeric', 'gt:0'],
-            'description' => ['nullable', 'string'],
+            'amount'      => ['required', 'integer', 'min:1'],
+            'description' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $amount = (float) $request->amount;
+        $amount = (int) $request->amount;
 
         /** @var User $user */
         $user = auth()->user();
 
-        if ($user->credit_balance < $amount) {
+        if ((int) $user->credit_balance < $amount) {
             return response()->json([
                 'message' => 'Insufficient credit balance.',
                 'errors'  => [
@@ -48,7 +48,7 @@ class CreditPayController extends Controller
 
         return response()->json([
             'success'           => true,
-            'remaining_balance' => (float) $user->credit_balance,
+            'remaining_balance' => (int) $user->credit_balance,
             'transaction_id'    => $transaction->id,
         ]);
     }

@@ -10,6 +10,7 @@ use App\Models\Cart;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
+use App\Models\CreditTransaction;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\User;
@@ -65,14 +66,30 @@ class CartController extends Controller
 
         $payment_method_id = $request->input('payment_method_id');
 
-        // Verify the Stripe PaymentIntent before writing anything to the database
-        $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id);
+        if (str_starts_with($payment_method_id, 'credits_')) {
+            $credit_transaction_id = (int) substr($payment_method_id, strlen('credits_'));
+            $credit_transaction    = CreditTransaction::find($credit_transaction_id);
 
-        if (!$stripe_result['verified']) {
-            return response()->json([
-                'message' => 'Payment could not be processed.',
-                'error'   => $stripe_result['message'] ?? 'Your payment could not be verified.',
-            ], 402);
+            if (
+                ! $credit_transaction
+                || $credit_transaction->user_id !== $user->id
+                || $credit_transaction->type !== 'debit'
+            ) {
+                return response()->json([
+                    'message' => 'Invalid credit payment reference.',
+                    'error'   => 'The provided credit transaction is not valid for this payment.',
+                ], 422);
+            }
+        } else {
+            // Verify the Stripe PaymentIntent before writing anything to the database
+            $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id);
+
+            if (! $stripe_result['verified']) {
+                return response()->json([
+                    'message' => 'Payment could not be processed.',
+                    'error'   => $stripe_result['message'] ?? 'Your payment could not be verified.',
+                ], 402);
+            }
         }
 
         // Validate that all submitted coupon IDs still exist

@@ -10,7 +10,7 @@ class CreditBalanceController extends Controller
     public function show(): JsonResponse
     {
         return response()->json([
-            'balance' => (float) auth()->user()->credit_balance,
+            'balance' => (int) auth()->user()->credit_balance,
         ]);
     }
 }

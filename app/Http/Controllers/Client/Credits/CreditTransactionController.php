@@ -17,7 +17,7 @@ class CreditTransactionController extends Controller
         return response()->json([
             'data'         => $paginator->map(fn (CreditTransaction $t) => [
                 'id'          => $t->id,
-                'amount'      => (float) $t->amount,
+                'amount'      => (int) $t->amount,
                 'type'        => $t->type,
                 'description' => $t->description,
                 'created_at'  => $t->created_at,

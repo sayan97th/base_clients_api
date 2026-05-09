@@ -105,8 +105,10 @@ use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
 use App\Http\Controllers\Admin\Credits\AdminCreditAssignController;
 use App\Http\Controllers\Admin\Credits\AdminCreditTransactionController;
 use App\Http\Controllers\Client\Credits\CreditBalanceController;
+use App\Http\Controllers\Client\Credits\CreditBalanceSummaryController;
 use App\Http\Controllers\Client\Credits\CreditTransactionController;
 use App\Http\Controllers\Client\Credits\CreditPayController;
+use App\Http\Controllers\Client\Credits\CreditApplyDiscountController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -605,9 +607,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Credits
     Route::middleware('role:client')->prefix('credits')->group(function () {
-        Route::get('/balance',      [CreditBalanceController::class,     'show']);
-        Route::get('/transactions', [CreditTransactionController::class, 'index']);
-        Route::post('/pay',         [CreditPayController::class,         'pay']);
+        Route::get('/balance',          [CreditBalanceController::class,        'show']);
+        Route::get('/balance-summary',  [CreditBalanceSummaryController::class, 'show']);
+        Route::get('/transactions',     [CreditTransactionController::class,    'index']);
+        Route::post('/pay',             [CreditPayController::class,            'pay']);
+        Route::post('/apply-discount',  [CreditApplyDiscountController::class,  'apply']);
     });
 
     // Stripe

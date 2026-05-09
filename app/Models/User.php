@@ -38,6 +38,7 @@ class User extends Authenticatable implements JWTSubject
         'two_factor_recovery_codes',
         'staff_capacity',
         'presence_color',
+        'credit_balance',
     ];
 
     protected $hidden = [
@@ -60,7 +61,13 @@ class User extends Authenticatable implements JWTSubject
             'two_factor_enabled'    => 'boolean',
             'two_factor_enabled_at' => 'datetime',
             'two_factor_secret'     => 'encrypted',
+            'credit_balance'        => 'decimal:2',
         ];
+    }
+
+    public function creditTransactions(): HasMany
+    {
+        return $this->hasMany(CreditTransaction::class);
     }
 
     public function bans(): HasMany

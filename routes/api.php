@@ -100,6 +100,13 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
+use App\Http\Controllers\Admin\Credits\AdminCreditStatsController;
+use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
+use App\Http\Controllers\Admin\Credits\AdminCreditAssignController;
+use App\Http\Controllers\Admin\Credits\AdminCreditTransactionController;
+use App\Http\Controllers\Client\Credits\CreditBalanceController;
+use App\Http\Controllers\Client\Credits\CreditTransactionController;
+use App\Http\Controllers\Client\Credits\CreditPayController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -403,6 +410,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
         });
 
+        // Credits management — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('credits')->group(function () {
+            Route::get('/stats',        [AdminCreditStatsController::class,       'index']);
+            Route::get('/users',        [AdminCreditUserSearchController::class,  'index']);
+            Route::post('/assign',      [AdminCreditAssignController::class,      'assign']);
+            Route::get('/transactions', [AdminCreditTransactionController::class, 'index']);
+        });
+
         // Email notification settings — GET: super_admin, admin, staff | PUT: super_admin, admin
         Route::middleware('role:super_admin,admin,staff')->get(
             'email-notification-settings',
@@ -586,6 +601,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     Route::prefix('notification-preferences')->group(function () {
         Route::get('/', [NotificationPreferenceController::class, 'show']);
         Route::put('/', [NotificationPreferenceController::class, 'update']);
+    });
+
+    // Credits
+    Route::middleware('role:client')->prefix('credits')->group(function () {
+        Route::get('/balance',      [CreditBalanceController::class,     'show']);
+        Route::get('/transactions', [CreditTransactionController::class, 'index']);
+        Route::post('/pay',         [CreditPayController::class,         'pay']);
     });
 
     // Stripe

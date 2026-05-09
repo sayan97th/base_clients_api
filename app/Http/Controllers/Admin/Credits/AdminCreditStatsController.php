@@ -24,9 +24,9 @@ class AdminCreditStatsController extends Controller
             ->sum('amount');
 
         return response()->json([
-            'total_credits_issued'    => (float) $total_credits_issued,
+            'total_credits_issued'    => (int) $total_credits_issued,
             'users_with_credits'      => $users_with_credits,
-            'credits_used_this_month' => (float) $credits_used_this_month,
+            'credits_used_this_month' => (int) $credits_used_this_month,
         ]);
     }
 }

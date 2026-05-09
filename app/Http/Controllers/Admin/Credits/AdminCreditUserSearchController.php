@@ -12,30 +12,41 @@ class AdminCreditUserSearchController extends Controller
     public function index(Request $request): JsonResponse
     {
         $request->validate([
-            'search' => ['required', 'string'],
-            'type'   => ['required', 'string', 'in:client'],
+            'type'     => ['required', 'string', 'in:client'],
+            'search'   => ['nullable', 'string'],
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'sort_by'  => ['nullable', 'string'],
+            'sort_dir' => ['nullable', 'string'],
         ]);
 
-        $search = $request->search;
+        $allowed_sort = ['first_name', 'credit_balance'];
+        $sort_by      = in_array($request->sort_by, $allowed_sort, true) ? $request->sort_by : 'first_name';
+        $sort_dir     = $request->sort_dir === 'desc' ? 'desc' : 'asc';
 
         $users = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
-            ->where(function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
-                  ->orWhere('last_name', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%");
+            ->when($request->filled('search'), function ($q) use ($request) {
+                $term = '%' . $request->search . '%';
+                $q->where(function ($q) use ($term) {
+                    $q->where('first_name', 'like', $term)
+                      ->orWhere('last_name', 'like', $term)
+                      ->orWhere('email', 'like', $term);
+                });
             })
             ->select(['id', 'first_name', 'last_name', 'email', 'credit_balance'])
-            ->limit(20)
-            ->get();
+            ->orderBy($sort_by, $sort_dir)
+            ->paginate(20);
 
         return response()->json([
-            'data' => $users->map(fn (User $u) => [
+            'data'         => $users->map(fn (User $u) => [
                 'id'             => $u->id,
                 'first_name'     => $u->first_name,
                 'last_name'      => $u->last_name,
                 'email'          => $u->email,
-                'credit_balance' => (float) $u->credit_balance,
+                'credit_balance' => (int) $u->credit_balance,
             ]),
+            'current_page' => $users->currentPage(),
+            'last_page'    => $users->lastPage(),
+            'total'        => $users->total(),
         ]);
     }
 }

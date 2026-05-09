@@ -12,7 +12,7 @@ class CreditTransactionController extends Controller
     {
         $paginator = CreditTransaction::where('user_id', auth()->id())
             ->orderBy('created_at', 'desc')
-            ->paginate(15);
+            ->paginate(10);
 
         return response()->json([
             'data'         => $paginator->map(fn (CreditTransaction $t) => [

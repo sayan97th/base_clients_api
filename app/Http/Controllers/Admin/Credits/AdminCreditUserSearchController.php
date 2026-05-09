@@ -12,7 +12,7 @@ class AdminCreditUserSearchController extends Controller
     public function index(Request $request): JsonResponse
     {
         $request->validate([
-            'type'     => ['required', 'string', 'in:client'],
+            'type'     => ['nullable', 'string', 'in:client'],
             'search'   => ['nullable', 'string'],
             'page'     => ['nullable', 'integer', 'min:1'],
             'sort_by'  => ['nullable', 'string'],

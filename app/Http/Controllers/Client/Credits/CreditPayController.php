@@ -23,26 +23,33 @@ class CreditPayController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        if ((int) $user->credit_balance < $amount) {
+        try {
+            $transaction = DB::transaction(function () use ($user, $amount, $request) {
+                User::where('id', $user->id)->lockForUpdate()->first();
+                $user->refresh();
+
+                if ((int) $user->credit_balance < $amount) {
+                    throw new \DomainException('insufficient_balance');
+                }
+
+                $user->decrement('credit_balance', $amount);
+
+                return CreditTransaction::create([
+                    'user_id'     => $user->id,
+                    'amount'      => $amount,
+                    'type'        => 'debit',
+                    'description' => $request->input('description'),
+                    'created_by'  => null,
+                ]);
+            });
+        } catch (\DomainException) {
             return response()->json([
-                'message' => 'Insufficient credit balance.',
+                'message' => 'Insufficient credits.',
                 'errors'  => [
-                    'amount' => ['The requested amount exceeds your available credit balance.'],
+                    'amount' => ['You do not have enough credits to complete this payment.'],
                 ],
             ], 422);
         }
-
-        $transaction = DB::transaction(function () use ($user, $amount, $request) {
-            $user->decrement('credit_balance', $amount);
-
-            return CreditTransaction::create([
-                'user_id'     => $user->id,
-                'amount'      => $amount,
-                'type'        => 'debit',
-                'description' => $request->description,
-                'created_by'  => null,
-            ]);
-        });
 
         $user->refresh();
 

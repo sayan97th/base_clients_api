@@ -28,9 +28,9 @@ class CreditApplyDiscountController extends Controller
 
         if ((int) $user->credit_balance < $amount) {
             return response()->json([
-                'message' => 'Insufficient credit balance.',
+                'message' => 'Insufficient credits.',
                 'errors'  => [
-                    'amount' => ['The requested amount exceeds your available credit balance.'],
+                    'amount' => ['You do not have enough credits to complete this payment.'],
                 ],
             ], 422);
         }

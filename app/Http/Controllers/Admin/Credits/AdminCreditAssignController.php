@@ -18,7 +18,7 @@ class AdminCreditAssignController extends Controller
             'user_id'     => ['required', 'integer', 'exists:users,id'],
             'amount'      => ['required', 'integer', 'min:1'],
             'type'        => ['required', 'string', 'in:credit,debit'],
-            'description' => ['nullable', 'string', 'max:500'],
+            'description' => ['nullable', 'string', 'max:255'],
         ]);
 
         $amount = (int) $request->amount;

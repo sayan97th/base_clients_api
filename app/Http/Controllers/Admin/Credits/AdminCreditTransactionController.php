@@ -34,7 +34,7 @@ class AdminCreditTransactionController extends Controller
                     'last_name'  => $t->user->last_name,
                     'email'      => $t->user->email,
                 ] : null,
-                'amount'      => (float) $t->amount,
+                'amount'      => (int) $t->amount,
                 'type'        => $t->type,
                 'description' => $t->description,
                 'created_by'  => $t->created_by,

@@ -27,7 +27,7 @@ class CreditPayController extends Controller
             return response()->json([
                 'message' => 'Insufficient credit balance.',
                 'errors'  => [
-                    'amount' => ['Your credit balance is insufficient for this transaction.'],
+                    'amount' => ['The requested amount exceeds your available credit balance.'],
                 ],
             ], 422);
         }

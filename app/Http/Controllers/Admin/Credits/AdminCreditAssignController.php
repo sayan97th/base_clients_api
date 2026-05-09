@@ -16,12 +16,12 @@ class AdminCreditAssignController extends Controller
     {
         $request->validate([
             'user_id'     => ['required', 'integer', 'exists:users,id'],
-            'amount'      => ['required', 'numeric', 'min:0.01'],
+            'amount'      => ['required', 'integer', 'min:1'],
             'type'        => ['required', 'string', 'in:credit,debit'],
             'description' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $amount = (float) $request->amount;
+        $amount = (int) $request->amount;
 
         try {
             $result = DB::transaction(function () use ($request, $amount) {
@@ -33,10 +33,8 @@ class AdminCreditAssignController extends Controller
                     throw new ModelNotFoundException();
                 }
 
-                if ($request->type === 'debit' && $user->credit_balance < $amount) {
-                    throw new \DomainException(
-                        "Insufficient credit balance. The client only has " . (int) $user->credit_balance . " credits available."
-                    );
+                if ($request->type === 'debit' && (int) $user->credit_balance < $amount) {
+                    throw new \DomainException('insufficient_balance');
                 }
 
                 if ($request->type === 'credit') {
@@ -57,8 +55,13 @@ class AdminCreditAssignController extends Controller
             });
         } catch (ModelNotFoundException) {
             return response()->json(['message' => 'User not found.'], 404);
-        } catch (\DomainException $e) {
-            return response()->json(['message' => $e->getMessage()], 400);
+        } catch (\DomainException) {
+            return response()->json([
+                'message' => 'Insufficient credit balance.',
+                'errors'  => [
+                    'amount' => ['Cannot deduct more credits than the user currently holds.'],
+                ],
+            ], 422);
         }
 
         $transaction = $result['transaction']->load('user:id,first_name,last_name,email');
@@ -76,7 +79,7 @@ class AdminCreditAssignController extends Controller
                     'last_name'  => $transaction->user->last_name,
                     'email'      => $transaction->user->email,
                 ],
-                'amount'      => (float) $transaction->amount,
+                'amount'      => (int) $transaction->amount,
                 'type'        => $transaction->type,
                 'description' => $transaction->description,
                 'created_by'  => $transaction->created_by,

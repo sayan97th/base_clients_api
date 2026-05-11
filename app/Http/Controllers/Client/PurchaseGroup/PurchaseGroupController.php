@@ -18,10 +18,12 @@ class PurchaseGroupController extends Controller
         $group = PurchaseGroup::updateOrCreate(
             ['purchase_group_id' => $request->purchase_group_id],
             [
-                'user_id'      => $user->id,
-                'order_title'  => $request->order_title,
-                'total_amount' => $request->total_amount,
-                'created_at'   => $request->created_at,
+                'user_id'           => $user->id,
+                'order_title'       => $request->order_title,
+                'total_amount'      => $request->total_amount,
+                'payment_status'    => $request->payment_status,
+                'invoice_unique_id' => $request->invoice_unique_id,
+                'created_at'        => $request->created_at,
             ]
         );
 
@@ -87,6 +89,8 @@ class PurchaseGroupController extends Controller
                 'product_type' => $order->product_type,
                 'total_amount' => $order->total_amount,
             ])->values(),
+            'payment_status'    => $group->payment_status,
+            'invoice_unique_id' => $group->invoice_unique_id,
         ];
     }
 }

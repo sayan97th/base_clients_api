@@ -27,10 +27,10 @@ class CouponValidationController extends Controller
         $dr_tier_ids     = $request->dr_tier_ids ?? [];
         $dr_tier_amounts = $request->dr_tier_amounts ?? [];
 
-        if ($order_amount < 1000.00) {
+        if ($order_amount < 500.00) {
             return response()->json($this->buildInvalidResponse(
                 $code,
-                'A minimum cart total of $1,000.00 is required to apply a promo code.'
+                'A minimum cart total of $500.00 is required to apply a promo code.'
             ));
         }
 

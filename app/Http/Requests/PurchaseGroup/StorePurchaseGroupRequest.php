@@ -22,6 +22,8 @@ class StorePurchaseGroupRequest extends FormRequest
             'orders.*.order_id'         => ['required', 'uuid'],
             'orders.*.product_type'     => ['required', 'string', 'in:link_building,new_content,content_optimization,content_brief'],
             'orders.*.total_amount'     => ['required', 'numeric', 'min:0'],
+            'payment_status'            => ['required', 'string', 'in:paid,pending'],
+            'invoice_unique_id'         => ['nullable', 'string', 'max:50'],
         ];
     }
 }

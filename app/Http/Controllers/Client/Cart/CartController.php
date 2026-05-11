@@ -49,14 +49,14 @@ class CartController extends Controller
             ['payload' => $request->validated()]
         );
 
-        return response()->json(['message' => 'Cart saved.']);
+        return response()->json(['message' => 'Cart saved successfully.']);
     }
 
     public function destroy(Request $request): JsonResponse
     {
         Cart::where('user_id', $request->user()->id)->delete();
 
-        return response()->json(['message' => 'Cart cleared.']);
+        return response()->json(['message' => 'Cart deleted successfully.']);
     }
 
     public function checkout(CheckoutCartRequest $request): JsonResponse
@@ -235,7 +235,7 @@ class CartController extends Controller
         return response()->json(['data' => [
             'session_id' => $session_id,
             'orders'     => $response_orders,
-        ]], 201);
+        ]]);
     }
 
     private function createLinkBuildingOrder(

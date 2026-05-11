@@ -26,14 +26,23 @@ class AdminDiscountController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $discount = Discount::findOrFail($id);
+        $discount = Discount::find($id);
+
+        if (! $discount) {
+            return response()->json(['message' => 'Discount not found.'], 404);
+        }
 
         return response()->json(['data' => $discount]);
     }
 
     public function update(UpdateDiscountRequest $request, string $id): JsonResponse
     {
-        $discount = Discount::findOrFail($id);
+        $discount = Discount::find($id);
+
+        if (! $discount) {
+            return response()->json(['message' => 'Discount not found.'], 404);
+        }
+
         $discount->update($request->validated());
 
         return response()->json(['data' => $discount->fresh()]);
@@ -41,9 +50,14 @@ class AdminDiscountController extends Controller
 
     public function destroy(string $id): JsonResponse
     {
-        $discount = Discount::findOrFail($id);
+        $discount = Discount::find($id);
+
+        if (! $discount) {
+            return response()->json(['message' => 'Discount not found.'], 404);
+        }
+
         $discount->delete();
 
-        return response()->json(null, 204);
+        return response()->json(['message' => 'Discount deleted successfully.']);
     }
 }

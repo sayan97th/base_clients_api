@@ -117,8 +117,10 @@ class DeferredCartController extends Controller
             $coupon->increment('times_used');
         }
 
+        $invoice = null;
+
         if ($session_id && count($created_orders) > 1) {
-            $this->invoiceService->createForMultiProductSession(
+            $invoice = $this->invoiceService->createForMultiProductSession(
                 $user,
                 $session_id,
                 $session_title,
@@ -130,8 +132,8 @@ class DeferredCartController extends Controller
                 InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
             );
         } else {
-            $entry = $created_orders[0];
-            match ($entry['product_type']) {
+            $entry   = $created_orders[0];
+            $invoice = match ($entry['product_type']) {
                 'link_building' => $this->invoiceService->createForLinkBuildingOrder(
                     $user,
                     $entry['model'],
@@ -180,9 +182,10 @@ class DeferredCartController extends Controller
         ], $created_orders);
 
         return response()->json(['data' => [
-            'session_id' => $session_id,
-            'orders'     => $response_orders,
-        ]], 201);
+            'session_id'        => $session_id,
+            'orders'            => $response_orders,
+            'invoice_unique_id' => $invoice?->unique_id,
+        ]]);
     }
 
     private function createLinkBuildingOrder(

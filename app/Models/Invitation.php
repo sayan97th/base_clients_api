@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Invitation extends Model
 {
-    const ALLOWED_ROLES = ['admin', 'staff'];
+    const ALLOWED_ROLES = ['admin', 'staff', 'client'];
 
     protected $fillable = [
         'email',

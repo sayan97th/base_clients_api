@@ -77,6 +77,8 @@ use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefOrderController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
+use App\Http\Controllers\Admin\Client\ClientInvitationController as AdminClientInvitationController;
+use App\Http\Controllers\Auth\AcceptClientInvitationController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageSubscriptionController;
 use App\Http\Controllers\Admin\ScheduledCall\AdminScheduledCallAppointmentController;
@@ -154,6 +156,12 @@ Route::prefix('admin')->group(function () {
 
     // News placements CSV export — auth handled via ?token= query parameter
     Route::get('news-placements/export', [AdminNewsPlacementController::class, 'export']);
+});
+
+// ─── Client invitation public routes (no auth required) ──────────────────────
+Route::prefix('client-invitations')->group(function () {
+    Route::get('{token}/validate', [AcceptClientInvitationController::class, 'validateToken']);
+    Route::post('accept', [AcceptClientInvitationController::class, 'accept']);
 });
 
 // ─── Authenticated routes ─────────────────────────────────────────────────────
@@ -416,6 +424,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Client management — super_admin, admin only
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('clients', [AdminClientController::class, 'store']);
+
+            // Client invitations
+            Route::get('client-invitations', [AdminClientInvitationController::class, 'index']);
+            Route::post('client-invitations', [AdminClientInvitationController::class, 'store']);
+            Route::post('client-invitations/{id}/resend', [AdminClientInvitationController::class, 'resend']);
+            Route::delete('client-invitations/{id}', [AdminClientInvitationController::class, 'destroy']);
         });
 
         // Credits management — super_admin, admin, staff

@@ -7,6 +7,8 @@ use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBac
 use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
+use App\Http\Controllers\Admin\Discount\AdminDiscountController;
+use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
@@ -328,6 +330,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
         });
 
+        // Discounts — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('discounts')->group(function () {
+            Route::get('/', [AdminDiscountController::class, 'index']);
+            Route::post('/', [AdminDiscountController::class, 'store']);
+            Route::get('/{id}', [AdminDiscountController::class, 'show']);
+            Route::patch('/{id}', [AdminDiscountController::class, 'update']);
+            Route::delete('/{id}', [AdminDiscountController::class, 'destroy']);
+        });
+
         // Content Brief Tiers — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('content-brief-tiers')->group(function () {
             Route::get('/',        [AdminContentBriefTierController::class, 'index']);
@@ -642,6 +653,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Coupon validation
     Route::post('/coupons/validate', [CouponValidationController::class, 'validate']);
+
+    // Active discounts — available to all authenticated users
+    Route::get('/discounts/active', [ClientDiscountController::class, 'active']);
 
     // Resources
     Route::get('/resources', [ResourceController::class, 'index']);

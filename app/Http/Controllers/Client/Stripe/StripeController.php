@@ -21,7 +21,7 @@ class StripeController extends Controller
     public function createPaymentIntent(Request $request): JsonResponse
     {
         $request->validate([
-            'amount_cents'              => ['required', 'integer', 'min:1'],
+            'amount_cents'              => ['required', 'integer', 'min:50'],
             'stripe_payment_method_id'  => ['nullable', 'string'],
             'metadata'                  => ['nullable', 'array'],
         ]);

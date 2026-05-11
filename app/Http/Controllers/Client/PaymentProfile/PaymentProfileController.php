@@ -27,7 +27,7 @@ class PaymentProfileController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'stripe_payment_method_id'        => ['required', 'string', 'unique:payment_profiles,stripe_payment_method_id'],
+            'stripe_payment_method_id'        => ['required', 'string'],
             'cardholder_name'                 => ['nullable', 'string', 'max:255'],
             'is_default'                      => ['required', 'boolean'],
             'billing_address'                 => ['nullable', 'array'],
@@ -38,6 +38,16 @@ class PaymentProfileController extends Controller
             'billing_address.country'         => ['nullable', 'string', 'max:100'],
             'billing_address.company'         => ['nullable', 'string', 'max:255'],
         ]);
+
+        $already_saved = PaymentProfile::where('user_id', auth()->id())
+            ->where('stripe_payment_method_id', $request->stripe_payment_method_id)
+            ->exists();
+
+        if ($already_saved) {
+            return response()->json([
+                'message' => 'This payment method is already saved to your account.',
+            ], 409);
+        }
 
         $stripe_result = $this->stripeService->retrievePaymentMethod($request->stripe_payment_method_id);
 

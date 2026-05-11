@@ -26,15 +26,6 @@ class CreditApplyDiscountController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        if ((int) $user->credit_balance < $amount) {
-            return response()->json([
-                'message' => 'Insufficient credits.',
-                'errors'  => [
-                    'amount' => ['You do not have enough credits to complete this payment.'],
-                ],
-            ], 422);
-        }
-
         if ($payment_intent_id) {
             $already_used = CreditTransaction::where('payment_intent_id', $payment_intent_id)->exists();
 
@@ -48,19 +39,34 @@ class CreditApplyDiscountController extends Controller
             }
         }
 
-        $transaction = DB::transaction(function () use ($user, $amount, $payment_intent_id, $description) {
-            User::where('id', $user->id)->lockForUpdate()->first();
-            $user->decrement('credit_balance', $amount);
+        try {
+            $transaction = DB::transaction(function () use ($user, $amount, $payment_intent_id, $description) {
+                User::where('id', $user->id)->lockForUpdate()->first();
+                $user->refresh();
 
-            return CreditTransaction::create([
-                'user_id'           => $user->id,
-                'amount'            => $amount,
-                'type'              => 'debit',
-                'description'       => $description,
-                'payment_intent_id' => $payment_intent_id,
-                'created_by'        => null,
-            ]);
-        });
+                if ((int) $user->credit_balance < $amount) {
+                    throw new \DomainException('insufficient_balance');
+                }
+
+                $user->decrement('credit_balance', $amount);
+
+                return CreditTransaction::create([
+                    'user_id'           => $user->id,
+                    'amount'            => $amount,
+                    'type'              => 'debit',
+                    'description'       => $description,
+                    'payment_intent_id' => $payment_intent_id,
+                    'created_by'        => null,
+                ]);
+            });
+        } catch (\DomainException) {
+            return response()->json([
+                'message' => 'Insufficient credits.',
+                'errors'  => [
+                    'amount' => ['You do not have enough credits to complete this payment.'],
+                ],
+            ], 422);
+        }
 
         $user->refresh();
 

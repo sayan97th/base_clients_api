@@ -64,6 +64,21 @@ class CartController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
+        $session_id = $request->input('session_id');
+
+        if ($session_id) {
+            $already_processed = LinkBuildingOrder::where('session_id', $session_id)->exists()
+                || ContentOptimizationOrder::where('session_id', $session_id)->exists()
+                || NewContentOrder::where('session_id', $session_id)->exists()
+                || ContentBriefOrder::where('session_id', $session_id)->exists();
+
+            if ($already_processed) {
+                return response()->json([
+                    'message' => 'This checkout session has already been processed.',
+                ], 409);
+            }
+        }
+
         $payment_method_id = $request->input('payment_method_id');
 
         if (str_starts_with($payment_method_id, 'credits_')) {

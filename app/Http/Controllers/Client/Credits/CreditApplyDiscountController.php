@@ -16,7 +16,7 @@ class CreditApplyDiscountController extends Controller
         $request->validate([
             'amount'            => ['required', 'integer', 'min:1'],
             'payment_intent_id' => ['nullable', 'string', 'max:255'],
-            'description'       => ['nullable', 'string', 'max:255'],
+            'description'       => ['nullable', 'string', 'max:500'],
         ]);
 
         $amount            = (int) $request->input('amount');

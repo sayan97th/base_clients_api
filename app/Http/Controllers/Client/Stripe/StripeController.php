@@ -65,7 +65,7 @@ class StripeController extends Controller
             $customer_result = $this->stripeService->findOrCreateCustomer($user);
 
             if (!$customer_result['success']) {
-                return response()->json(['error' => 'Failed to create payment intent.'], 422);
+                return response()->json(['error' => $customer_result['message'] ?? 'Failed to create payment intent.'], 400);
             }
 
             $stripe_customer_id = $customer_result['customer_id'];
@@ -79,7 +79,7 @@ class StripeController extends Controller
         );
 
         if (!$result['success']) {
-            return response()->json(['error' => 'Failed to create payment intent.'], 422);
+            return response()->json(['error' => $result['message'] ?? 'Failed to create payment intent.'], 400);
         }
 
         return response()->json([

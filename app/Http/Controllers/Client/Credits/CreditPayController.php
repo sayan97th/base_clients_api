@@ -15,7 +15,7 @@ class CreditPayController extends Controller
     {
         $request->validate([
             'amount'      => ['required', 'integer', 'min:1'],
-            'description' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:500'],
         ]);
 
         $amount = (int) $request->amount;
@@ -23,12 +23,16 @@ class CreditPayController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
+        $current_balance = null;
+
         try {
-            $transaction = DB::transaction(function () use ($user, $amount, $request) {
+            $transaction = DB::transaction(function () use ($user, $amount, $request, &$current_balance) {
                 User::where('id', $user->id)->lockForUpdate()->first();
                 $user->refresh();
 
-                if ((int) $user->credit_balance < $amount) {
+                $current_balance = (int) $user->credit_balance;
+
+                if ($current_balance < $amount) {
                     throw new \DomainException('insufficient_balance');
                 }
 
@@ -46,7 +50,9 @@ class CreditPayController extends Controller
             return response()->json([
                 'message' => 'Insufficient credit balance.',
                 'errors'  => [
-                    'amount' => ['The requested amount exceeds your available balance.'],
+                    'amount' => [
+                        "Your current balance ({$current_balance} credits) is not enough to cover the requested amount ({$amount} credits).",
+                    ],
                 ],
             ], 422);
         }

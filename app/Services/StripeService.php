@@ -30,7 +30,7 @@ class StripeService
                 'card'    => [
                     'brand'     => $payment_method->card->brand,
                     'last4'     => $payment_method->card->last4,
-                    'exp_month' => str_pad((string) $payment_method->card->exp_month, 2, '0', STR_PAD_LEFT),
+                    'exp_month' => (string) $payment_method->card->exp_month,
                     'exp_year'  => (string) $payment_method->card->exp_year,
                 ],
             ];
@@ -38,6 +38,27 @@ class StripeService
             return [
                 'success' => false,
                 'message' => 'Invalid payment method: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Attach a PaymentMethod to a Stripe Customer.
+     *
+     * Returns ['success' => true] or ['success' => false, 'message' => '...']
+     */
+    public function attachPaymentMethod(string $payment_method_id, string $stripe_customer_id): array
+    {
+        try {
+            $this->client->paymentMethods->attach($payment_method_id, [
+                'customer' => $stripe_customer_id,
+            ]);
+
+            return ['success' => true];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
             ];
         }
     }

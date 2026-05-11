@@ -27,7 +27,7 @@ class PaymentProfileController extends Controller
     public function store(Request $request): JsonResponse
     {
         $request->validate([
-            'stripe_payment_method_id'        => ['required', 'string'],
+            'stripe_payment_method_id'        => ['required', 'string', 'starts_with:pm_'],
             'cardholder_name'                 => ['nullable', 'string', 'max:255'],
             'is_default'                      => ['required', 'boolean'],
             'billing_address'                 => ['nullable', 'array'],
@@ -35,7 +35,7 @@ class PaymentProfileController extends Controller
             'billing_address.city'            => ['nullable', 'string', 'max:255'],
             'billing_address.state'           => ['nullable', 'string', 'max:255'],
             'billing_address.postal_code'     => ['nullable', 'string', 'max:20'],
-            'billing_address.country'         => ['nullable', 'string', 'max:100'],
+            'billing_address.country'         => ['nullable', 'string', 'size:2'],
             'billing_address.company'         => ['nullable', 'string', 'max:255'],
         ]);
 
@@ -55,8 +55,25 @@ class PaymentProfileController extends Controller
             return response()->json(['message' => 'Failed to retrieve card details from Stripe.'], 500);
         }
 
+        /** @var \App\Models\User $user */
+        $user            = auth()->user();
+        $customer_result = $this->stripeService->findOrCreateCustomer($user);
+
+        if (!$customer_result['success']) {
+            return response()->json(['message' => 'Failed to link payment method to your account.'], 500);
+        }
+
+        $attach_result = $this->stripeService->attachPaymentMethod(
+            $request->stripe_payment_method_id,
+            $customer_result['customer_id']
+        );
+
+        if (!$attach_result['success']) {
+            return response()->json(['message' => 'Failed to attach payment method to your account.'], 500);
+        }
+
         $card       = $stripe_result['card'];
-        $user_id    = auth()->id();
+        $user_id    = $user->id;
         $has_cards  = PaymentProfile::where('user_id', $user_id)->exists();
         $is_default = $has_cards ? (bool) $request->is_default : true;
         $billing    = $request->billing_address ?? [];
@@ -86,7 +103,7 @@ class PaymentProfileController extends Controller
 
         return response()->json([
             'data'    => $this->formatProfile($profile),
-            'message' => 'Payment profile saved successfully.',
+            'message' => 'Payment method saved successfully.',
         ], 201);
     }
 
@@ -94,12 +111,14 @@ class PaymentProfileController extends Controller
     {
         $user_id = auth()->id();
 
-        $profile = PaymentProfile::where('id', $id)
-            ->where('user_id', $user_id)
-            ->first();
+        $profile = PaymentProfile::find($id);
 
         if (!$profile) {
-            return response()->json(['message' => 'Payment method not found.'], 404);
+            return response()->json(['message' => 'Payment profile not found.'], 404);
+        }
+
+        if ($profile->user_id !== $user_id) {
+            return response()->json(['message' => 'This payment method does not belong to you.'], 403);
         }
 
         $this->stripeService->detachPaymentMethod($profile->stripe_payment_method_id);
@@ -125,12 +144,14 @@ class PaymentProfileController extends Controller
 
         $user_id = auth()->id();
 
-        $profile = PaymentProfile::where('id', $id)
-            ->where('user_id', $user_id)
-            ->first();
+        $profile = PaymentProfile::find($id);
 
         if (!$profile) {
-            return response()->json(['message' => 'Payment method not found.'], 404);
+            return response()->json(['message' => 'Payment profile not found.'], 404);
+        }
+
+        if ($profile->user_id !== $user_id) {
+            return response()->json(['message' => 'This payment method does not belong to you.'], 403);
         }
 
         DB::transaction(function () use ($user_id, $profile) {

@@ -114,7 +114,7 @@ class PaymentProfileController extends Controller
                 ?->update(['is_default' => true]);
         }
 
-        return response()->noContent();
+        return response()->json(['message' => 'Payment method removed successfully.']);
     }
 
     public function setDefault(string $id, Request $request): JsonResponse

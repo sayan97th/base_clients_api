@@ -44,9 +44,9 @@ class CreditPayController extends Controller
             });
         } catch (\DomainException) {
             return response()->json([
-                'message' => 'Insufficient credits.',
+                'message' => 'Insufficient credit balance.',
                 'errors'  => [
-                    'amount' => ['You do not have enough credits to complete this payment.'],
+                    'amount' => ['The requested amount exceeds your available balance.'],
                 ],
             ], 422);
         }

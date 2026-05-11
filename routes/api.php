@@ -617,6 +617,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // Stripe
     Route::prefix('stripe')->group(function () {
         Route::post('/create-payment-intent', [StripeController::class, 'createPaymentIntent']);
+        Route::post('/setup-intent',          [StripeController::class, 'setupIntent']);
     });
 
     // Coupon validation

@@ -182,7 +182,7 @@ class DeferredCartController extends Controller
         return response()->json(['data' => [
             'session_id' => $session_id,
             'orders'     => $response_orders,
-        ]], 200);
+        ]], 201);
     }
 
     private function createLinkBuildingOrder(

@@ -13,6 +13,34 @@ class StripeController extends Controller
     public function __construct(protected StripeService $stripeService) {}
 
     /**
+     * POST /api/stripe/setup-intent
+     *
+     * Creates a Stripe SetupIntent so Stripe.js can collect card details and
+     * save a payment method without charging it immediately.
+     */
+    public function setupIntent(): JsonResponse
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        $customer_result = $this->stripeService->findOrCreateCustomer($user);
+
+        if (!$customer_result['success']) {
+            return response()->json(['error' => 'Failed to create setup intent.'], 500);
+        }
+
+        $result = $this->stripeService->createSetupIntent($customer_result['customer_id']);
+
+        if (!$result['success']) {
+            return response()->json(['error' => 'Failed to create setup intent.'], 500);
+        }
+
+        return response()->json([
+            'client_secret' => $result['client_secret'],
+        ]);
+    }
+
+    /**
      * POST /api/stripe/create-payment-intent
      *
      * Creates a Stripe PaymentIntent and returns the client_secret to the frontend

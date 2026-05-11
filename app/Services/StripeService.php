@@ -121,6 +121,31 @@ class StripeService
     }
 
     /**
+     * Create a Stripe SetupIntent so the client can save a card without charging it.
+     *
+     * Returns ['success' => true, 'client_secret' => '...']
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function createSetupIntent(string $stripe_customer_id): array
+    {
+        try {
+            $setup_intent = $this->client->setupIntents->create([
+                'customer' => $stripe_customer_id,
+            ]);
+
+            return [
+                'success'       => true,
+                'client_secret' => $setup_intent->client_secret,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Create a Stripe PaymentIntent and return the client_secret and payment_intent_id.
      *
      * If stripe_payment_method_id is provided, it will be attached to the intent (saved card flow).

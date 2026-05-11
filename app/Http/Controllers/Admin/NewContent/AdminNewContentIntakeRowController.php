@@ -34,21 +34,23 @@ class AdminNewContentIntakeRowController extends Controller
 
         foreach ($request->input('intake_rows') as $row_data) {
             $row = $item->intakeRows()->create([
-                'row_index'       => $next_index++,
-                'keyword_phrase'  => $row_data['keyword_phrase'],
-                'type_of_content' => $row_data['type_of_content'],
-                'notes'           => $row_data['notes'] ?? null,
-                'status'          => 'pending',
+                'row_index'          => $next_index++,
+                'keyword_phrase'     => $row_data['keyword_phrase'],
+                'secondary_keywords' => $row_data['secondary_keywords'] ?? null,
+                'type_of_content'    => $row_data['type_of_content'] ?? null,
+                'notes'              => $row_data['notes'] ?? null,
+                'status'             => 'pending',
             ]);
 
             $created[] = [
-                'row_id'          => $row->id,
-                'row_index'       => $row->row_index,
-                'keyword_phrase'  => $row->keyword_phrase,
-                'type_of_content' => $row->type_of_content,
-                'notes'           => $row->notes,
-                'status'          => $row->status,
-                'created_at'      => $row->created_at,
+                'row_id'             => $row->id,
+                'row_index'          => $row->row_index,
+                'keyword_phrase'     => $row->keyword_phrase,
+                'secondary_keywords' => $row->secondary_keywords ?? '',
+                'type_of_content'    => $row->type_of_content,
+                'notes'              => $row->notes,
+                'status'             => $row->status,
+                'created_at'         => $row->created_at,
             ];
         }
 
@@ -69,13 +71,14 @@ class AdminNewContentIntakeRowController extends Controller
         $row->save();
 
         return response()->json([
-            'row_id'          => $row->id,
-            'row_index'       => $row->row_index,
-            'keyword_phrase'  => $row->keyword_phrase,
-            'type_of_content' => $row->type_of_content,
-            'notes'           => $row->notes,
-            'status'          => $row->status,
-            'updated_at'      => $row->updated_at,
+            'row_id'             => $row->id,
+            'row_index'          => $row->row_index,
+            'keyword_phrase'     => $row->keyword_phrase,
+            'secondary_keywords' => $row->secondary_keywords ?? '',
+            'type_of_content'    => $row->type_of_content,
+            'notes'              => $row->notes,
+            'status'             => $row->status,
+            'updated_at'         => $row->updated_at,
         ]);
     }
 

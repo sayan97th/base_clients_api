@@ -17,6 +17,7 @@ class NewContentIntakeRow extends Model
         'item_id',
         'row_index',
         'keyword_phrase',
+        'secondary_keywords',
         'type_of_content',
         'notes',
         'status',

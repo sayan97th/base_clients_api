@@ -332,6 +332,7 @@ class DeferredCartController extends Controller
                     'primary_keyword'    => $row['primary_keyword'],
                     'secondary_keywords' => $row['secondary_keywords'] ?? null,
                     'content_page_url'   => $row['content_page_url'],
+                    'notes'              => $row['notes'] ?? null,
                 ]);
             }
         }
@@ -407,11 +408,12 @@ class DeferredCartController extends Controller
 
             foreach ($item_data['intake_rows'] ?? [] as $index => $row) {
                 $item->intakeRows()->create([
-                    'row_index'       => $index + 1,
-                    'keyword_phrase'  => $row['keyword_phrase'],
-                    'type_of_content' => $row['type_of_content'],
-                    'notes'           => $row['notes'] ?? null,
-                    'status'          => 'pending',
+                    'row_index'          => $index + 1,
+                    'keyword_phrase'     => $row['keyword_phrase'],
+                    'secondary_keywords' => $row['secondary_keywords'] ?? null,
+                    'type_of_content'    => $row['type_of_content'] ?? null,
+                    'notes'              => $row['notes'] ?? null,
+                    'status'             => 'pending',
                 ]);
             }
         }

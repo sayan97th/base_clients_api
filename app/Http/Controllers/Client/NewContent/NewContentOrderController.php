@@ -90,10 +90,12 @@ class NewContentOrderController extends Controller
                     'created_at'      => $item->tier->created_at,
                     'updated_at'      => $item->tier->updated_at,
                 ] : null,
+                'item_name'   => $item->tier?->label,
                 'intake_rows' => $item->intakeRows->map(fn ($row) => [
-                    'keyword_phrase'  => $row->keyword_phrase,
-                    'type_of_content' => $row->type_of_content,
-                    'notes'           => $row->notes,
+                    'keyword_phrase'     => $row->keyword_phrase,
+                    'secondary_keywords' => $row->secondary_keywords ?? '',
+                    'type_of_content'    => $row->type_of_content,
+                    'notes'              => $row->notes,
                 ])->values(),
             ])->values(),
         ];

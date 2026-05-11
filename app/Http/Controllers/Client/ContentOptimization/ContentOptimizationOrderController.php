@@ -87,6 +87,7 @@ class ContentOptimizationOrderController extends Controller
                     'primary_keyword'    => $row->primary_keyword,
                     'secondary_keywords' => $row->secondary_keywords ?? '',
                     'content_page_url'   => $row->content_page_url,
+                    'notes'              => $row->notes,
                 ])->values(),
                 'tier' => $item->tier ? [
                     'id'               => $item->tier->id,

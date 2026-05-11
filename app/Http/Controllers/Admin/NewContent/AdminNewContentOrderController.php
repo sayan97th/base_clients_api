@@ -153,9 +153,10 @@ class AdminNewContentOrderController extends Controller
                     'subtotal'    => (float) $item->subtotal,
                     'item_name'   => $item_name,
                     'intake_rows' => $item->intakeRows->map(fn ($row) => [
-                        'keyword_phrase'  => $row->keyword_phrase,
-                        'type_of_content' => $row->type_of_content,
-                        'notes'           => $row->notes,
+                        'keyword_phrase'     => $row->keyword_phrase,
+                        'secondary_keywords' => $row->secondary_keywords ?? '',
+                        'type_of_content'    => $row->type_of_content,
+                        'notes'              => $row->notes,
                     ])->values()->all(),
                 ];
             })->values()->all(),
@@ -314,13 +315,14 @@ class AdminNewContentOrderController extends Controller
     private function formatRow(mixed $row): array
     {
         return [
-            'row_id'          => $row->id,
-            'row_index'       => $row->row_index,
-            'keyword_phrase'  => $row->keyword_phrase,
-            'type_of_content' => $row->type_of_content,
-            'notes'           => $row->notes,
-            'status'          => $row->status,
-            'updated_at'      => $row->updated_at,
+            'row_id'             => $row->id,
+            'row_index'          => $row->row_index,
+            'keyword_phrase'     => $row->keyword_phrase,
+            'secondary_keywords' => $row->secondary_keywords ?? '',
+            'type_of_content'    => $row->type_of_content,
+            'notes'              => $row->notes,
+            'status'             => $row->status,
+            'updated_at'         => $row->updated_at,
         ];
     }
 }

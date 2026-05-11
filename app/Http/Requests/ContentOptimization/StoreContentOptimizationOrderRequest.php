@@ -35,8 +35,9 @@ class StoreContentOptimizationOrderRequest extends FormRequest
             'items.*.unit_price'                                        => ['required', 'numeric', 'min:0'],
             'items.*.intake_rows'                                       => ['nullable', 'array'],
             'items.*.intake_rows.*.primary_keyword'                     => ['required', 'string', 'max:500'],
-            'items.*.intake_rows.*.secondary_keywords'                  => ['nullable', 'string', 'max:1000'],
-            'items.*.intake_rows.*.content_page_url'                    => ['required', 'string', 'max:2048'],
+            'items.*.intake_rows.*.secondary_keywords'                  => ['nullable', 'string', 'max:500'],
+            'items.*.intake_rows.*.content_page_url'                    => ['required', 'string', 'max:2000'],
+            'items.*.intake_rows.*.notes'                               => ['nullable', 'string', 'max:5000'],
         ];
     }
 

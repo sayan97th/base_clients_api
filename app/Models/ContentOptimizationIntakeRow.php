@@ -16,6 +16,7 @@ class ContentOptimizationIntakeRow extends Model
         'primary_keyword',
         'secondary_keywords',
         'content_page_url',
+        'notes',
     ];
 
     public function item(): BelongsTo

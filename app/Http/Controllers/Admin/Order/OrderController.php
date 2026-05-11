@@ -296,6 +296,7 @@ class OrderController extends Controller
                 ->with(array_merge([
                     'user:id,first_name,last_name,email',
                     'items.tier',
+                    'items.intakeRows',
                     'billing',
                     'orderCoupons.coupon',
                 ], $shared_invoice_withs))
@@ -426,9 +427,10 @@ class OrderController extends Controller
 
             if ($product_type === 'new_content' && $item->relationLoaded('intakeRows')) {
                 $item_data['intake_rows'] = $item->intakeRows->map(fn ($row) => [
-                    'keyword_phrase'  => $row->keyword_phrase,
-                    'type_of_content' => $row->type_of_content,
-                    'notes'           => $row->notes,
+                    'keyword_phrase'     => $row->keyword_phrase,
+                    'secondary_keywords' => $row->secondary_keywords ?? '',
+                    'type_of_content'    => $row->type_of_content,
+                    'notes'              => $row->notes,
                 ])->values()->all();
             }
 

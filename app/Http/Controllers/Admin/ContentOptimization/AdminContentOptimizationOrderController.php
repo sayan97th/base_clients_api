@@ -43,6 +43,14 @@ class AdminContentOptimizationOrderController extends Controller
             });
         }
 
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+
         $allowed_sort = ['created_at', 'total_amount', 'status'];
         $sort_by      = in_array($request->input('sort_by'), $allowed_sort) ? $request->input('sort_by') : 'created_at';
         $sort_dir     = $request->input('sort_dir') === 'asc' ? 'asc' : 'desc';

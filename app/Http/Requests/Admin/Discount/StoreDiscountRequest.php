@@ -19,7 +19,7 @@ class StoreDiscountRequest extends FormRequest
             'discount_type' => ['required', 'string', 'in:bulk'],
             'discount_rate' => ['required', 'numeric', 'min:0.01', 'max:100'],
             'min_quantity'  => ['required', 'integer', 'min:1'],
-            'applies_to'    => ['required', 'string', 'in:link_building,all'],
+            'applies_to'    => ['required', 'string', 'in:link_building,new_content,content_optimization,content_brief,all'],
             'is_active'     => ['boolean'],
         ];
     }

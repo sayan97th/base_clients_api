@@ -19,7 +19,7 @@ class UpdateDiscountRequest extends FormRequest
             'discount_type' => ['sometimes', 'string', 'in:bulk'],
             'discount_rate' => ['sometimes', 'numeric', 'min:0.01', 'max:100'],
             'min_quantity'  => ['sometimes', 'integer', 'min:1'],
-            'applies_to'    => ['sometimes', 'string', 'in:link_building,all'],
+            'applies_to'    => ['sometimes', 'string', 'in:link_building,new_content,content_optimization,content_brief,all'],
             'is_active'     => ['sometimes', 'boolean'],
         ];
     }

@@ -1,149 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Welcome to {{ $platform_name }}</title>
-    <style>
-        body { margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-        table { border-collapse: collapse; }
-        img { border: 0; display: block; }
-        a { text-decoration: none; }
-        @media only screen and (max-width: 600px) {
-            .email-wrapper { width: 100% !important; }
-            .email-body { padding: 24px 16px !important; }
-            .details-card { padding: 16px !important; }
-            .cta-button { min-width: 200px !important; }
-        }
-    </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
 
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:40px 16px;">
-    <tr>
-        <td align="center">
+<body
+    style="font-family:proxima-nova,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;height:100%;line-height:22px;margin:0;padding:0;box-sizing:border-box;background-color:#f4f4f7;width:100%;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+        style="margin:0;box-sizing:border-box;width:100%;background-color:#f4f4f7;">
+        <tr>
+            <td style="box-sizing:border-box;vertical-align:top;">&nbsp;</td>
+            <td width="600"
+                style="box-sizing:border-box;vertical-align:top;display:block;max-width:600px;margin:0 auto;clear:both;">
+                <div style="box-sizing:border-box;max-width:600px;margin:0 auto;display:block;padding:24px;">
 
-            {{-- Email wrapper --}}
-            <table role="presentation" class="email-wrapper" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                    {{-- Logo --}}
+                    <div style="margin:0;box-sizing:border-box;padding:0 20px 20px;text-align:center;">
+                        <a href="{{ $platform_url }}" style="color:#ec3c89;text-decoration:none;" target="_blank">
+                            <img src="{{ config('app.logo_url', config('app.url') . '/images/base-logo.png') }}"
+                                alt="{{ $platform_name }}" style="max-width:200px;max-height:50px;">
+                        </a>
+                    </div>
 
-                {{-- Header --}}
-                <tr>
-                    <td style="background-color:#0f172a;padding:28px 40px;text-align:center;">
-                        <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">
-                            {{ $platform_name }}
-                        </p>
-                    </td>
-                </tr>
+                    {{-- Main Content Card --}}
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                        style="margin:0;box-sizing:border-box;background-color:#ffffff;border-top-width:3px;border-top-style:solid;border-top-color:#ec3c89;border-radius:4px;">
+                        <tr>
+                            <td style="margin:0;box-sizing:border-box;vertical-align:top;padding:30px 40px;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                                    style="margin:0;box-sizing:border-box;">
+                                    <tr>
+                                        <td style="margin:0;box-sizing:border-box;vertical-align:top;padding:0;">
 
-                {{-- Hero section --}}
-                <tr>
-                    <td class="email-body" style="background-color:#ffffff;padding:48px 40px 32px;text-align:center;">
+                                            {{-- Badge --}}
+                                            <div style="text-align:center;margin:0 0 16px;">
+                                                <span
+                                                    style="display:inline-block;background-color:#fce7f3;color:#ec3c89;font-size:11px;font-weight:700;letter-spacing:1.5px;padding:5px 16px;border-radius:20px;">
+                                                    NEW ACCOUNT
+                                                </span>
+                                            </div>
 
-                        {{-- Icon --}}
-                        <div style="display:inline-block;background-color:#0d9488;border-radius:50%;width:72px;height:72px;line-height:72px;text-align:center;margin-bottom:24px;">
-                            <span style="font-size:32px;line-height:72px;color:#ffffff;">&#10003;</span>
-                        </div>
+                                            {{-- Heading --}}
+                                            <h1 align="center"
+                                                style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;line-height:1.2em;color:#000;display:block;margin:10px 0 5px;padding:0;font-size:22px;font-weight:500;">
+                                                Welcome to {{ $platform_name }}!
+                                            </h1>
 
-                        <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f172a;">
-                            Welcome to {{ $platform_name }}!
-                        </h1>
-                        <p style="margin:0 0 32px;font-size:16px;line-height:1.6;color:#64748b;">
-                            Your account has been created by our team.<br>You're all set to get started.
-                        </p>
+                                            <p align="center"
+                                                style="margin:0 0 25px;font-weight:normal;color:#868e96;font-size:13px;">
+                                                Your account has been created by our team
+                                            </p>
 
-                        {{-- Account details card --}}
-                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:32px;text-align:left;">
-                            <tr>
-                                <td style="padding:20px 24px;">
-                                    <p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:#94a3b8;">Account Details</p>
-                                </td>
-                            </tr>
+                                            {{-- Greeting --}}
+                                            <p style="margin:0 0 15px;font-weight:normal;">
+                                                Hello <strong>{{ $user->first_name }}</strong>,
+                                            </p>
 
-                            {{-- Name row --}}
-                            <tr>
-                                <td style="padding:0 24px 16px;">
-                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                                        <tr>
-                                            <td style="font-size:13px;color:#64748b;width:140px;vertical-align:top;padding-top:2px;">Name</td>
-                                            <td style="font-size:14px;font-weight:600;color:#0f172a;">{{ $user->first_name }} {{ $user->last_name }}</td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
+                                            <p style="margin:0 0 20px;font-weight:normal;">
+                                                An administrator has set up an account for you on
+                                                <strong>{{ $platform_name }}</strong>. You're all set to get started —
+                                                use the button below to set your password and sign in for the first time.
+                                            </p>
 
-                            {{-- Email row --}}
-                            <tr>
-                                <td style="padding:0 24px 16px;">
-                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                                        <tr>
-                                            <td style="font-size:13px;color:#64748b;width:140px;vertical-align:top;padding-top:2px;">Email</td>
-                                            <td style="font-size:14px;font-weight:600;color:#0f172a;">{{ $user->email }}</td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
+                                            {{-- Account details table --}}
+                                            <div style="box-sizing:border-box;padding:0;color:#343a40;margin:20px 0;">
+                                                <table cellpadding="8" cellspacing="0"
+                                                    style="margin:0;box-sizing:border-box;width:100%;background-color:#f8f9fa;border-radius:4px;">
+                                                    <tr>
+                                                        <td
+                                                            style="box-sizing:border-box;vertical-align:top;text-align:left;border-bottom:1px dashed #e9ecef;font-weight:500;color:#868e96;width:40%;">
+                                                            Name
+                                                        </td>
+                                                        <td
+                                                            style="box-sizing:border-box;vertical-align:top;text-align:right;border-bottom:1px dashed #e9ecef;">
+                                                            {{ $user->first_name }} {{ $user->last_name }}
+                                                        </td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td
+                                                            style="box-sizing:border-box;vertical-align:top;text-align:left;font-weight:500;color:#868e96;width:40%;{{ $temporary_password !== null ? 'border-bottom:1px dashed #e9ecef;' : '' }}">
+                                                            Email
+                                                        </td>
+                                                        <td
+                                                            style="box-sizing:border-box;vertical-align:top;text-align:right;{{ $temporary_password !== null ? 'border-bottom:1px dashed #e9ecef;' : '' }}">
+                                                            {{ $user->email }}
+                                                        </td>
+                                                    </tr>
+                                                    @if ($temporary_password !== null)
+                                                        <tr>
+                                                            <td
+                                                                style="box-sizing:border-box;vertical-align:top;text-align:left;font-weight:500;color:#868e96;width:40%;">
+                                                                Temporary Password
+                                                            </td>
+                                                            <td
+                                                                style="box-sizing:border-box;vertical-align:top;text-align:right;">
+                                                                <span
+                                                                    style="font-family:monospace,'Courier New',Courier;font-size:13px;font-weight:700;color:#343a40;">{{ $temporary_password }}</span>
+                                                            </td>
+                                                        </tr>
+                                                    @endif
+                                                </table>
+                                            </div>
 
-                            @if ($temporary_password !== null)
-                            {{-- Temporary password row --}}
-                            <tr>
-                                <td style="padding:0 24px 16px;">
-                                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                                        <tr>
-                                            <td style="font-size:13px;color:#64748b;width:140px;vertical-align:top;padding-top:2px;">Temporary Password</td>
-                                            <td>
-                                                <span style="font-family:monospace,'Courier New',Courier;font-size:14px;font-weight:700;color:#0f172a;background-color:#f1f5f9;padding:3px 8px;border-radius:4px;">{{ $temporary_password }}</span>
-                                                <p style="margin:6px 0 0;font-size:12px;color:#f59e0b;">Please change this password after your first login.</p>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                            @endif
+                                            @if ($temporary_password !== null)
+                                                {{-- Temporary password warning --}}
+                                                <div
+                                                    style="box-sizing:border-box;padding:12px 16px;background-color:#fce7f3;border-left:4px solid #ec3c89;border-radius:4px;margin:0 0 20px;">
+                                                    <p style="margin:0;font-size:13px;color:#9d174d;">
+                                                        Please change this password after your first login.
+                                                    </p>
+                                                </div>
+                                            @endif
 
-                        </table>
+                                            {{-- CTA Button --}}
+                                            <div style="box-sizing:border-box;text-align:center;margin:30px 0 10px;">
+                                                <a href="{{ $reset_url }}"
+                                                    style="text-decoration:none;color:#ffffff;background-color:#ec3c89;padding:10px 45px;line-height:28px;font-weight:500;font-size:16px;text-align:center;display:inline-block;border-radius:5px;"
+                                                    target="_blank">
+                                                    Set Your Password &amp; Sign In
+                                                </a>
+                                            </div>
 
-                        {{-- CTA Button --}}
-                        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 12px;">
-                            <tr>
-                                <td style="border-radius:8px;background-color:#0d9488;">
-                                    <a href="{{ $reset_url }}"
-                                       class="cta-button"
-                                       style="display:inline-block;min-width:260px;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;background-color:#0d9488;border-radius:8px;text-align:center;text-decoration:none;">
-                                        Set Your Password &amp; Sign In
-                                    </a>
-                                </td>
-                            </tr>
-                        </table>
+                                            {{-- Link expiry note --}}
+                                            <p
+                                                style="margin:10px 0 20px;font-weight:normal;font-size:12px;color:#868e96;text-align:center;">
+                                                This link expires in 60 minutes.
+                                            </p>
 
-                        <p style="margin:0 0 32px;font-size:12px;color:#94a3b8;">This link expires in 60 minutes.</p>
+                                            {{-- Help text --}}
+                                            <p
+                                                style="margin:20px 0 0;font-weight:normal;font-size:12px;color:#868e96;text-align:center;">
+                                                If you have any questions or need assistance, reply to this email or
+                                                contact our support team.
+                                            </p>
 
-                        {{-- Help text --}}
-                        <p style="margin:0;font-size:14px;line-height:1.6;color:#64748b;">
-                            If you have any questions or need assistance, reply to this email or contact our support team.
-                        </p>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
 
-                    </td>
-                </tr>
-
-                {{-- Footer --}}
-                <tr>
-                    <td style="background-color:#0f172a;padding:28px 40px;text-align:center;">
-                        <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;">
+                    {{-- Footer --}}
+                    <div
+                        style="margin:0;box-sizing:border-box;width:100%;clear:both;color:#868e96;padding:20px;text-align:center;">
+                        <p style="margin:0 0 4px;font-size:12px;color:#868e96;">
                             &copy; {{ date('Y') }} {{ $platform_name }}. All rights reserved.
                         </p>
-                        <p style="margin:0 0 10px;font-size:12px;color:#64748b;line-height:1.5;">
-                            You received this email because an administrator created an account for you on {{ $platform_name }}.
+                        <p style="margin:0;font-size:11px;color:#adb5bd;">
+                            You received this email because an administrator created an account for you on
+                            {{ $platform_name }}.
                         </p>
-                        <a href="{{ $platform_url }}" style="font-size:12px;color:#0d9488;">{{ $platform_url }}</a>
-                    </td>
-                </tr>
+                    </div>
 
-            </table>
-
-        </td>
-    </tr>
-</table>
-
+                </div>
+            </td>
+            <td style="box-sizing:border-box;vertical-align:top;">&nbsp;</td>
+        </tr>
+    </table>
 </body>
+
 </html>

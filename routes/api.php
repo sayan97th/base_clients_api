@@ -100,6 +100,7 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
+use App\Http\Controllers\Admin\Client\AdminClientController;
 use App\Http\Controllers\Admin\Credits\AdminCreditStatsController;
 use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
 use App\Http\Controllers\Admin\Credits\AdminCreditAssignController;
@@ -410,6 +411,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/news-placements',        [AdminNewsPlacementController::class, 'store']);
             Route::put('/news-placements/{id}',    [AdminNewsPlacementController::class, 'update']);
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
+        });
+
+        // Client management — super_admin, admin only
+        Route::middleware('role:super_admin,admin')->group(function () {
+            Route::post('clients', [AdminClientController::class, 'store']);
         });
 
         // Credits management — super_admin, admin, staff

@@ -66,9 +66,10 @@ class CheckoutCartRequest extends FormRequest
             'content_brief_items.*.quantity'                              => ['required_with:content_brief_items', 'integer', 'min:1'],
             'content_brief_items.*.unit_price'                            => ['required_with:content_brief_items', 'numeric', 'min:0'],
             'content_brief_items.*.intake_rows'                           => ['nullable', 'array'],
-            'content_brief_items.*.intake_rows.*.primary_keyword'         => ['required_with:content_brief_items.*.intake_rows', 'string', 'max:500'],
-            'content_brief_items.*.intake_rows.*.secondary_keywords'      => ['nullable', 'string', 'max:1000'],
-            'content_brief_items.*.intake_rows.*.content_page_url'        => ['required_with:content_brief_items.*.intake_rows', 'string', 'max:2000'],
+            'content_brief_items.*.intake_rows.*.primary_keyword'         => ['required_with:content_brief_items.*.intake_rows', 'string', 'max:255'],
+            'content_brief_items.*.intake_rows.*.secondary_keywords'      => ['nullable', 'string', 'max:500'],
+            'content_brief_items.*.intake_rows.*.content_page_url'        => ['required_with:content_brief_items.*.intake_rows', 'url', 'max:2048'],
+            'content_brief_items.*.intake_rows.*.notes'                   => ['nullable', 'string', 'max:10000'],
         ];
     }
 

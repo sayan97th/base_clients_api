@@ -140,8 +140,9 @@ class ContentBriefOrderController extends Controller
                     $order_item->intakeRows()->create([
                         'row_index'          => $row_index,
                         'primary_keyword'    => $row['primary_keyword'],
-                        'secondary_keywords' => $row['secondary_keywords'] ?? '',
+                        'secondary_keywords' => $row['secondary_keywords'] ?? null,
                         'content_page_url'   => $row['content_page_url'],
+                        'notes'              => $row['notes'] ?? null,
                     ]);
                 }
             }
@@ -237,6 +238,7 @@ class ContentBriefOrderController extends Controller
                         'primary_keyword'    => $row->primary_keyword,
                         'secondary_keywords' => $row->secondary_keywords,
                         'content_page_url'   => $row->content_page_url,
+                        'notes'              => $row->notes,
                     ])->values()
                     : [],
             ])->values(),

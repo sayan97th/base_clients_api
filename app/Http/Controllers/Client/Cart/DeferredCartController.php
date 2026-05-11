@@ -493,6 +493,7 @@ class DeferredCartController extends Controller
                     'primary_keyword'    => $row['primary_keyword'],
                     'secondary_keywords' => $row['secondary_keywords'] ?? null,
                     'content_page_url'   => $row['content_page_url'],
+                    'notes'              => $row['notes'] ?? null,
                 ]);
             }
         }

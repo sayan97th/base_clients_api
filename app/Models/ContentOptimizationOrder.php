@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Invoice;
+use App\Models\LinkBuildingOrderUpdate;
+use App\Models\OrderReport;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -77,5 +79,15 @@ class ContentOptimizationOrder extends Model
             'order_id',
             'item_id',
         );
+    }
+
+    public function updates(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderUpdate::class, 'order_id');
+    }
+
+    public function report(): HasOne
+    {
+        return $this->hasOne(OrderReport::class, 'order_id');
     }
 }

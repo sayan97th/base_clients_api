@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Client\NewContent\NewContentTierController;
 use App\Http\Controllers\Client\NewContent\NewContentOrderController;
+use App\Http\Controllers\Client\NewContent\NewContentOrderUpdateController;
+use App\Http\Controllers\Client\NewContent\NewContentOrderReportController;
 use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBacklinkOrderController;
 use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
@@ -87,8 +89,12 @@ use App\Http\Controllers\Admin\ScheduledCall\AdminScheduledCallAppointmentContro
 use App\Http\Controllers\Client\SeoPackages\SeoPackageSubscriptionController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefTierController;
 use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderController;
+use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderUpdateController;
+use App\Http\Controllers\Client\ContentBrief\ContentBriefOrderReportController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationTierController;
 use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationOrderController;
+use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationOrderUpdateController;
+use App\Http\Controllers\Client\ContentOptimization\ContentOptimizationOrderReportController;
 use App\Http\Controllers\Client\Cart\CartController as UnifiedCartController;
 use App\Http\Controllers\Client\Cart\DeferredCartController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
@@ -669,9 +675,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // New Content orders
     Route::prefix('new-content')->group(function () {
-        Route::get('/orders',            [NewContentOrderController::class, 'index']);
-        Route::post('/orders',           [NewContentOrderController::class, 'store']);
-        Route::get('/orders/{order_id}', [NewContentOrderController::class, 'show']);
+        Route::get('/orders',                    [NewContentOrderController::class,       'index']);
+        Route::post('/orders',                   [NewContentOrderController::class,       'store']);
+        Route::get('/orders/{order_id}',         [NewContentOrderController::class,       'show']);
+        Route::get('/orders/{order_id}/updates', [NewContentOrderUpdateController::class, 'index']);
+        Route::get('/orders/{order_id}/report',  [NewContentOrderReportController::class, 'show']);
     });
 
     // Content Brief Tiers catalog
@@ -679,9 +687,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Brief orders
     Route::prefix('content-briefs')->group(function () {
-        Route::get('/orders',            [ContentBriefOrderController::class, 'index']);
-        Route::post('/orders',           [ContentBriefOrderController::class, 'store']);
-        Route::get('/orders/{order_id}', [ContentBriefOrderController::class, 'show']);
+        Route::get('/orders',                    [ContentBriefOrderController::class,       'index']);
+        Route::post('/orders',                   [ContentBriefOrderController::class,       'store']);
+        Route::get('/orders/{order_id}',         [ContentBriefOrderController::class,       'show']);
+        Route::get('/orders/{order_id}/updates', [ContentBriefOrderUpdateController::class, 'index']);
+        Route::get('/orders/{order_id}/report',  [ContentBriefOrderReportController::class, 'show']);
     });
 
     // Content Optimization Tiers catalog
@@ -689,9 +699,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Content Optimization orders
     Route::prefix('content-optimization')->group(function () {
-        Route::get('/orders',            [ContentOptimizationOrderController::class, 'index']);
-        Route::post('/orders',           [ContentOptimizationOrderController::class, 'store']);
-        Route::get('/orders/{order_id}', [ContentOptimizationOrderController::class, 'show']);
+        Route::get('/orders',                    [ContentOptimizationOrderController::class,       'index']);
+        Route::post('/orders',                   [ContentOptimizationOrderController::class,       'store']);
+        Route::get('/orders/{order_id}',         [ContentOptimizationOrderController::class,       'show']);
+        Route::get('/orders/{order_id}/updates', [ContentOptimizationOrderUpdateController::class, 'index']);
+        Route::get('/orders/{order_id}/report',  [ContentOptimizationOrderReportController::class, 'show']);
     });
 
     // Content Refresh Tiers catalog

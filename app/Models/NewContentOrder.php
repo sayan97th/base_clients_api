@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Models\Invoice;
+use App\Models\LinkBuildingOrderUpdate;
+use App\Models\OrderReport;
 
 class NewContentOrder extends Model
 {
@@ -67,5 +69,15 @@ class NewContentOrder extends Model
         return $this->belongsToMany(Coupon::class, 'new_content_order_coupons', 'order_id', 'coupon_id')
             ->withPivot('discount_amount')
             ->withTimestamps();
+    }
+
+    public function updates(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderUpdate::class, 'order_id');
+    }
+
+    public function report(): HasOne
+    {
+        return $this->hasOne(OrderReport::class, 'order_id');
     }
 }

@@ -72,6 +72,7 @@ class AuthController extends Controller
 
         /** @var \App\Models\User $user */
         $user = auth()->user();
+        $user->update(['last_login_at' => now()]);
 
         if ($user->two_factor_enabled) {
             auth()->logout();
@@ -124,6 +125,8 @@ class AuthController extends Controller
         }
 
         Cache::forget($cache_key);
+
+        $user->update(['last_login_at' => now()]);
 
         /** @var string $token */
         $token = auth()->login($user);
@@ -216,6 +219,7 @@ class AuthController extends Controller
             'profile_photo_url' => $user->profile_photo_url,
             'organization_id' => $user->organization_id,
             'email_verified_at' => $user->email_verified_at,
+            'last_login_at'     => $user->last_login_at,
             'is_active' => $user->is_active,
             'created_at' => $user->created_at,
             'updated_at' => $user->updated_at,

@@ -15,6 +15,51 @@ use Illuminate\Support\Str;
 class AdminClientController extends Controller
 {
     /**
+     * POST /api/admin/clients/{user_id}/resend-welcome-email
+     */
+    public function resendWelcomeEmail(int $user_id): JsonResponse
+    {
+        $user = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
+
+        if (! $user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        $is_client = $user->roles->contains('name', 'client')
+            && $user->roles->whereIn('name', ['super_admin', 'admin', 'staff'])->isEmpty();
+
+        if (! $is_client) {
+            return response()->json(['message' => 'This action is only available for client accounts.'], 422);
+        }
+
+        if ($user->last_login_at !== null) {
+            return response()->json([
+                'message' => 'This client has already logged in. The welcome email cannot be resent.',
+            ], 422);
+        }
+
+        try {
+            $token     = Password::createToken($user);
+            $email     = urlencode($user->email);
+            $reset_url = rtrim(config('app.frontend_url'), '/') . "/reset-password/{$token}?email={$email}";
+
+            Mail::to($user->email)->send(new ClientWelcomeEmail(
+                user: $user,
+                reset_url: $reset_url,
+                temporary_password: null,
+            ));
+
+            return response()->json([
+                'message' => 'Welcome email has been resent successfully.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Something went wrong. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
      * POST /api/admin/clients
      */
     public function store(StoreClientRequest $request): JsonResponse

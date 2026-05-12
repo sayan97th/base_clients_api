@@ -441,6 +441,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Client management — super_admin, admin only
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('clients', [AdminClientController::class, 'store']);
+            Route::post('clients/{user_id}/resend-welcome-email', [AdminClientController::class, 'resendWelcomeEmail']);
 
             // Client invitations
             Route::get('client-invitations', [AdminClientInvitationController::class, 'index']);

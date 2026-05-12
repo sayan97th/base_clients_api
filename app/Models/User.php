@@ -39,6 +39,7 @@ class User extends Authenticatable implements JWTSubject
         'staff_capacity',
         'presence_color',
         'credit_balance',
+        'last_login_at',
     ];
 
     protected $hidden = [
@@ -62,6 +63,7 @@ class User extends Authenticatable implements JWTSubject
             'two_factor_enabled_at' => 'datetime',
             'two_factor_secret'     => 'encrypted',
             'credit_balance'        => 'decimal:2',
+            'last_login_at'         => 'datetime',
         ];
     }
 

@@ -120,6 +120,9 @@ use App\Http\Controllers\Client\Credits\CreditBalanceSummaryController;
 use App\Http\Controllers\Client\Credits\CreditTransactionController;
 use App\Http\Controllers\Client\Credits\CreditPayController;
 use App\Http\Controllers\Client\Credits\CreditApplyDiscountController;
+use App\Http\Controllers\Client\Credits\CreditPackagesController;
+use App\Http\Controllers\Client\Credits\CreditPurchaseController;
+use App\Http\Controllers\Client\Credits\CreditPurchaseHistoryController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -650,6 +653,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/transactions',     [CreditTransactionController::class,    'index']);
         Route::post('/pay',             [CreditPayController::class,            'pay']);
         Route::post('/apply-discount',  [CreditApplyDiscountController::class,  'apply']);
+
+        // Buy Credits feature
+        Route::get('/packages',         [CreditPackagesController::class,       'index']);
+        Route::post('/purchase',        [CreditPurchaseController::class,       'purchase']);
+        Route::get('/purchases',        [CreditPurchaseHistoryController::class, 'index']);
     });
 
     // Stripe

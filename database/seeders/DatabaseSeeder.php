@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
         $this->call(NewContentTierSeeder::class);
         $this->call(ContentOptimizationTierSeeder::class);
         $this->call(ContentBriefTierSeeder::class);
+        $this->call(CreditPackageSeeder::class);
 
         $this->seedOrganization();
 

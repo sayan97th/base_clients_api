@@ -149,7 +149,7 @@ class AdminResourceController extends Controller
 
         // Delete physical files from storage before removing the database records
         foreach ($resource->files as $file) {
-            Storage::delete($file->file_path);
+            Storage::disk('public')->delete($file->file_path);
         }
 
         $resource->delete();

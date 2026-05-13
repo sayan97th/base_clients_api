@@ -29,10 +29,8 @@ class CreditPurchaseController extends Controller
 
         if (CreditPurchase::where('payment_intent_id', $request->payment_intent_id)->exists()) {
             return response()->json([
+                'success' => false,
                 'message' => 'This payment has already been processed.',
-                'errors'  => [
-                    'payment_intent_id' => ['A purchase with this PaymentIntent ID already exists.'],
-                ],
             ], 409);
         }
 

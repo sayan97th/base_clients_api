@@ -118,7 +118,7 @@ class PaymentProfileController extends Controller
         }
 
         if ($profile->user_id !== $user_id) {
-            return response()->json(['message' => 'This payment method does not belong to you.'], 403);
+            return response()->json(['message' => 'Payment profile not found.'], 404);
         }
 
         $this->stripeService->detachPaymentMethod($profile->stripe_payment_method_id);
@@ -151,7 +151,7 @@ class PaymentProfileController extends Controller
         }
 
         if ($profile->user_id !== $user_id) {
-            return response()->json(['message' => 'This payment method does not belong to you.'], 403);
+            return response()->json(['message' => 'Payment profile not found.'], 404);
         }
 
         DB::transaction(function () use ($user_id, $profile) {

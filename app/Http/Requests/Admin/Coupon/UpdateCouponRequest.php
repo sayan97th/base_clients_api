@@ -21,8 +21,8 @@ class UpdateCouponRequest extends FormRequest
 
     public function rules(): array
     {
-        $coupon_id   = $this->route('id');
-        $applies_to  = $this->input('applies_to');
+        $coupon_id     = $this->route('id');
+        $applies_to    = $this->input('applies_to');
         $discount_type = $this->input('discount_type');
 
         return [
@@ -62,10 +62,29 @@ class UpdateCouponRequest extends FormRequest
                 'numeric',
                 'gt:0',
             ],
-            'starts_at'               => 'sometimes|nullable|date_format:Y-m-d|before:expires_at',
-            'expires_at'              => 'sometimes|date_format:Y-m-d|after_or_equal:today',
+            'starts_at'               => [
+                'sometimes',
+                'nullable',
+                'date_format:Y-m-d',
+                function ($attribute, $value, $fail) {
+                    if ($value && $this->expires_at && strtotime($value) >= strtotime($this->expires_at)) {
+                        $fail('The starts at date must be before expires at.');
+                    }
+                },
+            ],
+            'expires_at'              => 'sometimes|nullable|date_format:Y-m-d|after_or_equal:today',
             'usage_limit'             => 'sometimes|nullable|integer|min:1',
-            'usage_per_user'          => 'sometimes|nullable|integer|min:1',
+            'usage_per_user'          => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+                function ($attribute, $value, $fail) {
+                    if ($value && $this->usage_limit && $value > $this->usage_limit) {
+                        $fail('The usage per user must not exceed the usage limit.');
+                    }
+                },
+            ],
             'is_active'               => 'sometimes|boolean',
         ];
     }

@@ -99,7 +99,7 @@ class CouponController extends Controller
             'dr_tier_label'           => $coupon->drTier?->label,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
             'starts_at'               => $coupon->starts_at?->format('Y-m-d'),
-            'expires_at'              => $coupon->expires_at->format('Y-m-d'),
+            'expires_at'              => $coupon->expires_at?->format('Y-m-d'),
             'usage_limit'             => $coupon->usage_limit,
             'usage_per_user'          => $coupon->usage_per_user,
             'times_used'              => $coupon->times_used,

@@ -20,6 +20,7 @@ class Coupon extends Model
         'discount_type',
         'discount_value',
         'applies_to',
+        'product_types',
         'dr_tier_id',
         'minimum_purchase_amount',
         'starts_at',
@@ -41,6 +42,7 @@ class Coupon extends Model
             'is_active'               => 'boolean',
             'starts_at'               => 'datetime',
             'expires_at'              => 'datetime',
+            'product_types'           => 'array',
         ];
     }
 

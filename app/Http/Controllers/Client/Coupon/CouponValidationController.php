@@ -21,11 +21,13 @@ class CouponValidationController extends Controller
      */
     public function validate(ValidateCouponRequest $request): JsonResponse
     {
-        $user            = auth()->user();
-        $code            = strtoupper(trim($request->code));
-        $order_amount    = (float) $request->order_amount;
-        $dr_tier_ids     = $request->dr_tier_ids ?? [];
-        $dr_tier_amounts = $request->dr_tier_amounts ?? [];
+        $user                 = auth()->user();
+        $code                 = strtoupper(trim($request->code));
+        $order_amount         = (float) $request->order_amount;
+        $dr_tier_ids          = $request->dr_tier_ids ?? [];
+        $dr_tier_amounts      = $request->dr_tier_amounts ?? [];
+        $cart_product_types   = $request->cart_product_types ?? [];
+        $product_type_amounts = $request->product_type_amounts ?? [];
 
         if ($order_amount < 500.00) {
             return response()->json($this->buildInvalidResponse(
@@ -45,7 +47,9 @@ class CouponValidationController extends Controller
             $order_amount,
             $user->id,
             $dr_tier_ids,
-            $dr_tier_amounts
+            $dr_tier_amounts,
+            $cart_product_types,
+            $product_type_amounts
         );
 
         if (!$result['valid']) {
@@ -60,6 +64,7 @@ class CouponValidationController extends Controller
             'discount_type'           => $coupon->discount_type,
             'discount_value'          => $coupon->discount_value,
             'applies_to'              => $coupon->applies_to,
+            'product_types'           => $coupon->product_types ?? [],
             'dr_tier_id'              => $coupon->dr_tier_id,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
             'discount_amount'         => $result['discount_amount'],
@@ -77,6 +82,7 @@ class CouponValidationController extends Controller
             'discount_type'           => 'percentage',
             'discount_value'          => 0,
             'applies_to'              => 'all',
+            'product_types'           => [],
             'dr_tier_id'              => null,
             'minimum_purchase_amount' => null,
             'discount_amount'         => 0,

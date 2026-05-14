@@ -43,6 +43,8 @@ class StoreCouponRequest extends FormRequest
                 },
             ],
             'applies_to'              => 'required|in:all,specific_product,minimum_purchase',
+            'product_types'           => 'nullable|array',
+            'product_types.*'         => 'string|in:link_building,new_content,content_optimization,content_brief',
             'dr_tier_ids'             => [
                 Rule::requiredIf($this->applies_to === 'specific_product'),
                 'nullable',

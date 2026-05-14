@@ -48,6 +48,8 @@ class UpdateCouponRequest extends FormRequest
                 },
             ],
             'applies_to'              => 'sometimes|in:all,specific_product,minimum_purchase',
+            'product_types'           => 'sometimes|nullable|array',
+            'product_types.*'         => 'string|in:link_building,new_content,content_optimization,content_brief',
             'dr_tier_ids'             => [
                 'sometimes',
                 Rule::requiredIf($applies_to === 'specific_product'),

@@ -14,14 +14,17 @@ class CouponService
      * Returns ['valid' => true, 'discount_amount' => X]
      *      or ['valid' => false, 'message' => '...']
      *
-     * @param array<string, float> $dr_tier_amounts  Map of dr_tier_id => subtotal for that tier
+     * @param array<string, float> $dr_tier_amounts        Map of dr_tier_id => subtotal for that tier
+     * @param array<string, float> $product_type_amounts   Map of product_type => subtotal for that type
      */
     public function validateAndCalculate(
         Coupon $coupon,
         float $order_amount,
         int|string $user_id,
         array $dr_tier_ids = [],
-        array $dr_tier_amounts = []
+        array $dr_tier_amounts = [],
+        array $cart_product_types = [],
+        array $product_type_amounts = []
     ): array {
         if (!$coupon->is_active) {
             return ['valid' => false, 'message' => 'Coupon not found.'];
@@ -49,6 +52,25 @@ class CouponService
             }
         }
 
+        // Check product type restriction
+        $coupon_product_types = $coupon->product_types ?? [];
+        if (!empty($coupon_product_types) && !empty($cart_product_types)) {
+            $matched = array_intersect($coupon_product_types, $cart_product_types);
+            if (empty($matched)) {
+                $labels = [
+                    'link_building'        => 'Link Building',
+                    'new_content'          => 'New Content',
+                    'content_optimization' => 'Content Optimizations',
+                    'content_brief'        => 'Content Briefs',
+                ];
+                $allowed = implode(', ', array_map(
+                    fn ($t) => $labels[$t] ?? ucfirst(str_replace('_', ' ', $t)),
+                    $coupon_product_types
+                ));
+                return ['valid' => false, 'message' => "This coupon is only valid for: {$allowed}."];
+            }
+        }
+
         if ($coupon->applies_to === 'specific_product') {
             $coupon->loadMissing('drTiers');
             $coupon_tier_ids = $coupon->drTiers->pluck('id')->toArray();
@@ -67,14 +89,28 @@ class CouponService
             }
         }
 
-        $discount_amount = $this->calculateDiscount($coupon, $order_amount, $dr_tier_amounts);
+        $discount_amount = $this->calculateDiscount($coupon, $order_amount, $dr_tier_amounts, $product_type_amounts);
 
         return ['valid' => true, 'discount_amount' => $discount_amount];
     }
 
-    private function calculateDiscount(Coupon $coupon, float $order_amount, array $dr_tier_amounts): float
-    {
-        if ($coupon->applies_to === 'specific_product') {
+    private function calculateDiscount(
+        Coupon $coupon,
+        float $order_amount,
+        array $dr_tier_amounts,
+        array $product_type_amounts = []
+    ): float {
+        // Product type restriction takes precedence for base amount calculation
+        $coupon_product_types = $coupon->product_types ?? [];
+        if (!empty($coupon_product_types) && !empty($product_type_amounts)) {
+            $base_amount = 0.0;
+            foreach ($coupon_product_types as $product_type) {
+                $base_amount += (float) ($product_type_amounts[$product_type] ?? 0);
+            }
+            if ($base_amount === 0.0) {
+                $base_amount = $order_amount;
+            }
+        } elseif ($coupon->applies_to === 'specific_product') {
             $coupon->loadMissing('drTiers');
             $coupon_tier_ids = $coupon->drTiers->pluck('id')->toArray();
 

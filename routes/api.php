@@ -115,6 +115,7 @@ use App\Http\Controllers\Admin\Credits\AdminCreditStatsController;
 use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
 use App\Http\Controllers\Admin\Credits\AdminCreditAssignController;
 use App\Http\Controllers\Admin\Credits\AdminCreditTransactionController;
+use App\Http\Controllers\Admin\Credits\AdminCreditPurchaseController;
 use App\Http\Controllers\Client\Credits\CreditBalanceController;
 use App\Http\Controllers\Client\Credits\CreditBalanceSummaryController;
 use App\Http\Controllers\Client\Credits\CreditTransactionController;
@@ -459,6 +460,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/users',        [AdminCreditUserSearchController::class,  'index']);
             Route::post('/assign',      [AdminCreditAssignController::class,      'assign']);
             Route::get('/transactions', [AdminCreditTransactionController::class, 'index']);
+            Route::get('/purchases',    [AdminCreditPurchaseController::class,    'index']);
         });
 
         // Email notification settings — GET: super_admin, admin, staff | PUT: super_admin, admin

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -46,6 +47,16 @@ class Coupon extends Model
     public function drTier(): BelongsTo
     {
         return $this->belongsTo(DrTier::class, 'dr_tier_id');
+    }
+
+    public function drTiers(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            DrTier::class,
+            'coupon_dr_tiers',
+            'coupon_id',
+            'dr_tier_id'
+        )->select(['dr_tiers.id', 'dr_tiers.label', 'dr_tiers.price_per_link', 'dr_tiers.is_active']);
     }
 
     public function orders(): HasMany

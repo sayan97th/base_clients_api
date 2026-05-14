@@ -48,10 +48,14 @@ class UpdateCouponRequest extends FormRequest
                 },
             ],
             'applies_to'              => 'sometimes|in:all,specific_product,minimum_purchase',
-            'dr_tier_id'              => [
+            'dr_tier_ids'             => [
                 'sometimes',
                 Rule::requiredIf($applies_to === 'specific_product'),
                 'nullable',
+                'array',
+                'min:1',
+            ],
+            'dr_tier_ids.*'           => [
                 'string',
                 Rule::exists('dr_tiers', 'id'),
             ],
@@ -92,7 +96,9 @@ class UpdateCouponRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'dr_tier_id.required'             => 'A DR tier is required when applies_to is specific_product.',
+            'dr_tier_ids.required'             => 'At least one DR tier must be selected when applies_to is specific_product.',
+            'dr_tier_ids.min'                  => 'At least one DR tier must be selected.',
+            'dr_tier_ids.*.exists'             => 'One or more selected DR tiers are invalid.',
             'minimum_purchase_amount.required' => 'A minimum purchase amount is required when applies_to is minimum_purchase.',
         ];
     }

@@ -16,7 +16,7 @@ class CouponController extends Controller
      */
     public function index(): JsonResponse
     {
-        $coupons = Coupon::with('drTier')
+        $coupons = Coupon::with('drTiers')
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -30,7 +30,7 @@ class CouponController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $coupon = Coupon::with('drTier')->find($id);
+        $coupon = Coupon::with('drTiers')->find($id);
 
         if (!$coupon) {
             return response()->json(['message' => 'Coupon not found.'], 404);
@@ -44,10 +44,19 @@ class CouponController extends Controller
      */
     public function store(StoreCouponRequest $request): JsonResponse
     {
-        $data = $request->validated();
+        $validated   = $request->validated();
+        $dr_tier_ids = $validated['dr_tier_ids'] ?? [];
+        unset($validated['dr_tier_ids']);
 
-        $coupon = Coupon::create($data);
-        $coupon->load('drTier');
+        $validated['dr_tier_id'] = null;
+
+        $coupon = Coupon::create($validated);
+
+        if (!empty($dr_tier_ids)) {
+            $coupon->drTiers()->sync($dr_tier_ids);
+        }
+
+        $coupon->load('drTiers');
 
         return response()->json(['data' => $this->formatCoupon($coupon)], 201);
     }
@@ -63,8 +72,17 @@ class CouponController extends Controller
             return response()->json(['message' => 'Coupon not found.'], 404);
         }
 
-        $coupon->update($request->validated());
-        $coupon->refresh()->load('drTier');
+        $validated   = $request->validated();
+        $dr_tier_ids = $validated['dr_tier_ids'] ?? null;
+        unset($validated['dr_tier_ids']);
+
+        $coupon->update($validated);
+
+        if ($dr_tier_ids !== null) {
+            $coupon->drTiers()->sync($dr_tier_ids);
+        }
+
+        $coupon->refresh()->load('drTiers');
 
         return response()->json(['data' => $this->formatCoupon($coupon)]);
     }
@@ -95,8 +113,8 @@ class CouponController extends Controller
             'discount_type'           => $coupon->discount_type,
             'discount_value'          => $coupon->discount_value,
             'applies_to'              => $coupon->applies_to,
-            'dr_tier_id'              => $coupon->dr_tier_id,
-            'dr_tier_label'           => $coupon->drTier?->label,
+            'dr_tier_ids'             => $coupon->drTiers->pluck('id')->values()->toArray(),
+            'dr_tiers'                => $coupon->drTiers->values()->toArray(),
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
             'starts_at'               => $coupon->starts_at?->format('Y-m-d'),
             'expires_at'              => $coupon->expires_at?->format('Y-m-d'),

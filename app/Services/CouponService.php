@@ -50,7 +50,11 @@ class CouponService
         }
 
         if ($coupon->applies_to === 'specific_product') {
-            if (!in_array($coupon->dr_tier_id, $dr_tier_ids, strict: true)) {
+            $coupon->loadMissing('drTiers');
+            $coupon_tier_ids = $coupon->drTiers->pluck('id')->toArray();
+            $matched         = array_intersect($coupon_tier_ids, $dr_tier_ids);
+
+            if (empty($matched)) {
                 return ['valid' => false, 'message' => 'This coupon is not valid for the selected products.'];
             }
         }
@@ -70,8 +74,18 @@ class CouponService
 
     private function calculateDiscount(Coupon $coupon, float $order_amount, array $dr_tier_amounts): float
     {
-        if ($coupon->applies_to === 'specific_product' && $coupon->dr_tier_id !== null) {
-            $base_amount = (float) ($dr_tier_amounts[$coupon->dr_tier_id] ?? $order_amount);
+        if ($coupon->applies_to === 'specific_product') {
+            $coupon->loadMissing('drTiers');
+            $coupon_tier_ids = $coupon->drTiers->pluck('id')->toArray();
+
+            $base_amount = 0.0;
+            foreach ($coupon_tier_ids as $tier_id) {
+                $base_amount += (float) ($dr_tier_amounts[$tier_id] ?? 0);
+            }
+
+            if ($base_amount === 0.0) {
+                $base_amount = $order_amount;
+            }
         } else {
             $base_amount = $order_amount;
         }

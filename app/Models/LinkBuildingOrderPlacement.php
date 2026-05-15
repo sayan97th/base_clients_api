@@ -154,6 +154,7 @@ class LinkBuildingOrderPlacement extends Model
             'admin_team_id'             => $this->admin_team_id,
             'admin_team_name'           => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,
             'admin_team_color'          => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->color ?? null) : null,
+            'parent_order_status'       => $this->relationLoaded('orderItem') ? ($this->orderItem?->order?->status ?? null) : null,
             'created_at'                => $this->created_at?->toIso8601String(),
             'updated_at'                => $this->updated_at?->toIso8601String(),
         ];

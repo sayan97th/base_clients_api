@@ -67,13 +67,23 @@
                                     </span>
                                 </div>
 
+                                @php
+                                    $status_lower  = strtolower($new_status ?? '');
+                                    $is_processing = $status_lower === 'processing';
+                                    $is_completed  = $status_lower === 'completed';
+                                @endphp
+
                                 {{-- Heading --}}
                                 <h1 align="center"
                                     style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;line-height:1.25em;color:#111827;display:block;margin:0 0 6px;padding:0;font-size:22px;font-weight:600;">
                                     @if ($is_multi)
                                         Your order statuses have been updated
+                                    @elseif ($is_completed)
+                                        Your order is complete!
+                                    @elseif ($is_processing)
+                                        Your order is in progress
                                     @else
-                                        Your order status has changed
+                                        Your order status has been updated
                                     @endif
                                 </h1>
 
@@ -82,6 +92,10 @@
                                     style="margin:0 0 28px;font-weight:normal;color:#6b7280;font-size:13px;">
                                     @if ($purchase_title)
                                         {{ $purchase_title }}
+                                    @elseif ($is_completed)
+                                        All your link placements are now live.
+                                    @elseif ($is_processing)
+                                        Our team is actively working on your link building order.
                                     @else
                                         An administrator has updated the status of your order.
                                     @endif
@@ -127,13 +141,36 @@
                                         @endforeach
                                     </table>
                                 @else
-                                    {{-- Single order: show one status badge --}}
-                                    <p style="margin:0 0 24px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
-                                        The status of your order has been updated to:
-                                    </p>
+                                    {{-- Single order: show contextual message + status badge --}}
+                                    @if ($is_processing)
+                                        <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
+                                            Our team has started working on your link building order. We will notify you again once all placements are live and the order is complete.
+                                        </p>
+                                    @elseif ($is_completed)
+                                        <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
+                                            Great news — every link placement in your order is now live! Thank you for choosing us. You can review all your placements by clicking the button below.
+                                        </p>
+                                    @else
+                                        <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
+                                            An administrator has updated the status of your order. You can view the latest details by clicking the button below.
+                                        </p>
+                                    @endif
+
+                                    @php
+                                        if ($is_completed) {
+                                            $badge_bg    = '#dcfce7';
+                                            $badge_color = '#15803d';
+                                        } elseif ($is_processing) {
+                                            $badge_bg    = '#fef3c7';
+                                            $badge_color = '#92400e';
+                                        } else {
+                                            $badge_bg    = $brand_bg;
+                                            $badge_color = $brand_color;
+                                        }
+                                    @endphp
 
                                     <div style="text-align:center;margin:0 0 28px;">
-                                        <span style="display:inline-block;background-color:{{ $brand_bg }};color:{{ $brand_color }};font-size:16px;font-weight:700;padding:10px 32px;border-radius:6px;letter-spacing:0.5px;">
+                                        <span style="display:inline-block;background-color:{{ $badge_bg }};color:{{ $badge_color }};font-size:16px;font-weight:700;padding:10px 32px;border-radius:6px;letter-spacing:0.5px;">
                                             {{ $new_status }}
                                         </span>
                                     </div>

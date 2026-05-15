@@ -133,8 +133,12 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
 
-        if ($fresh->status !== $old_status && $fresh->order_item_id) {
-            $this->syncParentOrderStatus($fresh);
+        if ($fresh->status !== $old_status) {
+            if ($fresh->order_item_id) {
+                $this->syncParentOrderStatus($fresh);
+            } elseif ($fresh->user_id) {
+                $this->notifyAssignedUser($fresh, $old_status);
+            }
         }
 
         return response()->json([
@@ -227,7 +231,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    // ── Order status sync ─────────────────────────────────────────────────────
+    // ── Order status sync & notifications ────────────────────────────────────
 
     /**
      * Syncs the parent LinkBuildingOrder status after a placement status change.
@@ -274,6 +278,46 @@ class LinkBuildingOrdersDashboardController extends Controller
                 )
             );
         }
+    }
+
+    /**
+     * Sends a status-change notification email to the user directly assigned to a standalone
+     * placement (user_id set, no order_item_id).
+     *
+     * To keep notifications meaningful, emails are sent only on two transitions:
+     *   - Any status → "Live"            → notifies as "completed"
+     *   - "New Request" → anything else  → notifies as "processing" (work has started)
+     */
+    private function notifyAssignedUser(LinkBuildingOrderPlacement $placement, string $old_status): void
+    {
+        $placement->loadMissing('user');
+
+        $user = $placement->user;
+
+        if (! $user) {
+            return;
+        }
+
+        $new_status = $placement->status;
+
+        if ($new_status === 'Live') {
+            $order_status = 'completed';
+        } elseif ($old_status === 'New Request') {
+            $order_status = 'processing';
+        } else {
+            return;
+        }
+
+        $display_order_id = $placement->order_id
+            ?? 'LBO-' . strtoupper(substr(str_replace('-', '', $placement->id), 0, 10));
+
+        Mail::to($user->email)->queue(
+            new OrderStatusChangeMail(
+                user: $user,
+                new_status: $order_status,
+                order_id: $display_order_id,
+            )
+        );
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

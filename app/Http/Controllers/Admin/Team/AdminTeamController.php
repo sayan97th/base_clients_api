@@ -12,6 +12,21 @@ use Illuminate\Http\Request;
 
 class AdminTeamController extends Controller
 {
+    /**
+     * GET /api/admin/teams/for-select
+     *
+     * Lightweight list of active teams for dropdown selects.
+     * Returns only id, name, and color — no pagination, no members.
+     */
+    public function forSelect(): JsonResponse
+    {
+        $teams = AdminTeam::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'color', 'max_capacity']);
+
+        return response()->json(['data' => $teams->values()]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $per_page = min((int) $request->query('per_page', 10), 50);

@@ -82,6 +82,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'approval_date'             => 'nullable|string|max:20',
             'final_price'               => 'nullable|string|max:100',
             'user_id'                   => 'nullable|integer|exists:users,id',
+            'admin_team_id'             => 'nullable|uuid|exists:admin_teams,id',
         ];
     }
 }

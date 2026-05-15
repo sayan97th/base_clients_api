@@ -60,7 +60,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         // Include all visible placements: admin-created (order_id), client-purchased
         // (order_item_id), or admin-assigned to a client (user_id).
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')
@@ -171,7 +171,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $sort_rules     = $request->input('sort_rules', []);
         $column_filters = $request->input('column_filters', []);
 
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')

@@ -346,6 +346,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('teams')->group(function () {
             Route::get('/',                          [AdminTeamController::class, 'index']);
             Route::post('/',                         [AdminTeamController::class, 'store']);
+            Route::get('/for-select',                [AdminTeamController::class, 'forSelect']);
             Route::get('/{id}',                      [AdminTeamController::class, 'show']);
             Route::patch('/{id}',                    [AdminTeamController::class, 'update']);
             Route::delete('/{id}',                   [AdminTeamController::class, 'destroy']);

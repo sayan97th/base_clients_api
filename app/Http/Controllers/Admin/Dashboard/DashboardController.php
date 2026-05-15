@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Admin\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdminTeam;
 use App\Models\BacklinkOrder;
 use App\Models\Invoice;
-use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 
@@ -34,26 +34,29 @@ class DashboardController extends Controller
     /**
      * GET /api/admin/dashboard/team-capacity
      *
-     * Returns capacity metrics per staff team member, computed from assigned backlink orders.
+     * Returns capacity metrics per admin team, computed from assigned
+     * link building order placements vs the team's max_capacity setting.
      */
     public function teamCapacity(): JsonResponse
     {
-        $staff_users = User::whereHas('roles', fn ($q) => $q->where('name', 'staff'))
-            ->get(['id', 'first_name', 'last_name', 'staff_capacity']);
+        $teams = AdminTeam::where('is_active', true)
+            ->withCount([
+                'placements as total_assigned' => fn ($q) => $q->whereNotIn('status', ['Cancelled', 'Live']),
+            ])
+            ->orderBy('name')
+            ->get();
 
-        $data = $staff_users->map(function (User $user) {
-            $total_assigned = BacklinkOrder::where('link_builder_user_id', $user->id)
-                ->whereNotIn('status', ['Cancelled', 'Live'])
-                ->count();
-
-            $max_capacity = $user->staff_capacity ?: 25;
-            $capacity_pct = $max_capacity > 0
+        $data = $teams->map(function (AdminTeam $team) {
+            $max_capacity   = $team->max_capacity ?: 50;
+            $total_assigned = (int) $team->total_assigned;
+            $capacity_pct   = $max_capacity > 0
                 ? min(100, (int) round(($total_assigned / $max_capacity) * 100))
                 : 0;
 
             return [
-                'user_id'        => $user->id,
-                'name'           => $user->first_name . ' ' . $user->last_name,
+                'team_id'        => $team->id,
+                'name'           => $team->name,
+                'color'          => $team->color,
                 'capacity_pct'   => $capacity_pct,
                 'total_assigned' => $total_assigned,
                 'max_capacity'   => $max_capacity,
@@ -66,25 +69,27 @@ class DashboardController extends Controller
     /**
      * GET /api/admin/dashboard/team-health
      *
-     * Returns link health statistics per staff team member.
+     * Returns on-track vs delayed link building placement counts per admin team.
      */
     public function teamHealth(): JsonResponse
     {
         $today = Carbon::today();
 
-        $staff_users = User::whereHas('roles', fn ($q) => $q->where('name', 'staff'))
-            ->get(['id', 'first_name', 'last_name']);
+        $teams = AdminTeam::where('is_active', true)
+            ->with(['placements' => function ($q) {
+                $q->whereNotIn('status', ['Cancelled', 'Live'])
+                  ->select(['id', 'admin_team_id', 'estimated_delivery_date', 'status']);
+            }])
+            ->orderBy('name')
+            ->get();
 
-        $data = $staff_users->map(function (User $user) use ($today) {
-            $assigned_orders = BacklinkOrder::where('link_builder_user_id', $user->id)
-                ->whereNotIn('status', ['Cancelled', 'Live'])
-                ->get(['estimated_delivery_date', 'status']);
-
-            $total_links   = $assigned_orders->count();
+        $data = $teams->map(function (AdminTeam $team) use ($today) {
+            $placements    = $team->placements;
+            $total_links   = $placements->count();
             $links_delayed = 0;
 
-            foreach ($assigned_orders as $order) {
-                if ($this->isDelayed($order->estimated_delivery_date, $order->status, $today)) {
+            foreach ($placements as $placement) {
+                if ($this->isDelayed($placement->estimated_delivery_date, $placement->status, $today)) {
                     $links_delayed++;
                 }
             }
@@ -92,11 +97,12 @@ class DashboardController extends Controller
             $links_on_track = $total_links - $links_delayed;
             $health_pct     = $total_links > 0
                 ? (int) round(($links_on_track / $total_links) * 100)
-                : 0;
+                : 100;
 
             return [
-                'user_id'        => $user->id,
-                'name'           => $user->first_name . ' ' . $user->last_name,
+                'team_id'        => $team->id,
+                'name'           => $team->name,
+                'color'          => $team->color,
                 'health_pct'     => $health_pct,
                 'links_on_track' => $links_on_track,
                 'total_links'    => $total_links,
@@ -108,12 +114,13 @@ class DashboardController extends Controller
     }
 
     /**
-     * Determines whether a backlink order is delayed.
-     * A link is delayed when: estimated_delivery_date < today AND status != 'Live'.
+     * Determines whether a link building placement is delayed.
+     * A placement is delayed when estimated_delivery_date is in the past
+     * and it is not yet Live or Cancelled.
      */
     private function isDelayed(?string $estimated_delivery_date, string $status, Carbon $today): bool
     {
-        if ($status === 'Live') {
+        if (in_array($status, ['Live', 'Cancelled'], true)) {
             return false;
         }
 

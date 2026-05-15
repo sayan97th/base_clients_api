@@ -50,6 +50,8 @@ class LinkBuildingOrderPlacement extends Model
         'final_price',
         // Client assignment (admin can assign a standalone placement to a user)
         'user_id',
+        // Admin team assignment
+        'admin_team_id',
     ];
 
     protected function casts(): array
@@ -80,6 +82,11 @@ class LinkBuildingOrderPlacement extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function adminTeam(): BelongsTo
+    {
+        return $this->belongsTo(AdminTeam::class, 'admin_team_id');
     }
 
     /**
@@ -144,6 +151,9 @@ class LinkBuildingOrderPlacement extends Model
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
             'user_id'                   => $this->user_id,
+            'admin_team_id'             => $this->admin_team_id,
+            'admin_team_name'           => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,
+            'admin_team_color'          => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->color ?? null) : null,
             'created_at'                => $this->created_at?->toIso8601String(),
             'updated_at'                => $this->updated_at?->toIso8601String(),
         ];

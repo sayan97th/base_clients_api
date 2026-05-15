@@ -36,6 +36,7 @@ class DatabaseSeeder extends Seeder
         $this->call(StaffUserSeeder::class);
         $this->call(BacklinkOrderSeeder::class);
         $this->call(NewsPlacementSeeder::class);
+        $this->call(AdminTeamSeeder::class);
     }
 
     private function seedOrganization(): void

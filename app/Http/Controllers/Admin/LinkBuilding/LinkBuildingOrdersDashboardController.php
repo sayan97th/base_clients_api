@@ -8,10 +8,12 @@ use App\Events\LinkBuildingOrderUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
+use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrderPlacement;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Mail;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LinkBuildingOrdersDashboardController extends Controller
@@ -111,6 +113,8 @@ class LinkBuildingOrdersDashboardController extends Controller
      * PUT /api/admin/link-building-orders/{id}
      *
      * Fully replaces all fields of an existing link building order.
+     * When a client-purchased placement status changes, the parent LinkBuildingOrder
+     * status is synced automatically and an email is sent to the client.
      */
     public function update(UpdateLinkBuildingOrderRequest $request, string $id): JsonResponse
     {
@@ -120,6 +124,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             return response()->json(['message' => 'Link building order not found.'], 404);
         }
 
+        $old_status = $placement->status;
         $placement->update($request->validated());
 
         /** @var LinkBuildingOrderPlacement $fresh */
@@ -127,6 +132,10 @@ class LinkBuildingOrdersDashboardController extends Controller
         $session_id = $request->header('X-Session-ID');
 
         broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+
+        if ($fresh->status !== $old_status && $fresh->order_item_id) {
+            $this->syncParentOrderStatus($fresh);
+        }
 
         return response()->json([
             'message' => 'Link building order updated successfully.',
@@ -216,6 +225,55 @@ class LinkBuildingOrdersDashboardController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    // ── Order status sync ─────────────────────────────────────────────────────
+
+    /**
+     * Syncs the parent LinkBuildingOrder status after a placement status change.
+     *
+     * Rules:
+     *   - All placements "Live"  → order becomes "completed"
+     *   - Any other combination  → order becomes "processing"
+     *
+     * An email is queued to the client only when the order status actually changes.
+     */
+    private function syncParentOrderStatus(LinkBuildingOrderPlacement $placement): void
+    {
+        $placement->loadMissing('orderItem.order.user');
+
+        $order_item   = $placement->orderItem;
+        $parent_order = $order_item?->order;
+
+        if (! $parent_order) {
+            return;
+        }
+
+        $all_statuses = LinkBuildingOrderPlacement::whereHas('orderItem', function ($q) use ($parent_order) {
+            $q->where('order_id', $parent_order->id);
+        })->pluck('status');
+
+        $new_order_status = $all_statuses->every(fn ($s) => $s === 'Live')
+            ? 'completed'
+            : 'processing';
+
+        if ($parent_order->status === $new_order_status) {
+            return;
+        }
+
+        $parent_order->update(['status' => $new_order_status]);
+
+        $user = $parent_order->user;
+
+        if ($user) {
+            Mail::to($user->email)->queue(
+                new OrderStatusChangeMail(
+                    user: $user,
+                    new_status: $new_order_status,
+                    order_id: $parent_order->id,
+                )
+            );
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

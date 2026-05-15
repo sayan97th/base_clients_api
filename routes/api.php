@@ -112,6 +112,7 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
 use App\Http\Controllers\Admin\Client\AdminClientController;
+use App\Http\Controllers\Admin\Team\AdminTeamController as AdminTeamController;
 use App\Http\Controllers\Admin\Credits\AdminCreditStatsController;
 use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
 use App\Http\Controllers\Admin\Credits\AdminCreditAssignController;
@@ -339,6 +340,18 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
+        });
+
+        // Admin Teams — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('teams')->group(function () {
+            Route::get('/',                          [AdminTeamController::class, 'index']);
+            Route::post('/',                         [AdminTeamController::class, 'store']);
+            Route::get('/{id}',                      [AdminTeamController::class, 'show']);
+            Route::patch('/{id}',                    [AdminTeamController::class, 'update']);
+            Route::delete('/{id}',                   [AdminTeamController::class, 'destroy']);
+            Route::post('/{id}/members',             [AdminTeamController::class, 'addMember']);
+            Route::delete('/{id}/members/{user_id}', [AdminTeamController::class, 'removeMember']);
+            Route::patch('/{id}/members/{user_id}',  [AdminTeamController::class, 'updateMemberRole']);
         });
 
         // Discounts — super_admin, admin, staff

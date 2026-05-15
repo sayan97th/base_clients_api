@@ -48,6 +48,8 @@ class LinkBuildingOrderPlacement extends Model
         'lb_tl_approval',
         'approval_date',
         'final_price',
+        // Client assignment (admin can assign a standalone placement to a user)
+        'user_id',
     ];
 
     protected function casts(): array
@@ -75,21 +77,46 @@ class LinkBuildingOrderPlacement extends Model
         return $this->belongsTo(User::class, 'link_builder_user_id');
     }
 
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
     /**
      * Returns the full API row shape for the admin dashboard, including computed
      * fields days_left and projected_health. The exact_match boolean is converted
      * to a "Yes"/"No" string to match the frontend's editable select field.
+     *
+     * For client-purchased placements (order_item_id set, no order_id):
+     * - order_id is derived deterministically from the placement UUID
+     * - client is derived from the purchase order's user name when not set directly
      */
     public function toApiArray(): array
     {
         [$days_left, $projected_health] = $this->computeDeliveryMetrics();
 
+        // Derive display order_id for client-purchased placements that don't have one.
+        // Uses placement UUID to guarantee uniqueness. Saved permanently on first admin edit.
+        $order_id = $this->order_id ?? $this->derivedOrderId();
+
+        // Derive client name from linked purchase order user when not set directly.
+        $client = $this->client ?? '';
+        if ($client === '' && $this->relationLoaded('orderItem')) {
+            $purchase_user = $this->orderItem?->order?->user;
+            if ($purchase_user) {
+                $client = trim(($purchase_user->first_name ?? '') . ' ' . ($purchase_user->last_name ?? ''));
+            }
+        }
+        if ($client === '' && $this->relationLoaded('user') && $this->user) {
+            $client = trim(($this->user->first_name ?? '') . ' ' . ($this->user->last_name ?? ''));
+        }
+
         return [
             'id'                        => $this->id,
-            'order_id'                  => $this->order_id ?? '',
+            'order_id'                  => $order_id,
             'team_specific_link_id'     => $this->team_specific_link_id ?? '',
             'link_type'                 => $this->link_type ?? '',
-            'client'                    => $this->client ?? '',
+            'client'                    => $client,
             'keyword'                   => $this->keyword ?? '',
             'landing_page'              => $this->landing_page ?? '',
             'exact_match'               => $this->exact_match ? 'Yes' : 'No',
@@ -116,9 +143,20 @@ class LinkBuildingOrderPlacement extends Model
             'lb_tl_approval'            => $this->lb_tl_approval ?? '',
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
+            'user_id'                   => $this->user_id,
             'created_at'                => $this->created_at?->toIso8601String(),
             'updated_at'                => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Generates a deterministic, unique display order_id from the placement UUID.
+     * Format: LBO-{first 10 hex chars of UUID uppercased}
+     * Example: UUID 550e8400-e29b-41d4-a716-... → LBO-550E8400E2
+     */
+    private function derivedOrderId(): string
+    {
+        return 'LBO-' . strtoupper(substr(str_replace('-', '', $this->id), 0, 10));
     }
 
     /**

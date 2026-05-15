@@ -207,12 +207,19 @@ class OrderController extends Controller
                     'subtotal'   => $subtotal,
                 ]);
 
+                $client_name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+
                 foreach ($item_data['placements'] as $placement_data) {
                     $item->placements()->create([
                         'row_index'    => $placement_data['row_index'],
                         'keyword'      => $placement_data['keyword'] ?: null,
                         'landing_page' => $placement_data['landing_page'] ?: null,
                         'exact_match'  => $placement_data['exact_match'],
+                        // Dashboard fields — populated on checkout so placements
+                        // appear immediately in the admin Link Building Orders table.
+                        'client'       => $client_name ?: null,
+                        'status'       => 'New Request',
+                        'request_date' => now()->format('m/d/Y'),
                     ]);
                 }
             }
@@ -312,6 +319,8 @@ class OrderController extends Controller
                     'keyword'      => $placement->keyword,
                     'landing_page' => $placement->landing_page,
                     'exact_match'  => $placement->exact_match,
+                    'live_link'    => $placement->live_link,
+                    'status'       => $placement->status,
                 ])->values(),
             ])->values(),
             'billing' => $order->billing ? [

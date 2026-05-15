@@ -74,6 +74,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'lb_tl_approval'            => 'nullable|string|max:255',
             'approval_date'             => 'nullable|string|max:20',
             'final_price'               => 'nullable|string|max:100',
+            'user_id'                   => 'nullable|integer|exists:users,id',
         ];
     }
 }

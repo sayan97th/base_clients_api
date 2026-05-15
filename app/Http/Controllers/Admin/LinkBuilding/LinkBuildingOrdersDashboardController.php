@@ -43,7 +43,8 @@ class LinkBuildingOrdersDashboardController extends Controller
      * POST /api/admin/link-building-orders/search
      *
      * Paginated list with server-side filtering and multi-column sorting.
-     * Only returns dashboard rows (those with an order_id set).
+     * Returns all dashboard-visible placements: admin-created (order_id set),
+     * client-purchased (order_item_id set), and admin-assigned (user_id set).
      */
     public function search(Request $request): JsonResponse
     {
@@ -57,8 +58,14 @@ class LinkBuildingOrdersDashboardController extends Controller
         $sort_rules     = $request->input('sort_rules', []);
         $column_filters = $request->input('column_filters', []);
 
-        // Scope to dashboard rows only (placements with an assigned order_id)
-        $query = LinkBuildingOrderPlacement::whereNotNull('order_id');
+        // Include all visible placements: admin-created (order_id), client-purchased
+        // (order_item_id), or admin-assigned to a client (user_id).
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user'])
+            ->where(function ($q) {
+                $q->whereNotNull('order_id')
+                  ->orWhereNotNull('order_item_id')
+                  ->orWhereNotNull('user_id');
+            });
 
         $this->applyGlobalSearch($query, $search);
         $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
@@ -164,7 +171,12 @@ class LinkBuildingOrdersDashboardController extends Controller
         $sort_rules     = $request->input('sort_rules', []);
         $column_filters = $request->input('column_filters', []);
 
-        $query = LinkBuildingOrderPlacement::whereNotNull('order_id');
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user'])
+            ->where(function ($q) {
+                $q->whereNotNull('order_id')
+                  ->orWhereNotNull('order_item_id')
+                  ->orWhereNotNull('user_id');
+            });
 
         $this->applyGlobalSearch($query, $search);
         $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);

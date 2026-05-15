@@ -47,12 +47,17 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
         $id = $this->route('id');
 
         return [
-            'order_id'                  => "required|string|max:50|unique:link_building_order_placements,order_id,{$id}",
+            // order_id is nullable on update — client-purchased rows receive a derived
+            // display ID on the first save which gets stored automatically.
+            'order_id'                  => "nullable|string|max:50|unique:link_building_order_placements,order_id,{$id}",
             'team_specific_link_id'     => 'nullable|string|max:50',
-            'link_type'                 => 'required|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
-            'client'                    => 'required|string|max:255',
-            'keyword'                   => 'required|string|max:500',
-            'landing_page'              => 'required|url|max:2000',
+            // link_type, client, keyword, landing_page are nullable on update so that
+            // admins can edit individual fields on client-purchased rows without being
+            // forced to fill in all admin-specific fields first.
+            'link_type'                 => 'nullable|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
+            'client'                    => 'nullable|string|max:255',
+            'keyword'                   => 'nullable|string|max:500',
+            'landing_page'              => 'nullable|url|max:2000',
             'exact_match'               => 'nullable|boolean',
             'notes'                     => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
@@ -76,6 +81,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'lb_tl_approval'            => 'nullable|string|max:255',
             'approval_date'             => 'nullable|string|max:20',
             'final_price'               => 'nullable|string|max:100',
+            'user_id'                   => 'nullable|integer|exists:users,id',
         ];
     }
 }

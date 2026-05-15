@@ -1,0 +1,355 @@
+<?php
+
+namespace App\Http\Controllers\Admin\LinkBuilding;
+
+use App\Events\LinkBuildingOrderCreated;
+use App\Events\LinkBuildingOrderDeleted;
+use App\Events\LinkBuildingOrderUpdated;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
+use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
+use App\Models\LinkBuildingOrderPlacement;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+class LinkBuildingOrdersDashboardController extends Controller
+{
+    /**
+     * DB columns that may appear as a sort_rules key.
+     * Computed-only fields (days_left, projected_health) are intentionally excluded.
+     */
+    private const ALLOWED_SORT_COLUMNS = [
+        'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'article_title', 'article', 'status', 'live_link', 'live_link_date',
+        'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
+        'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+    ];
+
+    /** All columns that may be targeted by column_filters. */
+    private const FILTERABLE_COLUMNS = [
+        'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'article_title', 'article', 'status', 'live_link', 'live_link_date',
+        'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
+        'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+    ];
+
+    /**
+     * POST /api/admin/link-building-orders/search
+     *
+     * Paginated list with server-side filtering and multi-column sorting.
+     * Only returns dashboard rows (those with an order_id set).
+     */
+    public function search(Request $request): JsonResponse
+    {
+        $page           = max(1, (int) $request->input('page', 1));
+        $per_page       = min((int) $request->input('per_page', 50), 200);
+        $search         = $request->input('search');
+        $status         = $request->input('status');
+        $link_type      = $request->input('link_type');
+        $client         = $request->input('client');
+        $link_builder   = $request->input('link_builder');
+        $sort_rules     = $request->input('sort_rules', []);
+        $column_filters = $request->input('column_filters', []);
+
+        // Scope to dashboard rows only (placements with an assigned order_id)
+        $query = LinkBuildingOrderPlacement::whereNotNull('order_id');
+
+        $this->applyGlobalSearch($query, $search);
+        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+        $this->applyColumnFilters($query, $column_filters);
+        $this->applySortRules($query, $sort_rules);
+
+        $paginated = $query->paginate($per_page, ['*'], 'page', $page);
+
+        $data = $paginated->getCollection()
+            ->map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray())
+            ->values();
+
+        return response()->json([
+            'data'         => $data,
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'per_page'     => $paginated->perPage(),
+            'total'        => $paginated->total(),
+            'from'         => $paginated->firstItem(),
+            'to'           => $paginated->lastItem(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders
+     *
+     * Creates a new link building order row on the dashboard.
+     */
+    public function store(StoreLinkBuildingOrderRequest $request): JsonResponse
+    {
+        $placement  = LinkBuildingOrderPlacement::create($request->validated());
+        $session_id = $request->header('X-Session-ID');
+
+        broadcast(new LinkBuildingOrderCreated($placement, $session_id));
+
+        return response()->json([
+            'message' => 'Link building order created successfully.',
+            'data'    => $placement->toApiArray(),
+        ], 201);
+    }
+
+    /**
+     * PUT /api/admin/link-building-orders/{id}
+     *
+     * Fully replaces all fields of an existing link building order.
+     */
+    public function update(UpdateLinkBuildingOrderRequest $request, string $id): JsonResponse
+    {
+        $placement = LinkBuildingOrderPlacement::find($id);
+
+        if (! $placement) {
+            return response()->json(['message' => 'Link building order not found.'], 404);
+        }
+
+        $placement->update($request->validated());
+
+        /** @var LinkBuildingOrderPlacement $fresh */
+        $fresh      = $placement->fresh();
+        $session_id = $request->header('X-Session-ID');
+
+        broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+
+        return response()->json([
+            'message' => 'Link building order updated successfully.',
+            'data'    => $fresh->toApiArray(),
+        ]);
+    }
+
+    /**
+     * DELETE /api/admin/link-building-orders/{id}
+     *
+     * Permanently deletes a link building order row.
+     */
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $placement = LinkBuildingOrderPlacement::find($id);
+
+        if (! $placement) {
+            return response()->json(['message' => 'Link building order not found.'], 404);
+        }
+
+        $session_id = $request->header('X-Session-ID');
+
+        $placement->delete();
+
+        broadcast(new LinkBuildingOrderDeleted($id, $session_id));
+
+        return response()->json(['message' => 'Link building order deleted successfully.']);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/export
+     *
+     * Streams a CSV download of all rows matching the same filters as /search.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $search         = $request->input('search');
+        $status         = $request->input('status');
+        $link_type      = $request->input('link_type');
+        $client         = $request->input('client');
+        $link_builder   = $request->input('link_builder');
+        $sort_rules     = $request->input('sort_rules', []);
+        $column_filters = $request->input('column_filters', []);
+
+        $query = LinkBuildingOrderPlacement::whereNotNull('order_id');
+
+        $this->applyGlobalSearch($query, $search);
+        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+        $this->applyColumnFilters($query, $column_filters);
+        $this->applySortRules($query, $sort_rules);
+
+        $filename = 'link-building-orders-' . now()->format('Y-m-d') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $columns = [
+            'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
+            'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+            'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
+            'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
+            'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
+            'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+        ];
+
+        $callback = function () use ($query, $columns) {
+            $handle = fopen('php://output', 'w');
+
+            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM
+            fputcsv($handle, $columns);
+
+            $query->chunk(500, function ($placements) use ($handle, $columns) {
+                foreach ($placements as $placement) {
+                    $row = $placement->toApiArray();
+                    fputcsv($handle, array_map(fn ($col) => $row[$col] ?? '', $columns));
+                }
+            });
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private function applyGlobalSearch($query, ?string $search): void
+    {
+        if (! filled($search)) {
+            return;
+        }
+
+        $query->where(function ($q) use ($search) {
+            $q->where('order_id', 'like', '%' . $search . '%')
+                ->orWhere('client', 'like', '%' . $search . '%')
+                ->orWhere('keyword', 'like', '%' . $search . '%')
+                ->orWhere('link_builder', 'like', '%' . $search . '%')
+                ->orWhere('status', 'like', '%' . $search . '%')
+                ->orWhere('partnership', 'like', '%' . $search . '%');
+        });
+    }
+
+    private function applyQuickFilters($query, ?string $status, ?string $link_type, ?string $client, ?string $link_builder): void
+    {
+        if (filled($status)) {
+            $query->where('status', $status);
+        }
+
+        if (filled($link_type)) {
+            $query->where('link_type', $link_type);
+        }
+
+        if (filled($client)) {
+            $query->where('client', 'like', '%' . $client . '%');
+        }
+
+        if (filled($link_builder)) {
+            $query->where('link_builder', 'like', '%' . $link_builder . '%');
+        }
+    }
+
+    private function applyColumnFilters($query, array $column_filters): void
+    {
+        foreach ($column_filters as $filter) {
+            $key  = $filter['key']  ?? '';
+            $type = $filter['type'] ?? '';
+
+            if (! in_array($key, self::FILTERABLE_COLUMNS, true)) {
+                continue;
+            }
+
+            match ($type) {
+                'text'   => $this->applyTextFilter($query, $key, $filter),
+                'select' => $this->applySelectFilter($query, $key, $filter),
+                'number' => $this->applyNumberFilter($query, $key, $filter),
+                'date'   => $this->applyDateFilter($query, $key, $filter),
+                default  => null,
+            };
+        }
+    }
+
+    private function applyTextFilter($query, string $key, array $filter): void
+    {
+        $value = $filter['value'] ?? '';
+        if (filled($value)) {
+            $query->where($key, 'like', '%' . $value . '%');
+        }
+    }
+
+    private function applySelectFilter($query, string $key, array $filter): void
+    {
+        $values = $filter['values'] ?? [];
+        if (! empty($values)) {
+            $query->whereIn($key, $values);
+        }
+    }
+
+    private function applyNumberFilter($query, string $key, array $filter): void
+    {
+        $min = $filter['min'] ?? '';
+        $max = $filter['max'] ?? '';
+
+        if (filled($min)) {
+            $query->where($key, '>=', (float) $min);
+        }
+
+        if (filled($max)) {
+            $query->where($key, '<=', (float) $max);
+        }
+    }
+
+    private function applyDateFilter($query, string $key, array $filter): void
+    {
+        $from = $filter['from'] ?? '';
+        $to   = $filter['to']   ?? '';
+
+        if (filled($from)) {
+            try {
+                $from_date = Carbon::createFromFormat('m/d/Y', $from)->startOfDay();
+                $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') >= ?", [$from_date->toDateString()]);
+            } catch (\Exception) {
+                // Invalid date — skip this bound
+            }
+        }
+
+        if (filled($to)) {
+            try {
+                $to_date = Carbon::createFromFormat('m/d/Y', $to)->startOfDay();
+                $query->whereRaw("STR_TO_DATE(`{$key}`, '%m/%d/%Y') <= ?", [$to_date->toDateString()]);
+            } catch (\Exception) {
+                // Invalid date — skip this bound
+            }
+        }
+    }
+
+    private function applySortRules($query, array $sort_rules): void
+    {
+        $unsortable = ['days_left', 'projected_health'];
+        $applied    = false;
+
+        foreach ($sort_rules as $rule) {
+            $key        = $rule['key']       ?? '';
+            $dir        = strtolower($rule['direction'] ?? 'asc');
+            $nulls_last = (bool) ($rule['nulls_last'] ?? false);
+
+            if (in_array($key, $unsortable, true)) {
+                continue;
+            }
+
+            if (! in_array($key, self::ALLOWED_SORT_COLUMNS, true)) {
+                continue;
+            }
+
+            if (! in_array($dir, ['asc', 'desc'], true)) {
+                continue;
+            }
+
+            if ($nulls_last) {
+                $query->orderByRaw("(`{$key}` IS NULL OR `{$key}` = ''), `{$key}` {$dir}");
+            } else {
+                $query->orderBy($key, $dir);
+            }
+
+            $applied = true;
+        }
+
+        if (! $applied) {
+            $query->orderBy('order_id', 'asc');
+        }
+    }
+}

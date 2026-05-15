@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\Discount\AdminDiscountController;
 use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
@@ -432,6 +433,16 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/backlink-orders',            [AdminBacklinkOrderController::class, 'store']);
             Route::put('/backlink-orders/{id}',        [AdminBacklinkOrderController::class, 'update']);
             Route::delete('/backlink-orders/{id}',     [AdminBacklinkOrderController::class, 'destroy']);
+        });
+
+        // Link Building Orders Dashboard — super_admin, admin, staff
+        // Note: search and export are registered before the generic POST store to avoid route shadowing.
+        Route::middleware('role:super_admin,admin,staff')->group(function () {
+            Route::post('/link-building-orders/search', [LinkBuildingOrdersDashboardController::class, 'search']);
+            Route::post('/link-building-orders/export', [LinkBuildingOrdersDashboardController::class, 'export']);
+            Route::post('/link-building-orders',         [LinkBuildingOrdersDashboardController::class, 'store']);
+            Route::put('/link-building-orders/{id}',     [LinkBuildingOrdersDashboardController::class, 'update']);
+            Route::delete('/link-building-orders/{id}',  [LinkBuildingOrdersDashboardController::class, 'destroy']);
         });
 
         // News Placements — super_admin, admin, staff

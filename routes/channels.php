@@ -11,6 +11,24 @@ Broadcast::channel('notifications.{userId}', function ($user, $userId) {
     return (int) $user->id === (int) $userId;
 });
 
+// Presence channel for real-time link building order dashboard collaboration.
+Broadcast::channel('link-building-orders', function ($user) {
+    if (! $user->hasRole(['super_admin', 'admin', 'staff'])) {
+        return false;
+    }
+
+    return [
+        'session_id'      => request()->header('X-Session-ID', (string) Str::uuid()),
+        'user_id'         => $user->id,
+        'name'            => trim($user->first_name . ' ' . $user->last_name),
+        'initials'        => strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1)),
+        'color'           => $user->presence_color ?? null,
+        'avatar_url'      => $user->profile_photo_url ?? null,
+        'focused_row_id'  => null,
+        'focused_col_key' => null,
+    ];
+});
+
 // Presence channel for real-time backlink order collaboration.
 // Returns user data so every connected tab knows who else is viewing the table.
 // The session_id is a per-connection UUID that the frontend uses as a tab-level

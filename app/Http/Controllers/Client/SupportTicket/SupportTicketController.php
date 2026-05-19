@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\SupportTicket\StoreSupportTicketMessageRequest;
 use App\Http\Requests\SupportTicket\StoreSupportTicketRequest;
 use App\Http\Requests\SupportTicket\UpdateSupportTicketRequest;
+use App\Jobs\SendAdminNewTicketNotificationJob;
+use App\Jobs\SendAdminTicketMessageNotificationJob;
 use App\Models\SupportTicket;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,6 +55,24 @@ class SupportTicketController extends Controller
 
             return $ticket->load('messages.sender:id,first_name,last_name,email');
         });
+
+        $client_name     = trim("{$user->first_name} {$user->last_name}");
+        $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
+        $view_ticket_url = rtrim(config('app.admin_url', config('app.url')), '/') . "/admin/support-tickets/{$support_ticket->id}";
+        $settings_url    = rtrim(config('app.admin_url', config('app.url')), '/') . '/admin/settings/email-notifications';
+
+        SendAdminNewTicketNotificationJob::dispatch(
+            ticket_number:   $support_ticket->ticket_number,
+            ticket_subject:  $support_ticket->subject,
+            ticket_priority: $support_ticket->priority,
+            client_name:     $client_name,
+            client_email:    $user->email,
+            client_initials: $client_initials,
+            initial_message: $request->content,
+            ticket_date:     $support_ticket->created_at->format('M d, Y \a\t g:i A'),
+            view_ticket_url: $view_ticket_url,
+            settings_url:    $settings_url,
+        );
 
         return response()->json([
             'message' => 'Support ticket created successfully.',
@@ -124,6 +144,23 @@ class SupportTicketController extends Controller
         ]);
 
         $message->load('sender:id,first_name,last_name,email');
+
+        $client_name     = trim("{$user->first_name} {$user->last_name}");
+        $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
+        $view_ticket_url = rtrim(config('app.admin_url', config('app.url')), '/') . "/admin/support-tickets/{$support_ticket->id}";
+        $settings_url    = rtrim(config('app.admin_url', config('app.url')), '/') . '/admin/settings/email-notifications';
+
+        SendAdminTicketMessageNotificationJob::dispatch(
+            ticket_number:   $support_ticket->ticket_number,
+            ticket_subject:  $support_ticket->subject,
+            client_name:     $client_name,
+            client_email:    $user->email,
+            client_initials: $client_initials,
+            message_content: $request->content,
+            message_date:    $message->created_at->format('M d, Y \a\t g:i A'),
+            view_ticket_url: $view_ticket_url,
+            settings_url:    $settings_url,
+        );
 
         return response()->json([
             'message' => 'Message added successfully.',

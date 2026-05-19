@@ -76,6 +76,7 @@ use App\Http\Controllers\Client\SmeContent\AuthoredContentController;
 use App\Http\Controllers\Client\SmeContent\InternalCollaborationController;
 use App\Http\Controllers\Client\SmeContent\EnhancedContentController;
 use App\Http\Controllers\Client\SupportTicket\SupportTicketController;
+use App\Http\Controllers\Admin\SupportTicket\AdminSupportTicketController;
 use App\Http\Controllers\Client\Team\TeamController;
 use App\Http\Controllers\Client\Team\TeamInvitationController;
 use App\Http\Controllers\Client\Team\TeamMemberController;
@@ -353,6 +354,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/{id}/members',             [AdminTeamController::class, 'addMember']);
             Route::delete('/{id}/members/{user_id}', [AdminTeamController::class, 'removeMember']);
             Route::patch('/{id}/members/{user_id}',  [AdminTeamController::class, 'updateMemberRole']);
+        });
+
+        // Support Tickets — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('support-tickets')->group(function () {
+            Route::get('/',                                  [AdminSupportTicketController::class, 'index']);
+            Route::get('/stats',                             [AdminSupportTicketController::class, 'stats']);
+            Route::get('/{support_ticket}',                  [AdminSupportTicketController::class, 'show']);
+            Route::patch('/{support_ticket}',                [AdminSupportTicketController::class, 'update']);
+            Route::post('/{support_ticket}/messages',        [AdminSupportTicketController::class, 'storeMessage']);
         });
 
         // Discounts — super_admin, admin, staff

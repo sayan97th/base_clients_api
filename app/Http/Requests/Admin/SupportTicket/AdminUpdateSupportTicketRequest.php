@@ -15,8 +15,9 @@ class AdminUpdateSupportTicketRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status'   => ['sometimes', 'string', 'in:' . implode(',', SupportTicket::STATUSES)],
-            'priority' => ['sometimes', 'string', 'in:' . implode(',', SupportTicket::PRIORITIES)],
+            'status'      => ['sometimes', 'string', 'in:' . implode(',', SupportTicket::STATUSES)],
+            'priority'    => ['sometimes', 'string', 'in:' . implode(',', SupportTicket::PRIORITIES)],
+            'assigned_to' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
         ];
     }
 }

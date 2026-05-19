@@ -360,6 +360,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('support-tickets')->group(function () {
             Route::get('/',                                  [AdminSupportTicketController::class, 'index']);
             Route::get('/stats',                             [AdminSupportTicketController::class, 'stats']);
+            Route::get('/admin-users',                       [AdminSupportTicketController::class, 'adminUsersForSelect']);
             Route::get('/{support_ticket}',                  [AdminSupportTicketController::class, 'show']);
             Route::patch('/{support_ticket}',                [AdminSupportTicketController::class, 'update']);
             Route::post('/{support_ticket}/messages',        [AdminSupportTicketController::class, 'storeMessage']);

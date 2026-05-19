@@ -14,11 +14,14 @@ use Illuminate\Http\Request;
 
 class AdminSupportTicketController extends Controller
 {
+    private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+
     public function index(Request $request): JsonResponse
     {
         $query = SupportTicket::with([
             'user:id,first_name,last_name,email,phone,job_title,organization_id',
             'user.organization:id,name',
+            'assignedAdmin:id,first_name,last_name,email',
         ])->withCount('messages');
 
         if ($request->filled('status') && in_array($request->status, SupportTicket::STATUSES)) {
@@ -57,6 +60,7 @@ class AdminSupportTicketController extends Controller
             'user:id,first_name,last_name,email,phone,job_title,organization_id',
             'user.organization:id,name',
             'messages.sender:id,first_name,last_name,email',
+            'assignedAdmin:id,first_name,last_name,email',
         ]);
 
         $client = $support_ticket->user;
@@ -101,6 +105,7 @@ class AdminSupportTicketController extends Controller
             'user:id,first_name,last_name,email,phone,job_title,organization_id',
             'user.organization:id,name',
             'messages.sender:id,first_name,last_name,email',
+            'assignedAdmin:id,first_name,last_name,email',
         ]);
 
         return response()->json([
@@ -174,5 +179,26 @@ class AdminSupportTicketController extends Controller
             'resolved'    => $counts['resolved'] ?? 0,
             'closed'      => $counts['closed'] ?? 0,
         ]);
+    }
+
+    public function adminUsersForSelect(Request $request): JsonResponse
+    {
+        $search = $request->query('search');
+
+        $query = User::whereHas('roles', fn ($q) => $q->whereIn('name', self::STAFF_ROLES))
+            ->orderBy('first_name')
+            ->orderBy('last_name');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $users = $query->get(['id', 'first_name', 'last_name', 'email']);
+
+        return response()->json(['data' => $users->values()]);
     }
 }

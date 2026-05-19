@@ -22,6 +22,7 @@ class SupportTicket extends Model
         'priority',
         'related_order',
         'user_id',
+        'assigned_to',
         'closed_at',
         'resolved_at',
     ];
@@ -54,6 +55,11 @@ class SupportTicket extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function assignedAdmin(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 
     public function messages(): HasMany

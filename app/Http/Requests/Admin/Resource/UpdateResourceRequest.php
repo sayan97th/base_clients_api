@@ -20,7 +20,9 @@ class UpdateResourceRequest extends FormRequest
             'description'     => ['sometimes', 'nullable', 'string'],
             'category'        => ['sometimes', Rule::in(Resource::CATEGORIES)],
             'status'          => ['sometimes', Rule::in(Resource::STATUSES)],
-            'organization_id' => ['sometimes', 'nullable', 'integer', 'exists:organizations,id'],
+            'is_hidden'       => ['sometimes', 'boolean'],
+            'client_ids'      => ['sometimes', 'nullable', 'array'],
+            'client_ids.*'    => ['integer', 'exists:users,id'],
         ];
     }
 }

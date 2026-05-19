@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Resource extends Model
@@ -29,6 +30,11 @@ class Resource extends Model
         'description',
         'category',
         'status',
+        'is_hidden',
+    ];
+
+    protected $casts = [
+        'is_hidden' => 'boolean',
     ];
 
     public function organization(): BelongsTo
@@ -39,5 +45,10 @@ class Resource extends Model
     public function files(): HasMany
     {
         return $this->hasMany(ResourceFile::class);
+    }
+
+    public function clients(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'resource_client_assignments');
     }
 }

@@ -13,8 +13,10 @@ class ResourceController extends Controller
     /**
      * GET /api/resources
      *
-     * Returns a paginated list of resources scoped to the authenticated
-     * user's organization. Supports optional search and category filters.
+     * Returns published, non-hidden resources visible to the authenticated user.
+     * A resource is visible when:
+     *   - it has no specific client assignments (public to all), OR
+     *   - the current user is explicitly assigned to it.
      */
     public function index(Request $request): JsonResponse
     {
@@ -25,11 +27,15 @@ class ResourceController extends Controller
             'category' => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
         ]);
 
-        $organization_id = auth()->user()->organization_id;
+        $user_id = auth()->id();
 
         $query = Resource::with('files')
-            ->where('organization_id', $organization_id)
             ->where('status', 'published')
+            ->where('is_hidden', false)
+            ->where(function ($q) use ($user_id) {
+                $q->whereDoesntHave('clients')
+                  ->orWhereHas('clients', fn ($q2) => $q2->where('users.id', $user_id));
+            })
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -55,17 +61,20 @@ class ResourceController extends Controller
     /**
      * GET /api/resources/{id}
      *
-     * Returns the full detail of a single resource including all attached files.
-     * Returns 404 if the resource does not exist or belongs to a different organization.
+     * Returns a single published, non-hidden resource if the user has access.
      */
     public function show(int $id): JsonResponse
     {
-        $organization_id = auth()->user()->organization_id;
+        $user_id = auth()->id();
 
         $resource = Resource::with('files')
             ->where('id', $id)
-            ->where('organization_id', $organization_id)
             ->where('status', 'published')
+            ->where('is_hidden', false)
+            ->where(function ($q) use ($user_id) {
+                $q->whereDoesntHave('clients')
+                  ->orWhereHas('clients', fn ($q2) => $q2->where('users.id', $user_id));
+            })
             ->first();
 
         if (! $resource) {

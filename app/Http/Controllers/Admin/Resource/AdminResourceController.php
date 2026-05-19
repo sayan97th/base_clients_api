@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\Resource\StoreResourceRequest;
 use App\Http\Requests\Admin\Resource\UpdateResourceRequest;
 use App\Http\Resources\AdminResourceResource;
 use App\Models\Resource;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -15,9 +16,6 @@ class AdminResourceController extends Controller
 {
     /**
      * GET /api/admin/resources
-     *
-     * Returns a paginated list of all resources across all organizations.
-     * Supports search by title, and filters by category and status.
      */
     public function index(Request $request): JsonResponse
     {
@@ -33,7 +31,7 @@ class AdminResourceController extends Controller
             'status'   => 'nullable|in:published,draft',
         ]);
 
-        $query = Resource::with(['files', 'organization'])
+        $query = Resource::with(['files', 'organization', 'clients'])
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -61,10 +59,44 @@ class AdminResourceController extends Controller
     }
 
     /**
-     * GET /api/admin/resources/{id}
+     * GET /api/admin/resources/clients
      *
-     * Returns the full detail of a resource including all attached files.
-     * Admin can access any resource regardless of organization.
+     * Returns a searchable list of active client users for the assignment select.
+     */
+    public function listClients(Request $request): JsonResponse
+    {
+        if (! $request->user()->hasPermission('resources.view')) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $search = $request->query('search', '');
+
+        $query = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
+            ->where('is_active', true)
+            ->select('id', 'first_name', 'last_name', 'email');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+
+        $clients = $query->orderBy('first_name')->limit(50)->get();
+
+        return response()->json([
+            'data' => $clients->map(fn ($u) => [
+                'id'    => $u->id,
+                'name'  => trim("{$u->first_name} {$u->last_name}"),
+                'email' => $u->email,
+            ]),
+        ]);
+    }
+
+    /**
+     * GET /api/admin/resources/{id}
      */
     public function show(Request $request, int $id): JsonResponse
     {
@@ -72,7 +104,7 @@ class AdminResourceController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $resource = Resource::with(['files', 'organization'])->find($id);
+        $resource = Resource::with(['files', 'organization', 'clients'])->find($id);
 
         if (! $resource) {
             return response()->json(['message' => 'Resource not found.'], 404);
@@ -83,8 +115,6 @@ class AdminResourceController extends Controller
 
     /**
      * POST /api/admin/resources
-     *
-     * Creates a new resource. Files are attached via separate requests.
      */
     public function store(StoreResourceRequest $request): JsonResponse
     {
@@ -92,25 +122,23 @@ class AdminResourceController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $resource = Resource::create($request->validated());
+        $resource = Resource::create($request->safe()->except(['client_ids']));
 
-        $resource->load(['files', 'organization']);
+        if ($request->has('client_ids')) {
+            $resource->clients()->sync($request->input('client_ids', []));
+        }
+
+        $resource->load(['files', 'organization', 'clients']);
 
         return response()->json(['data' => new AdminResourceResource($resource)], 201);
     }
 
     /**
      * PATCH /api/admin/resources/{id}
-     *
-     * Updates resource metadata. All fields are optional, enabling
-     * quick status toggles as well as full edits.
-     *
-     * When the request body contains only the "status" field (publish toggle),
-     * the resources.publish permission is required instead of resources.edit.
      */
     public function update(UpdateResourceRequest $request, int $id): JsonResponse
     {
-        $only_status = $request->keys() === ['status'];
+        $only_status       = $request->keys() === ['status'];
         $required_permission = $only_status ? 'resources.publish' : 'resources.edit';
 
         if (! $request->user()->hasPermission($required_permission)) {
@@ -123,17 +151,19 @@ class AdminResourceController extends Controller
             return response()->json(['message' => 'Resource not found.'], 404);
         }
 
-        $resource->update($request->validated());
+        $resource->update($request->safe()->except(['client_ids']));
 
-        $resource->load(['files', 'organization']);
+        if ($request->has('client_ids')) {
+            $resource->clients()->sync($request->input('client_ids', []));
+        }
+
+        $resource->load(['files', 'organization', 'clients']);
 
         return response()->json(['data' => new AdminResourceResource($resource)]);
     }
 
     /**
      * DELETE /api/admin/resources/{id}
-     *
-     * Deletes a resource and all its attached files from storage and the database.
      */
     public function destroy(Request $request, int $id): JsonResponse
     {
@@ -147,7 +177,6 @@ class AdminResourceController extends Controller
             return response()->json(['message' => 'Resource not found.'], 404);
         }
 
-        // Delete physical files from storage before removing the database records
         foreach ($resource->files as $file) {
             Storage::disk('public')->delete($file->file_path);
         }

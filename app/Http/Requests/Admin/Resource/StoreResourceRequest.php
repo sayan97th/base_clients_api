@@ -20,7 +20,9 @@ class StoreResourceRequest extends FormRequest
             'description'     => ['nullable', 'string'],
             'category'        => ['required', Rule::in(Resource::CATEGORIES)],
             'status'          => ['required', Rule::in(Resource::STATUSES)],
-            'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
+            'is_hidden'       => ['nullable', 'boolean'],
+            'client_ids'      => ['nullable', 'array'],
+            'client_ids.*'    => ['integer', 'exists:users,id'],
         ];
     }
 }

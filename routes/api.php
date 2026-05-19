@@ -317,6 +317,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('resources')->group(function () {
             Route::get('/',                          [AdminResourceController::class, 'index']);
             Route::post('/',                         [AdminResourceController::class, 'store']);
+            Route::get('/clients',                   [AdminResourceController::class, 'listClients']);
             Route::get('/{id}',                      [AdminResourceController::class, 'show']);
             Route::patch('/{id}',                    [AdminResourceController::class, 'update']);
             Route::delete('/{id}',                   [AdminResourceController::class, 'destroy']);

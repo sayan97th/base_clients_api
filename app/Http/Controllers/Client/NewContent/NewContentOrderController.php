@@ -72,6 +72,7 @@ class NewContentOrderController extends Controller
             'subtotal_before_discount' => round($subtotal_before_discount, 2),
             'total_amount'             => $order->total_amount,
             'credit_amount'            => (float) ($order->invoice?->credit_amount ?? 0),
+            'payment_method'           => $order->invoice?->payment_method ?? 'Credit Card',
             'status'                   => $order->status,
             'created_at'               => $order->created_at,
             'updated_at'               => $order->updated_at,

@@ -341,7 +341,8 @@ class OrderController extends Controller
                 'discount_value'  => $oc->coupon?->discount_value ?? 0,
                 'discount_amount' => round((float) $oc->discount_amount, 2),
             ])->values(),
-            'credit_amount' => (float) ($order->invoice?->credit_amount ?? 0),
+            'credit_amount'  => (float) ($order->invoice?->credit_amount ?? 0),
+            'payment_method' => $order->invoice?->payment_method ?? 'Credit Card',
         ];
     }
 }

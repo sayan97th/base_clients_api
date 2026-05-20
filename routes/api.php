@@ -113,6 +113,7 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
 use App\Http\Controllers\Admin\Client\AdminClientController;
+use App\Http\Controllers\Admin\Impersonation\ImpersonationController;
 use App\Http\Controllers\Admin\Team\AdminTeamController as AdminTeamController;
 use App\Http\Controllers\Admin\Credits\AdminCreditStatsController;
 use App\Http\Controllers\Admin\Credits\AdminCreditUserSearchController;
@@ -477,6 +478,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/news-placements',        [AdminNewsPlacementController::class, 'store']);
             Route::put('/news-placements/{id}',    [AdminNewsPlacementController::class, 'update']);
             Route::delete('/news-placements/{id}', [AdminNewsPlacementController::class, 'destroy']);
+        });
+
+        // Impersonation — super_admin and admin only
+        Route::middleware('role:super_admin,admin')->group(function () {
+            Route::post('users/{user_id}/impersonate', [ImpersonationController::class, 'impersonate']);
+            Route::post('impersonation/stop',          [ImpersonationController::class, 'stop']);
         });
 
         // Client management — super_admin, admin only

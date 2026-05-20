@@ -483,8 +483,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Impersonation — super_admin and admin only
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('users/{user_id}/impersonate', [ImpersonationController::class, 'impersonate']);
-            Route::post('impersonation/stop',          [ImpersonationController::class, 'stop']);
         });
+
+        // Impersonation stop — any authenticated user (called while holding the client JWT)
+        Route::post('impersonation/stop', [ImpersonationController::class, 'stop']);
 
         // Client management — super_admin, admin only
         Route::middleware('role:super_admin,admin')->group(function () {

@@ -53,7 +53,7 @@ class ContentOptimizationOrderController extends Controller
         $user = auth()->user();
 
         $order = ContentOptimizationOrder::where('id', $order_id)
-            ->with(['items.tier', 'items.intakeRows'])
+            ->with(['items.tier', 'items.intakeRows', 'orderCoupons.coupon', 'invoice'])
             ->first();
 
         if (!$order) {
@@ -69,14 +69,18 @@ class ContentOptimizationOrderController extends Controller
 
     private function buildOrderDetail(ContentOptimizationOrder $order): array
     {
+        $subtotal_before_discount = (float) ($order->subtotal_before_discount ?? $order->items->sum('subtotal'));
+
         return [
-            'id'           => $order->id,
-            'order_title'  => $order->order_title,
-            'order_notes'  => $order->order_notes,
-            'total_amount' => $order->total_amount,
-            'status'       => $order->status,
-            'created_at'   => $order->created_at,
-            'updated_at'   => $order->updated_at,
+            'id'                       => $order->id,
+            'order_title'              => $order->order_title,
+            'order_notes'              => $order->order_notes,
+            'subtotal_before_discount' => round($subtotal_before_discount, 2),
+            'total_amount'             => $order->total_amount,
+            'credit_amount'            => (float) ($order->invoice?->credit_amount ?? 0),
+            'status'                   => $order->status,
+            'created_at'               => $order->created_at,
+            'updated_at'               => $order->updated_at,
             'items'        => $order->items->map(fn ($item) => [
                 'id'             => $item->id,
                 'tier_id'        => $item->tier_id,
@@ -104,6 +108,16 @@ class ContentOptimizationOrderController extends Controller
                     'updated_at'       => $item->tier->updated_at,
                 ] : null,
             ])->values(),
+            'coupons' => $order->relationLoaded('orderCoupons')
+                ? $order->orderCoupons->map(fn ($oc) => [
+                    'coupon_id'       => $oc->coupon_id,
+                    'code'            => $oc->coupon?->code ?? '',
+                    'name'            => $oc->coupon?->name ?? '',
+                    'discount_type'   => $oc->coupon?->discount_type ?? 'percentage',
+                    'discount_value'  => $oc->coupon?->discount_value ?? 0,
+                    'discount_amount' => round((float) $oc->discount_amount, 2),
+                ])->values()
+                : [],
         ];
     }
 

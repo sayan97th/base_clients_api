@@ -269,6 +269,7 @@ class OrderController extends Controller
                 'items.placements',
                 'billing',
                 'orderCoupons.coupon',
+                'invoice',
             ])
             ->first();
 
@@ -340,6 +341,7 @@ class OrderController extends Controller
                 'discount_value'  => $oc->coupon?->discount_value ?? 0,
                 'discount_amount' => round((float) $oc->discount_amount, 2),
             ])->values(),
+            'credit_amount' => (float) ($order->invoice?->credit_amount ?? 0),
         ];
     }
 }

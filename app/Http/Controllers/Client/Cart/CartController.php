@@ -79,9 +79,10 @@ class CartController extends Controller
             }
         }
 
-        $payment_method_id = $request->input('payment_method_id');
+        $payment_method_id  = $request->input('payment_method_id');
+        $is_credits_payment = str_starts_with($payment_method_id, 'credits_');
 
-        if (str_starts_with($payment_method_id, 'credits_')) {
+        if ($is_credits_payment) {
             $credit_transaction_id = (int) substr($payment_method_id, strlen('credits_'));
             $credit_transaction    = CreditTransaction::find($credit_transaction_id);
 
@@ -93,6 +94,14 @@ class CartController extends Controller
                 return response()->json([
                     'message' => 'Invalid credit payment reference.',
                     'error'   => 'The provided credit transaction is not valid for this payment.',
+                ], 422);
+            }
+
+            // Credits already represent a discounted value — no additional
+            // discounts or coupon codes may be applied on top of them.
+            if (! empty($request->input('coupon_ids', []))) {
+                return response()->json([
+                    'message' => 'Coupon codes cannot be applied when paying with account credits.',
                 ], 422);
             }
         } else {
@@ -137,7 +146,7 @@ class CartController extends Controller
         try {
             DB::transaction(function () use (
                 $user, $payment_method_id, $billing, $order_title, $order_notes,
-                $coupon_models, $session_id, $session_title,
+                $coupon_models, $session_id, $session_title, $is_credits_payment,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
                 &$created_orders
@@ -146,7 +155,8 @@ class CartController extends Controller
                     $created_orders[] = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $billing,
                         $payment_method_id, $coupon_models,
-                        $order_title, $order_notes, $session_id, $session_title
+                        $order_title, $order_notes, $session_id, $session_title,
+                        $is_credits_payment
                     );
                 }
 
@@ -154,7 +164,8 @@ class CartController extends Controller
                     $created_orders[] = $this->createContentOptimizationOrder(
                         $user, $content_optimization_items, $billing,
                         $payment_method_id, $coupon_models,
-                        $order_title, $order_notes, $session_id, $session_title
+                        $order_title, $order_notes, $session_id, $session_title,
+                        $is_credits_payment
                     );
                 }
 
@@ -162,7 +173,8 @@ class CartController extends Controller
                     $created_orders[] = $this->createNewContentOrder(
                         $user, $new_content_items, $billing,
                         $payment_method_id, $coupon_models,
-                        $order_title, $order_notes, $session_id, $session_title
+                        $order_title, $order_notes, $session_id, $session_title,
+                        $is_credits_payment
                     );
                 }
 
@@ -170,7 +182,8 @@ class CartController extends Controller
                     $created_orders[] = $this->createContentBriefOrder(
                         $user, $content_brief_items, $billing,
                         $payment_method_id, $coupon_models,
-                        $order_title, $order_notes, $session_id, $session_title
+                        $order_title, $order_notes, $session_id, $session_title,
+                        $is_credits_payment
                     );
                 }
 
@@ -191,8 +204,11 @@ class CartController extends Controller
         }
 
         // Increment coupon usage counts after the transaction commits
-        foreach ($coupon_models as $coupon) {
-            $coupon->increment('times_used');
+        // (skipped for credits payments since no coupons are permitted)
+        if (! $is_credits_payment) {
+            foreach ($coupon_models as $coupon) {
+                $coupon->increment('times_used');
+            }
         }
 
         // Fire product-specific events
@@ -247,7 +263,8 @@ class CartController extends Controller
         ?string $order_title,
         ?string $order_notes,
         ?string $session_id,
-        ?string $session_title
+        ?string $session_title,
+        bool $skip_discounts = false
     ): array {
         $total_links = 0;
         $subtotal    = 0.0;
@@ -259,7 +276,8 @@ class CartController extends Controller
 
         $subtotal = round($subtotal, 2);
 
-        $bulk_discount = $total_links >= self::BULK_DISCOUNT_THRESHOLD
+        // Bulk discounts and coupons are skipped when paying with credits.
+        $bulk_discount = (! $skip_discounts && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 
@@ -268,16 +286,18 @@ class CartController extends Controller
         $applied_coupons = [];
         $current_amount  = $amount_after_bulk;
 
-        foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate(
-                $coupon,
-                $current_amount,
-                $user->id
-            );
+        if (! $skip_discounts) {
+            foreach ($coupon_models as $coupon) {
+                $result = $this->couponService->validateAndCalculate(
+                    $coupon,
+                    $current_amount,
+                    $user->id
+                );
 
-            if ($result['valid']) {
-                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
-                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                if ($result['valid']) {
+                    $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                    $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                }
             }
         }
 
@@ -350,7 +370,8 @@ class CartController extends Controller
         ?string $order_title,
         ?string $order_notes,
         ?string $session_id,
-        ?string $session_title
+        ?string $session_title,
+        bool $skip_discounts = false
     ): array {
         $subtotal = 0.0;
 
@@ -363,16 +384,18 @@ class CartController extends Controller
         $applied_coupons = [];
         $current_amount  = $subtotal;
 
-        foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate(
-                $coupon,
-                $current_amount,
-                $user->id
-            );
+        if (! $skip_discounts) {
+            foreach ($coupon_models as $coupon) {
+                $result = $this->couponService->validateAndCalculate(
+                    $coupon,
+                    $current_amount,
+                    $user->id
+                );
 
-            if ($result['valid']) {
-                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
-                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                if ($result['valid']) {
+                    $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                    $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                }
             }
         }
 
@@ -445,7 +468,8 @@ class CartController extends Controller
         ?string $order_title,
         ?string $order_notes,
         ?string $session_id,
-        ?string $session_title
+        ?string $session_title,
+        bool $skip_discounts = false
     ): array {
         $subtotal = 0.0;
 
@@ -458,16 +482,18 @@ class CartController extends Controller
         $applied_coupons = [];
         $current_amount  = $subtotal;
 
-        foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate(
-                $coupon,
-                $current_amount,
-                $user->id
-            );
+        if (! $skip_discounts) {
+            foreach ($coupon_models as $coupon) {
+                $result = $this->couponService->validateAndCalculate(
+                    $coupon,
+                    $current_amount,
+                    $user->id
+                );
 
-            if ($result['valid']) {
-                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
-                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                if ($result['valid']) {
+                    $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                    $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                }
             }
         }
 
@@ -541,7 +567,8 @@ class CartController extends Controller
         ?string $order_title,
         ?string $order_notes,
         ?string $session_id,
-        ?string $session_title
+        ?string $session_title,
+        bool $skip_discounts = false
     ): array {
         $subtotal = 0.0;
 
@@ -554,16 +581,18 @@ class CartController extends Controller
         $applied_coupons = [];
         $current_amount  = $subtotal;
 
-        foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate(
-                $coupon,
-                $current_amount,
-                $user->id
-            );
+        if (! $skip_discounts) {
+            foreach ($coupon_models as $coupon) {
+                $result = $this->couponService->validateAndCalculate(
+                    $coupon,
+                    $current_amount,
+                    $user->id
+                );
 
-            if ($result['valid']) {
-                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
-                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                if ($result['valid']) {
+                    $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                    $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                }
             }
         }
 

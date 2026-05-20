@@ -23,6 +23,7 @@ class PurchaseGroupController extends Controller
                 'total_amount'      => $request->total_amount,
                 'payment_status'    => $request->payment_status,
                 'invoice_unique_id' => $request->invoice_unique_id,
+                'payment_method'    => $request->input('payment_method'),
                 'created_at'        => $request->created_at,
             ]
         );
@@ -91,6 +92,7 @@ class PurchaseGroupController extends Controller
             ])->values(),
             'payment_status'    => $group->payment_status,
             'invoice_unique_id' => $group->invoice_unique_id,
+            'payment_method'    => $group->payment_method,
         ];
     }
 }

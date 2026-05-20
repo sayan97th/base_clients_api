@@ -24,6 +24,7 @@ class StorePurchaseGroupRequest extends FormRequest
             'orders.*.total_amount'     => ['required', 'numeric', 'min:0'],
             'payment_status'            => ['required', 'string', 'in:paid,pending'],
             'invoice_unique_id'         => ['nullable', 'string', 'max:50'],
+            'payment_method'            => ['nullable', 'string', 'in:Credit Card,Account Balance'],
         ];
     }
 }

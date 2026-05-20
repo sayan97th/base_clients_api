@@ -218,25 +218,35 @@ class CartController extends Controller
             }
         }
 
+        // Determine invoice payment fields based on payment method used
+        $invoice_payment_method = $is_credits_payment ? 'Account Balance' : 'Credit Card';
+        $invoice_currency_type  = $is_credits_payment ? 'credits' : 'usd';
+        $total_credits_used     = $is_credits_payment
+            ? round(array_sum(array_column($created_orders, 'total_amount')), 2)
+            : 0.0;
+
         // Create invoice(s): one combined invoice for multi-product, one per order for single-product
         if ($session_id && count($created_orders) > 1) {
             $this->invoiceService->createForMultiProductSession(
-                $user, $session_id, $session_title, $created_orders, 'Credit Card', 'usd', 0.0
+                $user, $session_id, $session_title, $created_orders,
+                $invoice_payment_method, $invoice_currency_type, $total_credits_used
             );
         } else {
-            $entry = $created_orders[0];
+            $entry        = $created_orders[0];
+            $order_credit = $is_credits_payment ? $entry['total_amount'] : 0.0;
             match ($entry['product_type']) {
                 'link_building' => $this->invoiceService->createForLinkBuildingOrder(
-                    $user, $entry['model'], 'Credit Card', 'usd', 0.0, $entry['total_links']
+                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type,
+                    $order_credit, $entry['total_links']
                 ),
                 'new_content' => $this->invoiceService->createForNewContentOrder(
-                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
                 ),
                 'content_optimization' => $this->invoiceService->createForContentOptimizationOrder(
-                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
                 ),
                 'content_brief' => $this->invoiceService->createForContentBriefOrder(
-                    $user, $entry['model'], 'Credit Card', 'usd', 0.0
+                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
                 ),
                 default => null,
             };

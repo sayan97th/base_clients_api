@@ -17,6 +17,7 @@ class PurchaseGroup extends Model
         'total_amount',
         'payment_status',
         'invoice_unique_id',
+        'payment_method',
         'created_at',
         'updated_at',
     ];

@@ -463,13 +463,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         });
 
         // Link Building Orders Dashboard — super_admin, admin, staff
-        // Note: search and export are registered before the generic POST store to avoid route shadowing.
+        // Note: search, export, and assignable-users are registered before the generic POST store to avoid route shadowing.
         Route::middleware('role:super_admin,admin,staff')->group(function () {
-            Route::post('/link-building-orders/search', [LinkBuildingOrdersDashboardController::class, 'search']);
-            Route::post('/link-building-orders/export', [LinkBuildingOrdersDashboardController::class, 'export']);
-            Route::post('/link-building-orders',         [LinkBuildingOrdersDashboardController::class, 'store']);
-            Route::put('/link-building-orders/{id}',     [LinkBuildingOrdersDashboardController::class, 'update']);
-            Route::delete('/link-building-orders/{id}',  [LinkBuildingOrdersDashboardController::class, 'destroy']);
+            Route::get('/link-building-orders/assignable-users', [LinkBuildingOrdersDashboardController::class, 'assignableUsers']);
+            Route::post('/link-building-orders/search',          [LinkBuildingOrdersDashboardController::class, 'search']);
+            Route::post('/link-building-orders/export',          [LinkBuildingOrdersDashboardController::class, 'export']);
+            Route::post('/link-building-orders',                 [LinkBuildingOrdersDashboardController::class, 'store']);
+            Route::put('/link-building-orders/{id}',             [LinkBuildingOrdersDashboardController::class, 'update']);
+            Route::delete('/link-building-orders/{id}',          [LinkBuildingOrdersDashboardController::class, 'destroy']);
         });
 
         // News Placements — super_admin, admin, staff

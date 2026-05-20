@@ -52,6 +52,8 @@ class LinkBuildingOrderPlacement extends Model
         'user_id',
         // Admin team assignment
         'admin_team_id',
+        // Admin user assigned to own this order
+        'assigned_admin_user_id',
     ];
 
     protected function casts(): array
@@ -87,6 +89,11 @@ class LinkBuildingOrderPlacement extends Model
     public function adminTeam(): BelongsTo
     {
         return $this->belongsTo(AdminTeam::class, 'admin_team_id');
+    }
+
+    public function assignedAdminUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_admin_user_id');
     }
 
     /**
@@ -150,13 +157,22 @@ class LinkBuildingOrderPlacement extends Model
             'lb_tl_approval'            => $this->lb_tl_approval ?? '',
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
-            'user_id'                   => $this->user_id,
-            'admin_team_id'             => $this->admin_team_id,
-            'admin_team_name'           => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,
-            'admin_team_color'          => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->color ?? null) : null,
-            'parent_order_status'       => $this->relationLoaded('orderItem') ? ($this->orderItem?->order?->status ?? null) : null,
-            'created_at'                => $this->created_at?->toIso8601String(),
-            'updated_at'                => $this->updated_at?->toIso8601String(),
+            'user_id'                       => $this->user_id,
+            'admin_team_id'                 => $this->admin_team_id,
+            'admin_team_name'               => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,
+            'admin_team_color'              => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->color ?? null) : null,
+            'assigned_admin_user_id'        => $this->assigned_admin_user_id,
+            'assigned_admin_user_name'      => $this->relationLoaded('assignedAdminUser')
+                ? ($this->assignedAdminUser
+                    ? trim(($this->assignedAdminUser->first_name ?? '') . ' ' . ($this->assignedAdminUser->last_name ?? ''))
+                    : null)
+                : null,
+            'assigned_admin_user_avatar'    => $this->relationLoaded('assignedAdminUser')
+                ? ($this->assignedAdminUser?->profile_photo_url ?? null)
+                : null,
+            'parent_order_status'           => $this->relationLoaded('orderItem') ? ($this->orderItem?->order?->status ?? null) : null,
+            'created_at'                    => $this->created_at?->toIso8601String(),
+            'updated_at'                    => $this->updated_at?->toIso8601String(),
         ];
     }
 

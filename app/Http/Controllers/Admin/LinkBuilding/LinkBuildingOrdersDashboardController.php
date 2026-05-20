@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
 use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrderPlacement;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -62,7 +63,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         // Include all visible placements: admin-created (order_id), client-purchased
         // (order_item_id), or admin-assigned to a client (user_id).
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam', 'assignedAdminUser'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')
@@ -170,6 +171,28 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * GET /api/admin/link-building-orders/assignable-users
+     *
+     * Lightweight list of admin-side users (super_admin, admin, staff) for the
+     * "Assigned To" dropdown in the link building orders dashboard.
+     */
+    public function assignableUsers(): JsonResponse
+    {
+        $users = User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'first_name', 'last_name', 'email', 'profile_photo_url'])
+            ->map(fn (User $u) => [
+                'id'         => $u->id,
+                'name'       => trim($u->first_name . ' ' . $u->last_name),
+                'email'      => $u->email,
+                'avatar_url' => $u->profile_photo_url,
+            ]);
+
+        return response()->json(['data' => $users->values()]);
+    }
+
+    /**
      * POST /api/admin/link-building-orders/export
      *
      * Streams a CSV download of all rows matching the same filters as /search.
@@ -184,7 +207,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $sort_rules     = $request->input('sort_rules', []);
         $column_filters = $request->input('column_filters', []);
 
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam', 'assignedAdminUser'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')

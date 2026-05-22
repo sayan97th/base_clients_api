@@ -18,7 +18,7 @@ use Throwable;
 class ImportLegacyAccounts extends Command
 {
     protected $signature = 'accounts:import
-                            {file : Absolute or relative path to the CSV accounts export file}
+                            {file? : Path to the CSV accounts export file (defaults to import/accounts/base-accounts.csv)}
                             {--dry-run : Preview the import without saving any data}
                             {--force : Skip duplicate accounts instead of failing}
                             {--default-password= : Set a fixed password for all imported accounts (random per user if omitted)}';
@@ -57,10 +57,15 @@ class ImportLegacyAccounts extends Command
 
     public function handle(): int
     {
-        $file_path       = $this->argument('file');
-        $dry_run         = (bool) $this->option('dry-run');
-        $force           = (bool) $this->option('force');
+        $file_path        = $this->argument('file') ?? base_path('import/accounts/base-accounts.csv');
+        $dry_run          = (bool) $this->option('dry-run');
+        $force            = (bool) $this->option('force');
         $default_password = $this->option('default-password');
+
+        if (!$this->argument('file')) {
+            $this->line("No file specified. Using default: <fg=yellow>import/accounts/base-accounts.csv</>");
+            $this->newLine();
+        }
 
         if (!file_exists($file_path)) {
             $this->error("File not found: {$file_path}");

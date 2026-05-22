@@ -8,15 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('dr_tiers', function (Blueprint $table) {
-            $table->renameColumn('dr_label', 'label');
-        });
+        if (Schema::hasColumn('dr_tiers', 'dr_label')) {
+            Schema::table('dr_tiers', function (Blueprint $table) {
+                $table->renameColumn('dr_label', 'label');
+            });
+        }
     }
 
     public function down(): void
     {
-        Schema::table('dr_tiers', function (Blueprint $table) {
-            $table->renameColumn('label', 'dr_label');
-        });
+        if (Schema::hasColumn('dr_tiers', 'label')) {
+            Schema::table('dr_tiers', function (Blueprint $table) {
+                $table->renameColumn('label', 'dr_label');
+            });
+        }
     }
 };

@@ -370,10 +370,11 @@ class ImportLegacyOrders extends Command
             return null;
         }
 
-        $rows    = [];
-        $headers = null;
+        $rows         = [];
+        $headers      = null;
+        $skipped_rows = 0;
 
-        while (($columns = fgetcsv($handle)) !== false) {
+        while (($columns = fgetcsv($handle, 0, ',', '"')) !== false) {
             if ($headers === null) {
                 $headers = array_map(
                     fn (string $h) => rtrim(trim(ltrim($h, "\xEF\xBB\xBF")), ':'),
@@ -382,14 +383,27 @@ class ImportLegacyOrders extends Command
                 continue;
             }
 
-            if (count($columns) !== count($headers)) {
-                continue;
+            $col_count    = \count($columns);
+            $header_count = \count($headers);
+
+            if ($col_count === 0 || $col_count === 1 && trim($columns[0]) === '') {
+                continue; // blank line
+            }
+
+            if ($col_count < $header_count) {
+                $columns = array_pad($columns, $header_count, '');
+            } elseif ($col_count > $header_count) {
+                $columns = \array_slice($columns, 0, $header_count);
             }
 
             $rows[] = array_combine($headers, $columns);
         }
 
         fclose($handle);
+
+        if ($skipped_rows > 0) {
+            $this->warn("Skipped {$skipped_rows} completely empty line(s).");
+        }
 
         if (empty($rows)) {
             $this->error('The CSV file contains no data rows.');

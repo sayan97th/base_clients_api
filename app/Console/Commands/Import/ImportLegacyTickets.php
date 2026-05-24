@@ -294,11 +294,59 @@ class ImportLegacyTickets extends Command
         $organization = Organization::where('name', $client_name)->first()
             ?? Organization::where('name', 'like', "%{$client_name}%")->first();
 
-        if (!$organization) {
+        if ($organization) {
+            $user = User::where('organization_id', $organization->id)
+                ->orderBy('created_at')
+                ->first();
+
+            if ($user) {
+                return $user;
+            }
+        }
+
+        return $this->resolveUserByName($client_name);
+    }
+
+    private function resolveUserByName(string $client_name): ?User
+    {
+        // Strip parenthetical suffixes like "(via Google Docs)"
+        $cleaned = trim(preg_replace('/\s*\(.*?\)\s*/', ' ', $client_name));
+
+        if ($cleaned === '') {
             return null;
         }
 
-        return User::where('organization_id', $organization->id)
+        $words = preg_split('/\s+/', $cleaned);
+
+        if (\count($words) >= 2) {
+            $first = strtolower($words[0]);
+            $last  = strtolower(end($words));
+
+            // Exact first + last name match (case-insensitive), oldest user wins on tie
+            $user = User::whereRaw('LOWER(first_name) = ?', [$first])
+                ->whereRaw('LOWER(last_name) = ?', [$last])
+                ->orderBy('created_at')
+                ->first();
+
+            if ($user) {
+                return $user;
+            }
+
+            // Reversed: maybe the name is stored as "Last First" in the CSV
+            $user = User::whereRaw('LOWER(first_name) = ?', [$last])
+                ->whereRaw('LOWER(last_name) = ?', [$first])
+                ->orderBy('created_at')
+                ->first();
+
+            if ($user) {
+                return $user;
+            }
+        }
+
+        // Full concatenated name LIKE match as last resort
+        $normalized = strtolower($cleaned);
+
+        return User::whereRaw("LOWER(CONCAT(first_name, ' ', last_name)) = ?", [$normalized])
             ->orderBy('created_at')
             ->first();
     }

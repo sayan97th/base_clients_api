@@ -159,8 +159,13 @@ class ImportLegacyAccounts extends Command
                 continue;
             }
 
-            if (count($columns) !== count($headers)) {
-                continue;
+            $col_count    = \count($columns);
+            $header_count = \count($headers);
+
+            if ($col_count < $header_count) {
+                $columns = \array_pad($columns, $header_count, '');
+            } elseif ($col_count > $header_count) {
+                $columns = \array_slice($columns, 0, $header_count);
             }
 
             $rows[] = array_combine($headers, $columns);

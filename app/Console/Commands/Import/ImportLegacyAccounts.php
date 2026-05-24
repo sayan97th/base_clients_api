@@ -22,6 +22,7 @@ class ImportLegacyAccounts extends Command
                             {file? : Path to the CSV accounts export file (defaults to import/accounts/base-accounts.csv)}
                             {--dry-run : Preview the import without saving any data}
                             {--force : Skip duplicate accounts instead of failing}
+                            {--update : Update existing accounts with data from the CSV instead of skipping or failing}
                             {--default-password= : Set a fixed password for all imported accounts (random per user if omitted)}
                             {--default-role=client : Default role assigned when the CSV row has no role column (client, admin, staff, user)}';
 
@@ -65,6 +66,7 @@ class ImportLegacyAccounts extends Command
         $file_path        = $this->argument('file') ?? base_path('import/accounts/base-accounts.csv');
         $dry_run          = (bool) $this->option('dry-run');
         $force            = (bool) $this->option('force');
+        $update           = (bool) $this->option('update');
         $default_password = $this->option('default-password');
         $default_role     = strtolower(trim($this->option('default-role') ?? 'client'));
 
@@ -91,6 +93,11 @@ class ImportLegacyAccounts extends Command
             $this->newLine();
         }
 
+        if ($update && $force) {
+            $this->error('--update and --force cannot be used together. Use --update to update existing accounts or --force to skip them.');
+            return self::FAILURE;
+        }
+
         $rows = $this->parseCsv($file_path);
         if ($rows === null) {
             return self::FAILURE;
@@ -99,6 +106,11 @@ class ImportLegacyAccounts extends Command
         $total = count($rows);
         $this->line("Found <fg=yellow>{$total}</> account(s) in the file.");
         $this->line("Default role: <fg=cyan>{$default_role}</>");
+        if ($update) {
+            $this->line("Mode: <fg=yellow>update</> — existing accounts will be overwritten with CSV data.");
+        } elseif ($force) {
+            $this->line("Mode: <fg=yellow>force</> — existing accounts will be skipped.");
+        }
         $this->newLine();
 
         $this->printFieldMapping($rows[0] ?? []);
@@ -118,7 +130,7 @@ class ImportLegacyAccounts extends Command
 
         $roles = $this->preloadRoles();
 
-        $stats  = ['imported' => 0, 'skipped' => 0, 'failed' => 0];
+        $stats  = ['imported' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0];
         $errors = [];
 
         $bar = $this->output->createProgressBar($total);
@@ -129,7 +141,7 @@ class ImportLegacyAccounts extends Command
             $email    = trim($row['email'] ?? '');
 
             try {
-                $result = $this->processRow($row, $organization, $roles, $default_role, $default_password, $dry_run, $force);
+                $result = $this->processRow($row, $organization, $roles, $default_role, $default_password, $dry_run, $force, $update);
                 $stats[$result]++;
             } catch (Throwable $e) {
                 $stats['failed']++;
@@ -221,8 +233,9 @@ class ImportLegacyAccounts extends Command
         $this->table(['CSV Column', 'Target Field', 'Status'], $table_rows);
 
         $this->newLine();
-        $this->line('<fg=yellow>Note:</> Imported accounts will not have a password. Users must use "Forgot Password" to set their credentials.');
+        $this->line('<fg=yellow>Note:</> New accounts will not have a password. Users must use "Forgot Password" to set their credentials.');
         $this->line('<fg=yellow>Note:</> If the CSV has no <fg=white>role</> column, all accounts receive the <fg=white>--default-role</> value.');
+        $this->line('<fg=yellow>Note:</> Use <fg=white>--update</> to overwrite existing accounts, <fg=white>--force</> to skip them silently.');
         $this->newLine();
     }
 
@@ -234,6 +247,7 @@ class ImportLegacyAccounts extends Command
         ?string $default_password,
         bool $dry_run,
         bool $force,
+        bool $update,
     ): string {
         $email = trim($row['email'] ?? '');
 
@@ -245,10 +259,21 @@ class ImportLegacyAccounts extends Command
             throw new \RuntimeException("Invalid email address: {$email}");
         }
 
-        if (User::where('email', $email)->exists()) {
+        $existing = User::where('email', $email)->first();
+
+        if ($existing) {
+            if ($update) {
+                if ($dry_run) {
+                    return 'updated';
+                }
+                $this->performUpdate($existing, $row, $organization, $roles, $default_role);
+                return 'updated';
+            }
+
             if ($force) {
                 return 'skipped';
             }
+
             throw new \RuntimeException("Account already exists: {$email}");
         }
 
@@ -259,9 +284,9 @@ class ImportLegacyAccounts extends Command
         $assigned_role = $this->resolveRole($row, $default_role, $roles);
 
         DB::transaction(function () use ($row, $email, $organization, $assigned_role, $default_password): void {
-            $created_at    = $this->parseDate($row['created_at'] ?? null) ?? now();
-            $last_login_at = $this->parseDate($row['last_login'] ?? null);
-            $is_active     = ((int) ($row['status'] ?? 0)) >= 3;
+            $created_at     = $this->parseDate($row['created_at'] ?? null) ?? now();
+            $last_login_at  = $this->parseDate($row['last_login'] ?? null);
+            $is_active      = ((int) ($row['status'] ?? 0)) >= 3;
             $credit_balance = $this->parseDecimal($row['balance'] ?? null);
 
             $user = new User();
@@ -301,25 +326,87 @@ class ImportLegacyAccounts extends Command
                 'interested_in' => $this->parseInterestedIn($row['i_am_interested_in'] ?? null),
             ]);
 
-            $has_metadata = $this->nullable($row['id'] ?? null)
-                || $this->nullable($row['note'] ?? null)
-                || $this->nullable($row['referrer_id'] ?? null)
-                || $this->nullable($row['google_studio_link'] ?? null);
-
-            if ($has_metadata) {
-                UserImportMetadata::create([
-                    'user_id'            => $user->id,
-                    'legacy_id'          => $this->nullable($row['id'] ?? null),
-                    'note'               => $this->nullable($row['note'] ?? null),
-                    'referrer_id'        => $this->nullable($row['referrer_id'] ?? null),
-                    'google_studio_link' => $this->nullable($row['google_studio_link'] ?? null),
-                ]);
-            }
+            $this->upsertImportMetadata($user->id, $row);
 
             $user->syncRoles([$assigned_role->name]);
         });
 
         return 'imported';
+    }
+
+    private function performUpdate(
+        User $user,
+        array $row,
+        Organization $organization,
+        array $roles,
+        string $default_role,
+    ): void {
+        $assigned_role = $this->resolveRole($row, $default_role, $roles);
+
+        DB::transaction(function () use ($user, $row, $organization, $assigned_role): void {
+            $last_login_at  = $this->parseDate($row['last_login'] ?? null);
+            $is_active      = ((int) ($row['status'] ?? 0)) >= 3;
+            $credit_balance = $this->parseDecimal($row['balance'] ?? null);
+
+            $user->forceFill([
+                'first_name'         => trim($row['name_f'] ?? ''),
+                'last_name'          => trim($row['name_l'] ?? ''),
+                'phone'              => $this->nullable($row['phone'] ?? null),
+                'stripe_customer_id' => $this->nullable($row['stripe_customer_id'] ?? null),
+                'is_active'          => $is_active,
+                'credit_balance'     => $credit_balance,
+                'last_login_at'      => $last_login_at,
+                'organization_id'    => $organization->id,
+            ]);
+            $user->save();
+
+            BillingAddress::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'company'        => $this->nullable($row['company'] ?? null),
+                    'tax_id'         => $this->nullable($row['tax_id'] ?? null),
+                    'address'        => $this->nullable($row['address_street'] ?? null),
+                    'city'           => $this->nullable($row['address_city'] ?? null),
+                    'state_province' => $this->nullable($row['address_state'] ?? null),
+                    'postal_code'    => $this->nullable($row['address_postcode'] ?? null),
+                    'country'        => $this->nullable($row['address_country'] ?? null),
+                    'billing_email'  => $user->email,
+                ]
+            );
+
+            UserPreference::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'timezone'      => $this->parseTimezone($row['timezone'] ?? null),
+                    'language'      => 'en',
+                    'interested_in' => $this->parseInterestedIn($row['i_am_interested_in'] ?? null),
+                ]
+            );
+
+            $this->upsertImportMetadata($user->id, $row);
+
+            $user->syncRoles([$assigned_role->name]);
+        });
+    }
+
+    private function upsertImportMetadata(int $user_id, array $row): void
+    {
+        $legacy_id           = $this->nullable($row['id'] ?? null);
+        $note                = $this->nullable($row['note'] ?? null);
+        $referrer_id         = $this->nullable($row['referrer_id'] ?? null);
+        $google_studio_link  = $this->nullable($row['google_studio_link'] ?? null);
+
+        if ($legacy_id || $note || $referrer_id || $google_studio_link) {
+            UserImportMetadata::updateOrCreate(
+                ['user_id' => $user_id],
+                [
+                    'legacy_id'          => $legacy_id,
+                    'note'               => $note,
+                    'referrer_id'        => $referrer_id,
+                    'google_studio_link' => $google_studio_link,
+                ]
+            );
+        }
     }
 
     private function resolveRole(array $row, string $default_role, array $roles): Role
@@ -408,6 +495,7 @@ class ImportLegacyAccounts extends Command
             ['Result', 'Count'],
             [
                 ['Imported', $stats['imported']],
+                ['Updated',  $stats['updated']],
                 ['Skipped',  $stats['skipped']],
                 ['Failed',   $stats['failed']],
                 ['Total',    array_sum($stats)],
@@ -425,9 +513,9 @@ class ImportLegacyAccounts extends Command
         if ($dry_run) {
             $this->newLine();
             $this->warn('No data was saved. Remove --dry-run to execute the import.');
-        } elseif ($stats['imported'] > 0) {
+        } elseif ($stats['imported'] > 0 || $stats['updated'] > 0) {
             $this->newLine();
-            $this->info("Import complete. Users must use 'Forgot Password' to access their accounts.");
+            $this->info("Import complete. New users must use 'Forgot Password' to access their accounts.");
         }
     }
 }

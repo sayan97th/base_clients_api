@@ -28,6 +28,7 @@ class LinkBuildingOrder extends Model
         'coupon_id',
         'coupon_discount_amount',
         'is_hidden',
+        'is_legacy_import',
     ];
 
     protected function casts(): array
@@ -37,6 +38,7 @@ class LinkBuildingOrder extends Model
             'total_amount'             => 'float',
             'coupon_discount_amount'   => 'float',
             'is_hidden'                => 'boolean',
+            'is_legacy_import'         => 'boolean',
         ];
     }
 

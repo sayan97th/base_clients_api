@@ -222,6 +222,7 @@ class ImportLegacyOrders extends Command
                 'status'                   => $status,
                 'session_id'               => $base_id,
                 'session_title'            => $order_title,
+                'is_legacy_import'         => true,
                 'created_at'               => $created_at,
                 'updated_at'               => $updated_at,
             ]);

@@ -19,6 +19,7 @@ class ImportLegacyOrders extends Command
                             {file? : Path to the CSV orders export file (defaults to import/orders/base-orders.csv)}
                             {--dry-run : Preview the import without saving any data}
                             {--force : Skip duplicate orders instead of failing}
+                            {--update : Update existing orders and credit transactions instead of skipping them}
                             {--skip-unknown-users : Skip rows whose client email is not found in the system}';
 
     protected $description = 'Import legacy orders from a CSV export file into the new application';
@@ -65,6 +66,7 @@ class ImportLegacyOrders extends Command
         $file_path          = $this->argument('file') ?? base_path('import/orders/base-orders.csv');
         $dry_run            = (bool) $this->option('dry-run');
         $force              = (bool) $this->option('force');
+        $update             = (bool) $this->option('update');
         $skip_unknown_users = (bool) $this->option('skip-unknown-users');
 
         if (!$this->argument('file')) {
@@ -109,7 +111,7 @@ class ImportLegacyOrders extends Command
 
         $this->newLine();
 
-        $stats  = ['imported' => 0, 'credited' => 0, 'skipped' => 0, 'failed' => 0];
+        $stats  = ['imported' => 0, 'credited' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0];
         $errors = [];
 
         $bar = $this->output->createProgressBar($total);
@@ -117,7 +119,7 @@ class ImportLegacyOrders extends Command
 
         foreach ($groups as $base_id => $group_rows) {
             try {
-                $result          = $this->processGroup($base_id, $group_rows, $dry_run, $force, $skip_unknown_users);
+                $result          = $this->processGroup($base_id, $group_rows, $dry_run, $force, $update, $skip_unknown_users);
                 $stats[$result]++;
             } catch (Throwable $e) {
                 $first_email = trim($group_rows[0]['client_email'] ?? '');
@@ -156,6 +158,7 @@ class ImportLegacyOrders extends Command
         array $rows,
         bool $dry_run,
         bool $force,
+        bool $update,
         bool $skip_unknown_users,
     ): string {
         $first_row    = $rows[0];
@@ -174,10 +177,10 @@ class ImportLegacyOrders extends Command
         }
 
         if ($this->isCreditPurchase($rows)) {
-            return $this->processCreditGroup($base_id, $rows, $user, $dry_run, $force);
+            return $this->processCreditGroup($base_id, $rows, $user, $dry_run, $force, $update);
         }
 
-        return $this->processOrderGroup($base_id, $rows, $user, $dry_run, $force);
+        return $this->processOrderGroup($base_id, $rows, $user, $dry_run, $force, $update);
     }
 
     private function processOrderGroup(
@@ -186,8 +189,18 @@ class ImportLegacyOrders extends Command
         User $user,
         bool $dry_run,
         bool $force,
+        bool $update,
     ): string {
-        if (LinkBuildingOrder::where('session_id', $base_id)->exists()) {
+        $existing = LinkBuildingOrder::where('session_id', $base_id)->first();
+
+        if ($existing) {
+            if ($update) {
+                if ($dry_run) {
+                    return 'updated';
+                }
+                $this->updateOrderRecord($existing, $base_id, $rows, $user);
+                return 'updated';
+            }
             if ($force) {
                 return 'skipped';
             }
@@ -199,57 +212,80 @@ class ImportLegacyOrders extends Command
         }
 
         DB::transaction(function () use ($base_id, $rows, $user): void {
-            $first_row   = $rows[0];
-            $status      = $this->mapStatus($first_row['status'] ?? '');
-            $order_title = $this->nullable($first_row['title'] ?? null);
-            $created_at  = $this->parseDate($first_row['created_at'] ?? null) ?? now();
-            $updated_at  = $this->parseDate($first_row['updated_at'] ?? null) ?? $created_at;
-            $notes       = $this->buildOrderNotes($base_id, $first_row);
-
-            $total_amount = array_sum(array_map(
-                fn (array $r) => $this->parseDecimal($r['price'] ?? '0') * max(1, (int) ($r['quantity'] ?? 1)),
-                $rows
-            ));
+            $order_data = $this->buildOrderData($base_id, $rows, $user);
 
             $order = new LinkBuildingOrder();
-            $order->forceFill([
-                'id'                       => Str::uuid()->toString(),
-                'user_id'                  => $user->id,
-                'order_title'              => $order_title,
-                'order_notes'              => $notes,
-                'total_amount'             => $total_amount,
-                'subtotal_before_discount' => $total_amount,
-                'status'                   => $status,
-                'session_id'               => $base_id,
-                'session_title'            => $order_title,
-                'is_legacy_import'         => true,
-                'created_at'               => $created_at,
-                'updated_at'               => $updated_at,
-            ]);
+            $order->forceFill(['id' => Str::uuid()->toString(), ...$order_data]);
             $order->save();
 
-            foreach ($rows as $item_row) {
-                $service_name = trim($item_row['service'] ?? '');
-                $dr_tier      = $this->resolveDrTier($service_name);
-                $quantity     = max(1, (int) ($item_row['quantity'] ?? 1));
-                $unit_price   = $this->parseDecimal($item_row['price'] ?? '0');
-
-                if ($dr_tier === null) {
-                    continue;
-                }
-
-                LinkBuildingOrderItem::create([
-                    'id'         => Str::uuid()->toString(),
-                    'order_id'   => $order->id,
-                    'dr_tier_id' => $dr_tier->id,
-                    'quantity'   => $quantity,
-                    'unit_price' => $unit_price,
-                    'subtotal'   => round($unit_price * $quantity, 2),
-                ]);
-            }
+            $this->createOrderItems($order->id, $rows);
         });
 
         return 'imported';
+    }
+
+    private function updateOrderRecord(LinkBuildingOrder $order, string $base_id, array $rows, User $user): void
+    {
+        DB::transaction(function () use ($order, $base_id, $rows, $user): void {
+            $order_data = $this->buildOrderData($base_id, $rows, $user);
+
+            $order->forceFill($order_data);
+            $order->save();
+
+            LinkBuildingOrderItem::where('order_id', $order->id)->delete();
+            $this->createOrderItems($order->id, $rows);
+        });
+    }
+
+    private function buildOrderData(string $base_id, array $rows, User $user): array
+    {
+        $first_row    = $rows[0];
+        $status       = $this->mapStatus($first_row['status'] ?? '');
+        $order_title  = $this->nullable($first_row['title'] ?? null);
+        $created_at   = $this->parseDate($first_row['created_at'] ?? null) ?? now();
+        $updated_at   = $this->parseDate($first_row['updated_at'] ?? null) ?? $created_at;
+        $notes        = $this->buildOrderNotes($base_id, $first_row);
+        $total_amount = array_sum(array_map(
+            fn (array $r) => $this->parseDecimal($r['price'] ?? '0') * max(1, (int) ($r['quantity'] ?? 1)),
+            $rows
+        ));
+
+        return [
+            'user_id'                  => $user->id,
+            'order_title'              => $order_title,
+            'order_notes'              => $notes,
+            'total_amount'             => $total_amount,
+            'subtotal_before_discount' => $total_amount,
+            'status'                   => $status,
+            'session_id'               => $base_id,
+            'session_title'            => $order_title,
+            'is_legacy_import'         => true,
+            'created_at'               => $created_at,
+            'updated_at'               => $updated_at,
+        ];
+    }
+
+    private function createOrderItems(string $order_id, array $rows): void
+    {
+        foreach ($rows as $item_row) {
+            $service_name = trim($item_row['service'] ?? '');
+            $dr_tier      = $this->resolveDrTier($service_name);
+            $quantity     = max(1, (int) ($item_row['quantity'] ?? 1));
+            $unit_price   = $this->parseDecimal($item_row['price'] ?? '0');
+
+            if ($dr_tier === null) {
+                continue;
+            }
+
+            LinkBuildingOrderItem::create([
+                'id'         => Str::uuid()->toString(),
+                'order_id'   => $order_id,
+                'dr_tier_id' => $dr_tier->id,
+                'quantity'   => $quantity,
+                'unit_price' => $unit_price,
+                'subtotal'   => round($unit_price * $quantity, 2),
+            ]);
+        }
     }
 
     private function processCreditGroup(
@@ -258,12 +294,33 @@ class ImportLegacyOrders extends Command
         User $user,
         bool $dry_run,
         bool $force,
+        bool $update,
     ): string {
-        $already_imported = CreditTransaction::where('user_id', $user->id)
+        $existing = CreditTransaction::where('user_id', $user->id)
             ->where('description', 'like', "%Legacy import%{$base_id}%")
-            ->exists();
+            ->first();
 
-        if ($already_imported) {
+        if ($existing) {
+            if ($update) {
+                if ($dry_run) {
+                    return 'updated';
+                }
+                $first_row  = $rows[0];
+                $title      = trim($first_row['title'] ?? '');
+                $created_at = $this->parseDate($first_row['created_at'] ?? null) ?? now();
+                $amount     = array_sum(array_map(
+                    fn (array $r) => $this->parseDecimal($r['price'] ?? '0'),
+                    $rows
+                ));
+                $existing->forceFill([
+                    'amount'      => $amount,
+                    'description' => "Legacy import: {$title} (ID: {$base_id})",
+                    'created_at'  => $created_at,
+                    'updated_at'  => $created_at,
+                ]);
+                $existing->save();
+                return 'updated';
+            }
             if ($force) {
                 return 'skipped';
             }
@@ -445,6 +502,7 @@ class ImportLegacyOrders extends Command
             [
                 ['Imported (link-building orders)', $stats['imported']],
                 ['Imported (credit transactions)',  $stats['credited']],
+                ['Updated',                        $stats['updated']],
                 ['Skipped',                        $stats['skipped']],
                 ['Failed',                         $stats['failed']],
                 ['Total',                          array_sum($stats)],

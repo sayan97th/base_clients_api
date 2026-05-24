@@ -6,6 +6,7 @@ use App\Models\BillingAddress;
 use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\UserImportMetadata;
 use App\Models\UserPreference;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -21,9 +22,12 @@ class ImportLegacyAccounts extends Command
                             {file? : Path to the CSV accounts export file (defaults to import/accounts/base-accounts.csv)}
                             {--dry-run : Preview the import without saving any data}
                             {--force : Skip duplicate accounts instead of failing}
-                            {--default-password= : Set a fixed password for all imported accounts (random per user if omitted)}';
+                            {--default-password= : Set a fixed password for all imported accounts (random per user if omitted)}
+                            {--default-role=client : Default role assigned when the CSV row has no role column (client, admin, staff, user)}';
 
     protected $description = 'Import legacy user accounts from a CSV export file into the new application';
+
+    private const VALID_ROLES = ['client', 'admin', 'staff', 'user', 'super_admin', 'owner'];
 
     private const FIELD_MAPPING = [
         'name_f'             => 'users.first_name',
@@ -44,15 +48,16 @@ class ImportLegacyAccounts extends Command
         'address_country'    => 'billing_addresses.country',
         'timezone'           => 'user_preferences.timezone',
         'i_am_interested_in' => 'user_preferences.interested_in',
+        'role'               => 'user_role  (client/admin/staff/user — falls back to --default-role)',
+        'id'                 => 'user_import_metadata.legacy_id',
+        'note'               => 'user_import_metadata.note',
+        'referrer_id'        => 'user_import_metadata.referrer_id',
+        'google_studio_link' => 'user_import_metadata.google_studio_link',
     ];
 
     private const SKIPPED_FIELDS = [
-        'id',
-        'note',
         'Spent',
         'manager_id',
-        'referrer_id',
-        'google_studio_link',
     ];
 
     public function handle(): int
@@ -61,10 +66,16 @@ class ImportLegacyAccounts extends Command
         $dry_run          = (bool) $this->option('dry-run');
         $force            = (bool) $this->option('force');
         $default_password = $this->option('default-password');
+        $default_role     = strtolower(trim($this->option('default-role') ?? 'client'));
 
         if (!$this->argument('file')) {
             $this->line("No file specified. Using default: <fg=yellow>import/accounts/base-accounts.csv</>");
             $this->newLine();
+        }
+
+        if (!\in_array($default_role, self::VALID_ROLES, true)) {
+            $this->error("Invalid --default-role value: '{$default_role}'. Allowed: " . implode(', ', self::VALID_ROLES));
+            return self::FAILURE;
         }
 
         if (!file_exists($file_path)) {
@@ -87,6 +98,7 @@ class ImportLegacyAccounts extends Command
 
         $total = count($rows);
         $this->line("Found <fg=yellow>{$total}</> account(s) in the file.");
+        $this->line("Default role: <fg=cyan>{$default_role}</>");
         $this->newLine();
 
         $this->printFieldMapping($rows[0] ?? []);
@@ -104,10 +116,7 @@ class ImportLegacyAccounts extends Command
             return self::FAILURE;
         }
 
-        $user_role = Role::firstOrCreate(
-            ['name' => 'user'],
-            ['display_name' => 'User', 'description' => 'Standard user']
-        );
+        $roles = $this->preloadRoles();
 
         $stats  = ['imported' => 0, 'skipped' => 0, 'failed' => 0];
         $errors = [];
@@ -120,7 +129,7 @@ class ImportLegacyAccounts extends Command
             $email    = trim($row['email'] ?? '');
 
             try {
-                $result = $this->processRow($row, $organization, $user_role, $default_password, $dry_run, $force);
+                $result = $this->processRow($row, $organization, $roles, $default_role, $default_password, $dry_run, $force);
                 $stats[$result]++;
             } catch (Throwable $e) {
                 $stats['failed']++;
@@ -138,6 +147,19 @@ class ImportLegacyAccounts extends Command
         return $stats['failed'] > 0 ? self::FAILURE : self::SUCCESS;
     }
 
+    private function preloadRoles(): array
+    {
+        $roles = [];
+        foreach (self::VALID_ROLES as $name) {
+            $role = Role::firstOrCreate(
+                ['name' => $name],
+                ['display_name' => ucfirst(str_replace('_', ' ', $name)), 'description' => '']
+            );
+            $roles[$name] = $role;
+        }
+        return $roles;
+    }
+
     private function parseCsv(string $file_path): ?array
     {
         $handle = fopen($file_path, 'r');
@@ -151,7 +173,6 @@ class ImportLegacyAccounts extends Command
 
         while (($columns = fgetcsv($handle)) !== false) {
             if ($headers === null) {
-                // Strip BOM, whitespace, and trailing colons from header names
                 $headers = array_map(
                     fn (string $h) => rtrim(trim(ltrim($h, "\xEF\xBB\xBF")), ':'),
                     $columns
@@ -187,12 +208,12 @@ class ImportLegacyAccounts extends Command
         $this->newLine();
 
         $table_rows = [];
-        foreach ($sample_row as $field => $value) {
+        foreach (array_keys($sample_row) as $field) {
             $target      = self::FIELD_MAPPING[$field] ?? null;
-            $is_skipped  = in_array($field, self::SKIPPED_FIELDS, true);
+            $is_skipped  = \in_array($field, self::SKIPPED_FIELDS, true);
             $status_label = $target
                 ? '<fg=green>Mapped</>'
-                : ($is_skipped ? '<fg=yellow>Skipped (no target)</>' : '<fg=red>Unknown</>');
+                : ($is_skipped ? '<fg=yellow>Skipped</>' : '<fg=red>Unknown</>');
 
             $table_rows[] = [$field, $target ?? '—', $status_label];
         }
@@ -201,13 +222,15 @@ class ImportLegacyAccounts extends Command
 
         $this->newLine();
         $this->line('<fg=yellow>Note:</> Imported accounts will not have a password. Users must use "Forgot Password" to set their credentials.');
+        $this->line('<fg=yellow>Note:</> If the CSV has no <fg=white>role</> column, all accounts receive the <fg=white>--default-role</> value.');
         $this->newLine();
     }
 
     private function processRow(
         array $row,
         Organization $organization,
-        Role $user_role,
+        array $roles,
+        string $default_role,
         ?string $default_password,
         bool $dry_run,
         bool $force,
@@ -233,7 +256,9 @@ class ImportLegacyAccounts extends Command
             return 'imported';
         }
 
-        DB::transaction(function () use ($row, $email, $organization, $user_role, $default_password): void {
+        $assigned_role = $this->resolveRole($row, $default_role, $roles);
+
+        DB::transaction(function () use ($row, $email, $organization, $assigned_role, $default_password): void {
             $created_at    = $this->parseDate($row['created_at'] ?? null) ?? now();
             $last_login_at = $this->parseDate($row['last_login'] ?? null);
             $is_active     = ((int) ($row['status'] ?? 0)) >= 3;
@@ -276,10 +301,36 @@ class ImportLegacyAccounts extends Command
                 'interested_in' => $this->parseInterestedIn($row['i_am_interested_in'] ?? null),
             ]);
 
-            $user->syncRoles([$user_role->name]);
+            $has_metadata = $this->nullable($row['id'] ?? null)
+                || $this->nullable($row['note'] ?? null)
+                || $this->nullable($row['referrer_id'] ?? null)
+                || $this->nullable($row['google_studio_link'] ?? null);
+
+            if ($has_metadata) {
+                UserImportMetadata::create([
+                    'user_id'            => $user->id,
+                    'legacy_id'          => $this->nullable($row['id'] ?? null),
+                    'note'               => $this->nullable($row['note'] ?? null),
+                    'referrer_id'        => $this->nullable($row['referrer_id'] ?? null),
+                    'google_studio_link' => $this->nullable($row['google_studio_link'] ?? null),
+                ]);
+            }
+
+            $user->syncRoles([$assigned_role->name]);
         });
 
         return 'imported';
+    }
+
+    private function resolveRole(array $row, string $default_role, array $roles): Role
+    {
+        $csv_role = strtolower(trim($row['role'] ?? ''));
+
+        if ($csv_role !== '' && isset($roles[$csv_role])) {
+            return $roles[$csv_role];
+        }
+
+        return $roles[$default_role];
     }
 
     private function parseDate(?string $value): ?Carbon
@@ -311,7 +362,7 @@ class ImportLegacyAccounts extends Command
     private function parseTimezone(?string $value): string
     {
         $timezone = trim($value ?? '');
-        return in_array($timezone, \DateTimeZone::listIdentifiers(), true)
+        return \in_array($timezone, \DateTimeZone::listIdentifiers(), true)
             ? $timezone
             : 'UTC';
     }

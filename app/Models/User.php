@@ -138,6 +138,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->notifications()->where('is_read', false);
     }
 
+    public function importMetadata(): HasOne
+    {
+        return $this->hasOne(UserImportMetadata::class);
+    }
+
     public function newContentOrders(): HasMany
     {
         return $this->hasMany(NewContentOrder::class);

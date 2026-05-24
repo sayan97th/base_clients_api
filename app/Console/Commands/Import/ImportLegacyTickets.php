@@ -129,10 +129,14 @@ class ImportLegacyTickets extends Command
             return null;
         }
 
-        $rows    = [];
-        $headers = null;
+        $rows        = [];
+        $headers     = null;
+        $line_number = 0;
+        $adjusted    = 0;
 
-        while (($columns = fgetcsv($handle)) !== false) {
+        while (($columns = fgetcsv($handle, 0, ',', '"', '')) !== false) {
+            $line_number++;
+
             if ($headers === null) {
                 $headers = array_map(
                     fn (string $h) => rtrim(trim(ltrim($h, "\xEF\xBB\xBF")), ':'),
@@ -141,14 +145,25 @@ class ImportLegacyTickets extends Command
                 continue;
             }
 
-            if (count($columns) !== count($headers)) {
-                continue;
+            $col_count = \count($columns);
+            $hdr_count = \count($headers);
+
+            if ($col_count !== $hdr_count) {
+                $adjusted++;
+                $columns = $col_count < $hdr_count
+                    ? array_pad($columns, $hdr_count, '')
+                    : \array_slice($columns, 0, $hdr_count);
             }
 
             $rows[] = array_combine($headers, $columns);
         }
 
         fclose($handle);
+
+        if ($adjusted > 0) {
+            $this->warn("{$adjusted} row(s) had mismatched column counts and were automatically adjusted.");
+            $this->newLine();
+        }
 
         if (empty($rows)) {
             $this->error('The CSV file contains no data rows.');

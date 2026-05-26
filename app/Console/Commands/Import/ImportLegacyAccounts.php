@@ -39,7 +39,7 @@ class ImportLegacyAccounts extends Command
         'created_at'         => 'users.created_at',
         'balance'            => 'users.credit_balance',
         'stripe_customer_id' => 'users.stripe_customer_id',
-        'status'             => 'users.is_active  (>=3 → active)',
+        'status'             => 'users.is_active  (always enabled — cannot determine active state from legacy data)',
         'company'            => 'billing_addresses.company',
         'tax_id'             => 'billing_addresses.tax_id',
         'address_street'     => 'billing_addresses.address',
@@ -236,6 +236,7 @@ class ImportLegacyAccounts extends Command
         $this->line('<fg=yellow>Note:</> New accounts will not have a password. Users must use "Forgot Password" to set their credentials.');
         $this->line('<fg=yellow>Note:</> If the CSV has no <fg=white>role</> column, all accounts receive the <fg=white>--default-role</> value.');
         $this->line('<fg=yellow>Note:</> Use <fg=white>--update</> to overwrite existing accounts, <fg=white>--force</> to skip them silently.');
+        $this->line('<fg=yellow>Note:</> All accounts are imported as <fg=white>enabled</> — the legacy status field cannot reliably determine active state.');
         $this->newLine();
     }
 
@@ -286,7 +287,6 @@ class ImportLegacyAccounts extends Command
         DB::transaction(function () use ($row, $email, $organization, $assigned_role, $default_password): void {
             $created_at     = $this->parseDate($row['created_at'] ?? null) ?? now();
             $last_login_at  = $this->parseDate($row['last_login'] ?? null);
-            $is_active      = ((int) ($row['status'] ?? 0)) >= 3;
             $credit_balance = $this->parseDecimal($row['balance'] ?? null);
 
             $user = new User();
@@ -297,7 +297,7 @@ class ImportLegacyAccounts extends Command
                 'password'           => Hash::make($default_password ?? Str::password(20)),
                 'phone'              => $this->nullable($row['phone'] ?? null),
                 'stripe_customer_id' => $this->nullable($row['stripe_customer_id'] ?? null),
-                'is_active'          => $is_active,
+                'is_active'          => true,
                 'credit_balance'     => $credit_balance,
                 'last_login_at'      => $last_login_at,
                 'email_verified_at'  => $created_at,
@@ -345,7 +345,6 @@ class ImportLegacyAccounts extends Command
 
         DB::transaction(function () use ($user, $row, $organization, $assigned_role): void {
             $last_login_at  = $this->parseDate($row['last_login'] ?? null);
-            $is_active      = ((int) ($row['status'] ?? 0)) >= 3;
             $credit_balance = $this->parseDecimal($row['balance'] ?? null);
 
             $user->forceFill([
@@ -353,7 +352,7 @@ class ImportLegacyAccounts extends Command
                 'last_name'          => trim($row['name_l'] ?? ''),
                 'phone'              => $this->nullable($row['phone'] ?? null),
                 'stripe_customer_id' => $this->nullable($row['stripe_customer_id'] ?? null),
-                'is_active'          => $is_active,
+                'is_active'          => true,
                 'credit_balance'     => $credit_balance,
                 'last_login_at'      => $last_login_at,
                 'organization_id'    => $organization->id,

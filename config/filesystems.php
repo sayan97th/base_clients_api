@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'app_disk' => env('STORAGE_DRIVER', 'public'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

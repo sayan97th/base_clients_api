@@ -99,11 +99,11 @@ class NewsController extends Controller
         }
 
         if ($post->image_path) {
-            Storage::disk('public')->delete($post->image_path);
+            Storage::disk(config('filesystems.app_disk'))->delete($post->image_path);
         }
 
         if ($post->thumbnail_path) {
-            Storage::disk('public')->delete($post->thumbnail_path);
+            Storage::disk(config('filesystems.app_disk'))->delete($post->thumbnail_path);
         }
 
         $post->delete();
@@ -120,8 +120,8 @@ class NewsController extends Controller
             'image' => 'required|image|mimes:jpeg,png,gif,webp|max:5120',
         ]);
 
-        $path = $request->file('image')->store('news', 'public');
-        $url  = Storage::disk('public')->url($path);
+        $path = $request->file('image')->store('news', config('filesystems.app_disk'));
+        $url  = Storage::disk(config('filesystems.app_disk'))->url($path);
 
         return response()->json([
             'url'  => $url,

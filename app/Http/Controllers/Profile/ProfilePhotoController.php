@@ -19,13 +19,13 @@ class ProfilePhotoController extends Controller
         $user = auth()->user();
 
         if ($user->profile_photo_path) {
-            Storage::disk('public')->delete($user->profile_photo_path);
+            Storage::disk(config('filesystems.app_disk'))->delete($user->profile_photo_path);
         }
 
         $file      = $request->file('profile_photo');
         $extension = $file->getClientOriginalExtension();
         $filename  = Str::uuid() . '.' . $extension;
-        $path      = $file->storeAs('profile-photos', $filename, 'public');
+        $path      = $file->storeAs('profile-photos', $filename, config('filesystems.app_disk'));
 
         $user->update(['profile_photo_path' => $path]);
 
@@ -48,7 +48,7 @@ class ProfilePhotoController extends Controller
         $user = auth()->user();
 
         if ($user->profile_photo_path) {
-            Storage::disk('public')->delete($user->profile_photo_path);
+            Storage::disk(config('filesystems.app_disk'))->delete($user->profile_photo_path);
         }
 
         $user->update(['profile_photo_path' => null]);

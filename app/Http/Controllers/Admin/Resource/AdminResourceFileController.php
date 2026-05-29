@@ -32,7 +32,7 @@ class AdminResourceFileController extends Controller
         }
 
         $uploaded  = $request->file('file');
-        $file_path = $uploaded->store("resources/{$id}", 'public');
+        $file_path = $uploaded->store("resources/{$id}", config('filesystems.app_disk'));
 
         $resource_file = ResourceFile::create([
             'resource_id' => $resource->id,
@@ -65,7 +65,7 @@ class AdminResourceFileController extends Controller
             return response()->json(['message' => 'File not found.'], 404);
         }
 
-        Storage::disk('public')->delete($resource_file->file_path);
+        Storage::disk(config('filesystems.app_disk'))->delete($resource_file->file_path);
 
         $resource_file->delete();
 

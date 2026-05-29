@@ -178,7 +178,7 @@ class AdminResourceController extends Controller
         }
 
         foreach ($resource->files as $file) {
-            Storage::disk('public')->delete($file->file_path);
+            Storage::disk(config('filesystems.app_disk'))->delete($file->file_path);
         }
 
         $resource->delete();

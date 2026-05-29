@@ -83,8 +83,8 @@ class OrganizationController extends Controller
 
         foreach (self::ASSET_FIELDS as $field) {
             if (array_key_exists($field, $validated) && is_null($validated[$field])) {
-                if ($organization->$field && Storage::exists($organization->$field)) {
-                    Storage::delete($organization->$field);
+                if ($organization->$field && Storage::disk(config('filesystems.app_disk'))->exists($organization->$field)) {
+                    Storage::disk(config('filesystems.app_disk'))->delete($organization->$field);
                 }
                 $updates[$field] = null;
             }
@@ -116,14 +116,14 @@ class OrganizationController extends Controller
 
         // Delete the previous file from storage if one exists.
         $existing_path = $organization->$field;
-        if ($existing_path && Storage::exists($existing_path)) {
-            Storage::delete($existing_path);
+        if ($existing_path && Storage::disk(config('filesystems.app_disk'))->exists($existing_path)) {
+            Storage::disk(config('filesystems.app_disk'))->delete($existing_path);
         }
 
         // Store the new file at a deterministic path.
         $extension = $file->getClientOriginalExtension();
-        $path      = $file->storeAs("organizations/{$id}", "{$field}.{$extension}");
-        $url       = Storage::url($path);
+        $path      = $file->storeAs("organizations/{$id}", "{$field}.{$extension}", config('filesystems.app_disk'));
+        $url       = Storage::disk(config('filesystems.app_disk'))->url($path);
 
         $organization->update([$field => $path]);
 
@@ -143,7 +143,7 @@ class OrganizationController extends Controller
 
         foreach (self::ASSET_FIELDS as $field) {
             $data[$field] = $organization->$field
-                ? Storage::url($organization->$field)
+                ? Storage::disk(config('filesystems.app_disk'))->url($organization->$field)
                 : null;
         }
 

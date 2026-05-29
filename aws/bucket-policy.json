@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadForPublicAssets",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::base-portal-testing/news/*",
+        "arn:aws:s3:::base-portal-testing/organizations/*",
+        "arn:aws:s3:::base-portal-testing/profile-photos/*",
+        "arn:aws:s3:::base-portal-testing/users/*"
+      ]
+    },
+    {
+      "Sid": "PublicReadForResourceFiles",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::base-portal-testing/resources/*"
+    }
+  ]
+}

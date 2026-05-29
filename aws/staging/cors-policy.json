@@ -2,7 +2,7 @@
   {
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-    "AllowedOrigins": ["https://staging-app.basesearchmarketing.com", "https://staging-admin.basesearchmarketing.com"],
+    "AllowedOrigins": ["*"],
     "ExposeHeaders": ["ETag", "Content-Length", "Content-Type"],
     "MaxAgeSeconds": 3600
   }

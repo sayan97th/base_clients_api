@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadForPublicAssets",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::base-portal-production/news/*",
+        "arn:aws:s3:::base-portal-production/organizations/*",
+        "arn:aws:s3:::base-portal-production/profile-photos/*",
+        "arn:aws:s3:::base-portal-production/users/*",
+        "arn:aws:s3:::base-portal-production/resources/*"
+      ]
+    }
+  ]
+}

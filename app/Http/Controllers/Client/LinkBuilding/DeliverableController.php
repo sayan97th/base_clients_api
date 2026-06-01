@@ -16,7 +16,18 @@ class DeliverableController extends Controller
      * GET /api/link-building/deliverables
      *
      * Returns a paginated list of orders for the authenticated client,
-     * enriched with aggregated link statistics from associated reports.
+     * enriched with aggregated link statistics from their associated reports.
+     *
+     * Each item provides enough data for the Deliverables page card header
+     * (title, status, dates, link progress counts). The full placement-level
+     * detail is fetched separately via GET /orders/{id}/report when a card
+     * is expanded.
+     *
+     * Query params:
+     *   page      int    default 1
+     *   per_page  int    default 10, max 100
+     *   search    string matches order_title or order UUID prefix
+     *   status    string one of: pending, processing, completed, cancelled, payment_pending
      */
     public function index(Request $request): JsonResponse
     {
@@ -33,20 +44,22 @@ class DeliverableController extends Controller
         $search   = $request->get('search');
         $status   = $request->get('status');
 
+        // All non-aggregate selected columns are listed in GROUP BY so the query
+        // is standards-compliant with MySQL ONLY_FULL_GROUP_BY mode.
         $query = DB::table('link_building_orders as o')
             ->leftJoin('order_reports as r', 'r.order_id', '=', 'o.id')
             ->leftJoin('order_report_tables as t', 't.report_id', '=', 'r.id')
             ->leftJoin('order_report_rows as rr', 'rr.table_id', '=', 't.id')
             ->where('o.user_id', $user->id)
             ->where('o.is_hidden', false)
-            ->groupBy('o.id', 'r.sent_at')
+            ->groupBy('o.id', 'o.order_title', 'o.status', 'o.created_at', 'r.sent_at')
             ->select([
                 'o.id as order_id',
                 'o.order_title',
                 'o.status',
                 'o.created_at',
                 DB::raw('COUNT(rr.id) as total_links'),
-                DB::raw("SUM(CASE WHEN rr.status = 'live' THEN 1 ELSE 0 END) as live_count"),
+                DB::raw("SUM(CASE WHEN rr.status = 'live'    THEN 1 ELSE 0 END) as live_count"),
                 DB::raw("SUM(CASE WHEN rr.status = 'pending' THEN 1 ELSE 0 END) as pending_count"),
                 DB::raw('COUNT(DISTINCT t.id) as tables_count'),
                 'r.sent_at as report_sent_at',
@@ -71,10 +84,10 @@ class DeliverableController extends Controller
             'order_title'    => $row->order_title,
             'status'         => $row->status,
             'created_at'     => $row->created_at,
-            'total_links'    => (int) ($row->total_links ?? 0),
-            'live_count'     => (int) ($row->live_count ?? 0),
+            'total_links'    => (int) ($row->total_links  ?? 0),
+            'live_count'     => (int) ($row->live_count   ?? 0),
             'pending_count'  => (int) ($row->pending_count ?? 0),
-            'tables_count'   => (int) ($row->tables_count ?? 0),
+            'tables_count'   => (int) ($row->tables_count  ?? 0),
             'report_sent_at' => $row->report_sent_at,
         ]);
 

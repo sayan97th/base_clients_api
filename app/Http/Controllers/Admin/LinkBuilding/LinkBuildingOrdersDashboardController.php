@@ -167,6 +167,55 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * POST /api/admin/link-building-orders/batch-update
+     *
+     * Updates one or more fields across multiple rows in a single request.
+     * Only explicitly whitelisted columns are accepted to prevent mass-assignment abuse.
+     *
+     * Request body:
+     *   row_ids : string[]                     — IDs of placements to update
+     *   updates : Record<string, string|null>  — field → value map
+     */
+    public function batchUpdate(Request $request): JsonResponse
+    {
+        $row_ids = (array) ($request->input('row_ids') ?? []);
+        $updates = (array) ($request->input('updates') ?? []);
+
+        $allowed_fields = [
+            'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
+            'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',
+            'partnership', 'partnership_check', 'article_title', 'article',
+            'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
+            'current_traffic', 'dr_formula', 'current_poc', 'current_price',
+            'lb_tl_approval', 'approval_date', 'final_price', 'currency',
+            'assigned_admin_user_id',
+        ];
+
+        $safe_updates = array_filter(
+            $updates,
+            fn ($key) => in_array($key, $allowed_fields, true),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        if (empty($row_ids) || empty($safe_updates)) {
+            return response()->json(['message' => 'Nothing to update.'], 422);
+        }
+
+        $placements = LinkBuildingOrderPlacement::whereIn('id', $row_ids)->get();
+        $session_id = $request->header('X-Session-ID');
+
+        foreach ($placements as $placement) {
+            $placement->update($safe_updates);
+            broadcast(new LinkBuildingOrderUpdated($placement->fresh(), $session_id));
+        }
+
+        return response()->json([
+            'message'       => "Updated {$placements->count()} row(s) successfully.",
+            'updated_count' => $placements->count(),
+        ]);
+    }
+
+    /**
      * DELETE /api/admin/link-building-orders/{id}
      *
      * Permanently deletes a link building order row.

@@ -468,6 +468,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/link-building-orders/assignable-users', [LinkBuildingOrdersDashboardController::class, 'assignableUsers']);
             Route::post('/link-building-orders/search',          [LinkBuildingOrdersDashboardController::class, 'search']);
             Route::post('/link-building-orders/export',          [LinkBuildingOrdersDashboardController::class, 'export']);
+            Route::post('/link-building-orders/batch-update',    [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);
             Route::post('/link-building-orders',                 [LinkBuildingOrdersDashboardController::class, 'store']);
             Route::put('/link-building-orders/{id}',             [LinkBuildingOrdersDashboardController::class, 'update']);
             Route::delete('/link-building-orders/{id}',          [LinkBuildingOrdersDashboardController::class, 'destroy']);

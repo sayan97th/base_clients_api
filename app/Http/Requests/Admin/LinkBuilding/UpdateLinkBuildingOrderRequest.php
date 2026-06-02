@@ -54,7 +54,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             // link_type, client, keyword, landing_page are nullable on update so that
             // admins can edit individual fields on client-purchased rows without being
             // forced to fill in all admin-specific fields first.
-            'link_type'                 => 'nullable|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
+            'link_type'                 => 'nullable|string|in:DR 30+ External,DR 40+ External,DR 50+ External,DR 60+ External,DR 70+ External,DR 30+ Internal,DR 40+ Internal,DR 50+ Internal,DR 60+ Internal,DR 70+ Internal',
             'client'                    => 'nullable|string|max:255',
             'keyword'                   => 'nullable|string|max:500',
             'landing_page'              => 'nullable|url|max:2000',

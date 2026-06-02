@@ -29,6 +29,7 @@ class LinkBuildingOrderPlacement extends Model
         'link_type',
         'client',
         'notes',
+        'internal_notes',
         'request_date',
         'estimated_delivery_date',
         'estimated_turnaround_days',
@@ -36,6 +37,7 @@ class LinkBuildingOrderPlacement extends Model
         'link_builder',
         'pen_name',
         'partnership',
+        'partnership_check',
         'article_title',
         'article',
         'live_link_date',
@@ -54,6 +56,8 @@ class LinkBuildingOrderPlacement extends Model
         'admin_team_id',
         // Admin user assigned to own this order
         'assigned_admin_user_id',
+        // Currency for pricing fields
+        'currency',
     ];
 
     protected function casts(): array
@@ -135,6 +139,7 @@ class LinkBuildingOrderPlacement extends Model
             'landing_page'              => $this->landing_page ?? '',
             'exact_match'               => $this->exact_match ? 'Yes' : 'No',
             'notes'                     => $this->notes ?? '',
+            'internal_notes'            => $this->internal_notes ?? '',
             'request_date'              => $this->request_date ?? '',
             'estimated_delivery_date'   => $this->estimated_delivery_date ?? '',
             'estimated_turnaround_days' => (string) ($this->estimated_turnaround_days ?? ''),
@@ -143,6 +148,7 @@ class LinkBuildingOrderPlacement extends Model
             'link_builder'              => $this->link_builder ?? '',
             'pen_name'                  => $this->pen_name ?? '',
             'partnership'               => $this->partnership ?? '',
+            'partnership_check'         => $this->partnership_check ?? '',
             'article_title'             => $this->article_title ?? '',
             'article'                   => $this->article ?? '',
             'status'                    => $this->status ?? 'New Request',
@@ -157,6 +163,7 @@ class LinkBuildingOrderPlacement extends Model
             'lb_tl_approval'            => $this->lb_tl_approval ?? '',
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
+            'currency'                  => $this->currency ?? 'USD',
             'user_id'                       => $this->user_id,
             'admin_team_id'                 => $this->admin_team_id,
             'admin_team_name'               => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,

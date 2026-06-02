@@ -25,21 +25,23 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     private const ALLOWED_SORT_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
-        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'partnership_check',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+        'currency',
     ];
 
     /** All columns that may be targeted by column_filters. */
     private const FILTERABLE_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
-        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
+        'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'partnership_check',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+        'currency',
     ];
 
     /**
@@ -99,7 +101,23 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function store(StoreLinkBuildingOrderRequest $request): JsonResponse
     {
-        $placement  = LinkBuildingOrderPlacement::create($request->validated());
+        $data = $request->validated();
+
+        if (empty($data['request_date'])) {
+            $data['request_date'] = Carbon::today()->format('m/d/Y');
+        }
+
+        if (empty($data['estimated_delivery_date'])) {
+            $turnaround = max(1, (int) ($data['estimated_turnaround_days'] ?? 30));
+            try {
+                $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
+            } catch (\Exception) {
+                $base_date = Carbon::today();
+            }
+            $data['estimated_delivery_date'] = $base_date->addDays($turnaround)->format('m/d/Y');
+        }
+
+        $placement  = LinkBuildingOrderPlacement::create($data);
         $session_id = $request->header('X-Session-ID');
 
         broadcast(new LinkBuildingOrderCreated($placement, $session_id));
@@ -145,6 +163,55 @@ class LinkBuildingOrdersDashboardController extends Controller
         return response()->json([
             'message' => 'Link building order updated successfully.',
             'data'    => $fresh->toApiArray(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/batch-update
+     *
+     * Updates one or more fields across multiple rows in a single request.
+     * Only explicitly whitelisted columns are accepted to prevent mass-assignment abuse.
+     *
+     * Request body:
+     *   row_ids : string[]                     — IDs of placements to update
+     *   updates : Record<string, string|null>  — field → value map
+     */
+    public function batchUpdate(Request $request): JsonResponse
+    {
+        $row_ids = (array) ($request->input('row_ids') ?? []);
+        $updates = (array) ($request->input('updates') ?? []);
+
+        $allowed_fields = [
+            'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
+            'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',
+            'partnership', 'partnership_check', 'article_title', 'article',
+            'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
+            'current_traffic', 'dr_formula', 'current_poc', 'current_price',
+            'lb_tl_approval', 'approval_date', 'final_price', 'currency',
+            'assigned_admin_user_id',
+        ];
+
+        $safe_updates = array_filter(
+            $updates,
+            fn ($key) => in_array($key, $allowed_fields, true),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        if (empty($row_ids) || empty($safe_updates)) {
+            return response()->json(['message' => 'Nothing to update.'], 422);
+        }
+
+        $placements = LinkBuildingOrderPlacement::whereIn('id', $row_ids)->get();
+        $session_id = $request->header('X-Session-ID');
+
+        foreach ($placements as $placement) {
+            $placement->update($safe_updates);
+            broadcast(new LinkBuildingOrderUpdated($placement->fresh(), $session_id));
+        }
+
+        return response()->json([
+            'message'       => "Updated {$placements->count()} row(s) successfully.",
+            'updated_count' => $placements->count(),
         ]);
     }
 
@@ -228,11 +295,11 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $columns = [
             'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-            'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+            'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
             'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
-            'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
+            'pen_name', 'partnership', 'partnership_check', 'article_title', 'article', 'live_link', 'live_link_date',
             'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
-            'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+            'current_price', 'lb_tl_approval', 'approval_date', 'final_price', 'currency',
         ];
 
         $callback = function () use ($query, $columns) {

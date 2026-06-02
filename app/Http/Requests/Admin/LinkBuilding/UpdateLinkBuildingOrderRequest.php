@@ -54,12 +54,13 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             // link_type, client, keyword, landing_page are nullable on update so that
             // admins can edit individual fields on client-purchased rows without being
             // forced to fill in all admin-specific fields first.
-            'link_type'                 => 'nullable|string|in:DA 30+ External,DA 40+ External,DA 50+ External,DA 30+ Internal,DA 40+ Internal',
+            'link_type'                 => 'nullable|string|in:DR 30+ External,DR 40+ External,DR 50+ External,DR 60+ External,DR 70+ External,DR 30+ Internal,DR 40+ Internal,DR 50+ Internal,DR 60+ Internal,DR 70+ Internal',
             'client'                    => 'nullable|string|max:255',
             'keyword'                   => 'nullable|string|max:500',
             'landing_page'              => 'nullable|url|max:2000',
             'exact_match'               => 'nullable|boolean',
             'notes'                     => 'nullable|string',
+            'internal_notes'            => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
             'estimated_delivery_date'   => 'nullable|string|max:20',
             'estimated_turnaround_days' => 'nullable|string|max:20',
@@ -67,6 +68,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',
             'partnership'               => 'nullable|url|max:2000',
+            'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|url|max:2000',
             'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
@@ -81,6 +83,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'lb_tl_approval'            => 'nullable|string|max:255',
             'approval_date'             => 'nullable|string|max:20',
             'final_price'               => 'nullable|string|max:100',
+            'currency'                  => 'nullable|string|in:USD,EUR',
             'user_id'                   => 'nullable|integer|exists:users,id',
             'admin_team_id'             => 'nullable|uuid|exists:admin_teams,id',
             'assigned_admin_user_id'    => 'nullable|integer|exists:users,id',

@@ -61,6 +61,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',
             'partnership'               => 'nullable|url|max:2000',
+            'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|url|max:2000',
             'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',

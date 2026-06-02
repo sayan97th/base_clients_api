@@ -60,6 +60,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'landing_page'              => 'nullable|url|max:2000',
             'exact_match'               => 'nullable|boolean',
             'notes'                     => 'nullable|string',
+            'internal_notes'            => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
             'estimated_delivery_date'   => 'nullable|string|max:20',
             'estimated_turnaround_days' => 'nullable|string|max:20',

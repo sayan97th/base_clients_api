@@ -25,7 +25,7 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     private const ALLOWED_SORT_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
         'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
@@ -36,7 +36,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     /** All columns that may be targeted by column_filters. */
     private const FILTERABLE_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-        'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+        'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
         'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
@@ -230,7 +230,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $columns = [
             'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
-            'landing_page', 'exact_match', 'notes', 'request_date', 'estimated_delivery_date',
+            'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
             'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
             'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
             'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',

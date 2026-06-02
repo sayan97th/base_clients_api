@@ -101,7 +101,23 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function store(StoreLinkBuildingOrderRequest $request): JsonResponse
     {
-        $placement  = LinkBuildingOrderPlacement::create($request->validated());
+        $data = $request->validated();
+
+        if (empty($data['request_date'])) {
+            $data['request_date'] = Carbon::today()->format('m/d/Y');
+        }
+
+        if (empty($data['estimated_delivery_date'])) {
+            $turnaround = max(1, (int) ($data['estimated_turnaround_days'] ?? 30));
+            try {
+                $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
+            } catch (\Exception) {
+                $base_date = Carbon::today();
+            }
+            $data['estimated_delivery_date'] = $base_date->addDays($turnaround)->format('m/d/Y');
+        }
+
+        $placement  = LinkBuildingOrderPlacement::create($data);
         $session_id = $request->header('X-Session-ID');
 
         broadcast(new LinkBuildingOrderCreated($placement, $session_id));

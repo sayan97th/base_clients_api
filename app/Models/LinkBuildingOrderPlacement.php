@@ -54,6 +54,8 @@ class LinkBuildingOrderPlacement extends Model
         'admin_team_id',
         // Admin user assigned to own this order
         'assigned_admin_user_id',
+        // Currency for pricing fields
+        'currency',
     ];
 
     protected function casts(): array
@@ -157,6 +159,7 @@ class LinkBuildingOrderPlacement extends Model
             'lb_tl_approval'            => $this->lb_tl_approval ?? '',
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
+            'currency'                  => $this->currency ?? 'USD',
             'user_id'                       => $this->user_id,
             'admin_team_id'                 => $this->admin_team_id,
             'admin_team_name'               => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,

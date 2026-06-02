@@ -30,6 +30,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+        'currency',
     ];
 
     /** All columns that may be targeted by column_filters. */
@@ -40,6 +41,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+        'currency',
     ];
 
     /**
@@ -232,7 +234,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
             'pen_name', 'partnership', 'article_title', 'article', 'live_link', 'live_link_date',
             'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
-            'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+            'current_price', 'lb_tl_approval', 'approval_date', 'final_price', 'currency',
         ];
 
         $callback = function () use ($query, $columns) {

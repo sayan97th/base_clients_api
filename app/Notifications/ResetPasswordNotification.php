@@ -35,6 +35,8 @@ class ResetPasswordNotification extends Notification
 
     protected function buildResetUrl(object $notifiable): string
     {
-        return config('app.frontend_url') . '/reset-password?token=' . $this->token . '&email=' . urlencode($notifiable->email);
+        $frontend_url = rtrim(config('app.frontend_url'), '/');
+
+        return "{$frontend_url}/reset-password/{$this->token}?email=" . urlencode($notifiable->email);
     }
 }

@@ -114,13 +114,12 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (empty($data['estimated_delivery_date'])) {
-            $turnaround = max(1, (int) ($data['estimated_turnaround_days'] ?? 30));
             try {
                 $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
             } catch (\Exception) {
                 $base_date = Carbon::today();
             }
-            $data['estimated_delivery_date'] = $base_date->addDays($turnaround)->format('m/d/Y');
+            $data['estimated_delivery_date'] = $base_date->addDays(30)->format('m/d/Y');
         }
 
         $placement  = LinkBuildingOrderPlacement::create($data);

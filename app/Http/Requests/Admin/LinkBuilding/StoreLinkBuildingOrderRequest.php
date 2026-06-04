@@ -45,7 +45,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'order_id'                  => 'required|string|max:50|unique:link_building_order_placements,order_id',
+            'order_id'                  => 'nullable|string|max:50',
             'team_specific_link_id'     => 'nullable|string|max:50',
             'link_type'                 => 'required|string|in:DR 30+ External,DR 40+ External,DR 50+ External,DR 60+ External,DR 70+ External,DR 30+ Internal,DR 40+ Internal,DR 50+ Internal,DR 60+ Internal,DR 70+ Internal',
             'client'                    => 'required|string|max:255',

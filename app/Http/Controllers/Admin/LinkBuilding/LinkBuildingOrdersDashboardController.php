@@ -106,6 +106,9 @@ class LinkBuildingOrdersDashboardController extends Controller
     {
         $data = $request->validated();
 
+        // Always generate a server-side BL-{n} order_id regardless of any client value.
+        $data['order_id'] = $this->generateNextOrderId();
+
         if (empty($data['request_date'])) {
             $data['request_date'] = Carbon::today()->format('m/d/Y');
         }
@@ -472,6 +475,25 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Generates the next sequential order ID in the BL-{n} format.
+     *
+     * Queries the highest existing numeric suffix from all BL-{digits} order IDs
+     * and returns BL-{max+1}, ensuring new orders continue the existing sequence.
+     * Example: if the highest is BL-25009, the next returned is BL-25010.
+     */
+    private function generateNextOrderId(): string
+    {
+        $max_num = LinkBuildingOrderPlacement::whereNotNull('order_id')
+            ->whereRaw("order_id REGEXP '^BL-[0-9]+$'")
+            ->selectRaw('MAX(CAST(SUBSTRING(order_id, 4) AS UNSIGNED)) as max_num')
+            ->value('max_num');
+
+        $next = ($max_num === null ? 0 : (int) $max_num) + 1;
+
+        return 'BL-' . $next;
+    }
 
     /**
      * Counts the number of lines in a CSV file efficiently without loading it into memory.

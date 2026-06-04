@@ -8,13 +8,16 @@ use App\Events\LinkBuildingOrderUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
+use App\Jobs\ProcessLinkBuildingImportJob;
 use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LinkBuildingOrdersDashboardController extends Controller
@@ -260,6 +263,64 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * POST /api/admin/link-building-orders/import
+     *
+     * Accepts a CSV file upload, stores it, and dispatches a background job
+     * that upserts rows by order_id (no duplicates). Returns an import_id
+     * that the caller can poll via /import-status/{import_id}.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+        ]);
+
+        $file      = $request->file('file');
+        $import_id = Str::uuid()->toString();
+
+        $stored_path = $file->storeAs(
+            'imports/link-building',
+            $import_id . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $file->getClientOriginalName())
+        );
+
+        $total_rows = max(0, $this->countCsvRows(storage_path('app/' . $stored_path)) - 1);
+
+        Cache::put("lbo_import_{$import_id}", [
+            'status'    => 'queued',
+            'total'     => $total_rows,
+            'processed' => 0,
+            'created'   => 0,
+            'updated'   => 0,
+            'skipped'   => 0,
+            'errors'    => [],
+        ], now()->addHours(2));
+
+        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows);
+
+        return response()->json([
+            'message'   => 'Import queued successfully.',
+            'import_id' => $import_id,
+            'total'     => $total_rows,
+        ], 202);
+    }
+
+    /**
+     * GET /api/admin/link-building-orders/import-status/{import_id}
+     *
+     * Returns the current progress of a running or completed import job.
+     */
+    public function importStatus(string $import_id): JsonResponse
+    {
+        $progress = Cache::get("lbo_import_{$import_id}");
+
+        if ($progress === null) {
+            return response()->json(['message' => 'Import not found or expired.'], 404);
+        }
+
+        return response()->json($progress);
+    }
+
+    /**
      * POST /api/admin/link-building-orders/export
      *
      * Streams a CSV download of all rows matching the same filters as /search.
@@ -411,6 +472,28 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Counts the number of lines in a CSV file efficiently without loading it into memory.
+     */
+    private function countCsvRows(string $file_path): int
+    {
+        $count  = 0;
+        $handle = @fopen($file_path, 'r');
+
+        if ($handle === false) {
+            return 0;
+        }
+
+        while (!feof($handle)) {
+            fgets($handle);
+            $count++;
+        }
+
+        fclose($handle);
+
+        return $count;
+    }
 
     private function applyGlobalSearch($query, ?string $search): void
     {

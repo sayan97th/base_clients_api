@@ -326,10 +326,13 @@ class LinkBuildingOrdersDashboardController extends Controller
     /**
      * POST /api/admin/link-building-orders/export
      *
-     * Streams a CSV download of all rows matching the same filters as /search.
+     * Streams a CSV download of rows matching the same filters as /search.
+     * When `row_ids` is provided and non-empty, only those specific rows are exported
+     * and all other filter parameters are ignored.
      */
     public function export(Request $request): StreamedResponse
     {
+        $row_ids        = (array) ($request->input('row_ids') ?? []);
         $search         = $request->input('search');
         $status         = $request->input('status');
         $link_type      = $request->input('link_type');
@@ -345,10 +348,15 @@ class LinkBuildingOrdersDashboardController extends Controller
                   ->orWhereNotNull('user_id');
             });
 
-        $this->applyGlobalSearch($query, $search);
-        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
-        $this->applyColumnFilters($query, $column_filters);
-        $this->applySortRules($query, $sort_rules);
+        if (! empty($row_ids)) {
+            // Export only the explicitly requested rows, preserving their selection order.
+            $query->whereIn('id', $row_ids);
+        } else {
+            $this->applyGlobalSearch($query, $search);
+            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+            $this->applyColumnFilters($query, $column_filters);
+            $this->applySortRules($query, $sort_rules);
+        }
 
         $filename = 'link-building-orders-' . now()->format('Y-m-d') . '.csv';
 

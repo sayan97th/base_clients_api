@@ -626,7 +626,16 @@ class LinkBuildingOrdersDashboardController extends Controller
                 continue;
             }
 
-            if ($nulls_last) {
+            if ($key === 'order_id') {
+                // Natural numeric sort: extracts the trailing digit sequence from the order_id
+                // (e.g. "BL-9999" → 9999, "BL-25009" → 25009) and compares numerically so that
+                // "BL-25009" correctly outranks "BL-9999" in descending order.
+                // IDs with no trailing digits (e.g. alphanumeric LBO suffixes) resolve to 0
+                // and are disambiguated by the full order_id string as a secondary key.
+                $query->orderByRaw(
+                    "CAST(REGEXP_SUBSTR(`order_id`, '[0-9]+\$') AS UNSIGNED) {$dir}, `order_id` {$dir}"
+                );
+            } elseif ($nulls_last) {
                 $query->orderByRaw("(`{$key}` IS NULL OR `{$key}` = ''), `{$key}` {$dir}");
             } else {
                 $query->orderBy($key, $dir);

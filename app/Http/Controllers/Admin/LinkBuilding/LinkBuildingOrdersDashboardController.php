@@ -57,7 +57,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     public function search(Request $request): JsonResponse
     {
         $page           = max(1, (int) $request->input('page', 1));
-        $per_page       = min((int) $request->input('per_page', 50), 200);
+        $per_page       = min((int) $request->input('per_page', 50), 500);
         $search         = $request->input('search');
         $status         = $request->input('status');
         $link_type      = $request->input('link_type');

@@ -73,8 +73,7 @@ class AdminResourceController extends Controller
 
         $query = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
             ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
-            ->where('is_active', true)
-            ->select('id', 'first_name', 'last_name', 'email');
+            ->select('id', 'first_name', 'last_name', 'email', 'is_active');
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -84,13 +83,14 @@ class AdminResourceController extends Controller
             });
         }
 
-        $clients = $query->orderBy('first_name')->orderBy('last_name')->get();
+        $clients = $query->orderByDesc('is_active')->orderBy('first_name')->orderBy('last_name')->get();
 
         return response()->json([
             'data' => $clients->map(fn ($u) => [
-                'id'    => $u->id,
-                'name'  => trim("{$u->first_name} {$u->last_name}"),
-                'email' => $u->email,
+                'id'        => $u->id,
+                'name'      => trim("{$u->first_name} {$u->last_name}"),
+                'email'     => $u->email,
+                'is_active' => (bool) $u->is_active,
             ]),
         ]);
     }

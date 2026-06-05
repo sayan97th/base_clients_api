@@ -27,9 +27,10 @@ class AdminResourceResource extends JsonResource
             ),
             'assigned_clients' => $this->whenLoaded('clients', fn () =>
                 $this->clients->map(fn ($u) => [
-                    'id'    => $u->id,
-                    'name'  => trim("{$u->first_name} {$u->last_name}"),
-                    'email' => $u->email,
+                    'id'        => $u->id,
+                    'name'      => trim("{$u->first_name} {$u->last_name}"),
+                    'email'     => $u->email,
+                    'is_active' => (bool) $u->is_active,
                 ])->values()
             ),
             'created_at'       => $this->created_at,

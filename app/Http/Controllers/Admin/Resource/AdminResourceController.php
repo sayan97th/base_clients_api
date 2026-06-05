@@ -14,6 +14,25 @@ use Illuminate\Support\Facades\Storage;
 
 class AdminResourceController extends Controller
 {
+    private const NON_CLIENT_ROLES = ['super_admin', 'owner', 'admin', 'staff'];
+
+    /**
+     * Returns an Eloquent callback that constrains a clients eager-load
+     * to only include users with the 'client' role and no admin roles.
+     */
+    private function clientsEagerLoadScope(): \Closure
+    {
+        $excluded = self::NON_CLIENT_ROLES;
+
+        return function ($q) use ($excluded) {
+            $q->whereHas('roles', function ($r) {
+                $r->where('name', 'client');
+            })->whereDoesntHave('roles', function ($r) use ($excluded) {
+                $r->whereIn('name', $excluded);
+            });
+        };
+    }
+
     /**
      * GET /api/admin/resources
      */
@@ -31,7 +50,7 @@ class AdminResourceController extends Controller
             'status'   => 'nullable|in:published,draft',
         ]);
 
-        $query = Resource::with(['files', 'organization', 'clients'])
+        $query = Resource::with(['files', 'organization', 'clients' => $this->clientsEagerLoadScope()])
             ->orderByDesc('created_at');
 
         if ($request->filled('search')) {
@@ -71,11 +90,13 @@ class AdminResourceController extends Controller
 
         $search = $request->query('search', '');
 
-        $admin_roles = ['super_admin', 'owner', 'admin', 'staff'];
+        $excluded = self::NON_CLIENT_ROLES;
 
-        $query = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
-            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', $admin_roles))
-            ->select('id', 'first_name', 'last_name', 'email', 'is_active');
+        $query = User::whereHas('roles', function ($q) {
+            $q->where('name', 'client');
+        })->whereDoesntHave('roles', function ($q) use ($excluded) {
+            $q->whereIn('name', $excluded);
+        })->select('id', 'first_name', 'last_name', 'email', 'is_active');
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -106,7 +127,7 @@ class AdminResourceController extends Controller
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
-        $resource = Resource::with(['files', 'organization', 'clients'])->find($id);
+        $resource = Resource::with(['files', 'organization', 'clients' => $this->clientsEagerLoadScope()])->find($id);
 
         if (! $resource) {
             return response()->json(['message' => 'Resource not found.'], 404);
@@ -130,7 +151,7 @@ class AdminResourceController extends Controller
             $resource->clients()->sync($request->input('client_ids', []));
         }
 
-        $resource->load(['files', 'organization', 'clients']);
+        $resource->load(['files', 'organization', 'clients' => $this->clientsEagerLoadScope()]);
 
         return response()->json(['data' => new AdminResourceResource($resource)], 201);
     }
@@ -159,7 +180,7 @@ class AdminResourceController extends Controller
             $resource->clients()->sync($request->input('client_ids', []));
         }
 
-        $resource->load(['files', 'organization', 'clients']);
+        $resource->load(['files', 'organization', 'clients' => $this->clientsEagerLoadScope()]);
 
         return response()->json(['data' => new AdminResourceResource($resource)]);
     }

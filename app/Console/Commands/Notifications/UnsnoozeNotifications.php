@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Notifications;
 
 use App\Services\NotificationService;
 use Illuminate\Console\Command;

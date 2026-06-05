@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Dashboard;
 
 use App\Models\LinkBuildingOrderPlacement;
 use Carbon\Carbon;

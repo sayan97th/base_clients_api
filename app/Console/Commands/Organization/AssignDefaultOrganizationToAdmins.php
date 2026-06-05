@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Organization;
 
 use App\Models\Organization;
 use App\Models\User;

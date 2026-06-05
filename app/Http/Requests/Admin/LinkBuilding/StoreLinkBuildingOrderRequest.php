@@ -47,7 +47,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
         return [
             'order_id'                  => 'nullable|string|max:50',
             'team_specific_link_id'     => 'nullable|string|max:50',
-            'link_type'                 => 'required|string|in:DR 30+ External,DR 40+ External,DR 50+ External,DR 60+ External,DR 70+ External,DR 30+ Internal,DR 40+ Internal,DR 50+ Internal,DR 60+ Internal,DR 70+ Internal',
+            'link_type'                 => 'required|string|max:255',
             'client'                    => 'required|string|max:255',
             'keyword'                   => 'required|string|max:500',
             'landing_page'              => 'required|url|max:2000',

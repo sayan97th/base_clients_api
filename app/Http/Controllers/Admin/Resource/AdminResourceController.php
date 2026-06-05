@@ -106,7 +106,12 @@ class AdminResourceController extends Controller
             });
         }
 
-        $clients = $query->orderByDesc('is_active')->orderBy('first_name')->orderBy('last_name')->get();
+        $clients = $query
+            ->orderByDesc('is_active')
+            ->orderByRaw("CASE WHEN (COALESCE(first_name, '') = '' AND COALESCE(last_name, '') = '') THEN 1 ELSE 0 END")
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get();
 
         return response()->json([
             'data' => $clients->map(fn ($u) => [

@@ -64,7 +64,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|url|max:2000',
-            'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled',
+            'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled,Partnership Check,Approved,Not Approved,Ready,Rejected,Scheduled',
             'live_link'                 => 'nullable|url|max:2000',
             'live_link_date'            => 'nullable|string|max:20',
             'dr_lbs'                    => 'nullable|string|max:20',

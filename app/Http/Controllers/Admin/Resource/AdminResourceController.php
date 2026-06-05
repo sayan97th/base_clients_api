@@ -99,10 +99,31 @@ class AdminResourceController extends Controller
         })->select('id', 'first_name', 'last_name', 'email', 'is_active');
 
         if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('first_name', 'like', "%{$search}%")
+            $tokens = array_filter(array_map('trim', explode(' ', $search)));
+
+            $query->where(function ($q) use ($search, $tokens) {
+                // Full name concatenation match (e.g. "Andrew Cuthbert")
+                $q->whereRaw(
+                    "CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?",
+                    ["%{$search}%"]
+                );
+
+                // Individual field matches
+                $q->orWhere('first_name', 'like', "%{$search}%")
                   ->orWhere('last_name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%");
+
+                // Token-by-token match: every token must appear in either name field
+                if (count($tokens) > 1) {
+                    $q->orWhere(function ($sub) use ($tokens) {
+                        foreach ($tokens as $token) {
+                            $sub->where(function ($t) use ($token) {
+                                $t->where('first_name', 'like', "%{$token}%")
+                                  ->orWhere('last_name', 'like', "%{$token}%");
+                            });
+                        }
+                    });
+                }
             });
         }
 

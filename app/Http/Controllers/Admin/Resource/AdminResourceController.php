@@ -84,7 +84,7 @@ class AdminResourceController extends Controller
             });
         }
 
-        $clients = $query->orderBy('first_name')->limit(50)->get();
+        $clients = $query->orderBy('first_name')->orderBy('last_name')->get();
 
         return response()->json([
             'data' => $clients->map(fn ($u) => [

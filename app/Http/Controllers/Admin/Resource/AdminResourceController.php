@@ -71,8 +71,10 @@ class AdminResourceController extends Controller
 
         $search = $request->query('search', '');
 
+        $admin_roles = ['super_admin', 'owner', 'admin', 'staff'];
+
         $query = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
-            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
+            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', $admin_roles))
             ->select('id', 'first_name', 'last_name', 'email', 'is_active');
 
         if ($search) {

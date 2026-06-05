@@ -16,7 +16,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $url_fields = ['landing_page', 'article', 'live_link', 'partnership'];
+        $url_fields = ['landing_page', 'live_link', 'partnership'];
 
         $normalized = [];
         foreach ($url_fields as $field) {
@@ -70,7 +70,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'partnership'               => 'nullable|url|max:2000',
             'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
-            'article'                   => 'nullable|url|max:2000',
+            'article'                   => 'nullable|string|max:2000',
             'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled,Partnership Check,Approved,Not Approved,Ready,Rejected,Scheduled',
             'live_link'                 => 'nullable|url|max:2000',
             'live_link_date'            => 'nullable|string|max:20',

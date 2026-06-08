@@ -46,7 +46,7 @@ class AdminResourceController extends Controller
             'page'       => 'nullable|integer|min:1',
             'per_page'   => 'nullable|integer|min:1|max:100',
             'search'     => 'nullable|string|max:255',
-            'category'   => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
+            'category'   => 'nullable|in:pdf,spreadsheet,document,presentation,image,other',
             'status'     => 'nullable|in:published,draft',
             'sort_order' => 'nullable|in:asc,desc',
             'month'      => 'nullable|integer|min:1|max:12',

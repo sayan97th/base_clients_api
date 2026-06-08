@@ -15,7 +15,6 @@ class Resource extends Model
         'document',
         'presentation',
         'image',
-        'blog_post',
         'other',
     ];
 

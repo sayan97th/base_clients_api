@@ -43,15 +43,20 @@ class AdminResourceController extends Controller
         }
 
         $request->validate([
-            'page'     => 'nullable|integer|min:1',
-            'per_page' => 'nullable|integer|min:1|max:100',
-            'search'   => 'nullable|string|max:255',
-            'category' => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
-            'status'   => 'nullable|in:published,draft',
+            'page'       => 'nullable|integer|min:1',
+            'per_page'   => 'nullable|integer|min:1|max:100',
+            'search'     => 'nullable|string|max:255',
+            'category'   => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
+            'status'     => 'nullable|in:published,draft',
+            'sort_order' => 'nullable|in:asc,desc',
+            'month'      => 'nullable|integer|min:1|max:12',
+            'year'       => 'nullable|integer|min:2000|max:2100',
         ]);
 
+        $sort_order = $request->input('sort_order', 'desc');
+
         $query = Resource::with(['files', 'organization', 'clients' => $this->clientsEagerLoadScope()])
-            ->orderByDesc('created_at');
+            ->orderBy('created_at', $sort_order);
 
         if ($request->filled('search')) {
             $query->where('title', 'like', '%' . $request->search . '%');
@@ -63,6 +68,14 @@ class AdminResourceController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('month')) {
+            $query->whereMonth('created_at', $request->integer('month'));
+        }
+
+        if ($request->filled('year')) {
+            $query->whereYear('created_at', $request->integer('year'));
         }
 
         $per_page  = $request->per_page ?? 15;

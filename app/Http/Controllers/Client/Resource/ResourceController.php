@@ -21,13 +21,17 @@ class ResourceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $request->validate([
-            'page'     => 'nullable|integer|min:1',
-            'per_page' => 'nullable|integer|min:1|max:100',
-            'search'   => 'nullable|string|max:255',
-            'category' => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
+            'page'       => 'nullable|integer|min:1',
+            'per_page'   => 'nullable|integer|min:1|max:100',
+            'search'     => 'nullable|string|max:255',
+            'category'   => 'nullable|in:pdf,spreadsheet,document,presentation,image,blog_post,other',
+            'sort_order' => 'nullable|in:asc,desc',
+            'month'      => 'nullable|integer|min:1|max:12',
+            'year'       => 'nullable|integer|min:2000|max:2100',
         ]);
 
-        $user_id = auth()->id();
+        $user_id    = auth()->id();
+        $sort_order = $request->input('sort_order', 'desc');
 
         $query = Resource::with('files')
             ->where('status', 'published')
@@ -36,7 +40,7 @@ class ResourceController extends Controller
                 $q->whereDoesntHave('clients')
                   ->orWhereHas('clients', fn ($q2) => $q2->where('users.id', $user_id));
             })
-            ->orderByDesc('created_at');
+            ->orderBy('created_at', $sort_order);
 
         if ($request->filled('search')) {
             $query->where('title', 'like', '%' . $request->search . '%');
@@ -44,6 +48,14 @@ class ResourceController extends Controller
 
         if ($request->filled('category')) {
             $query->where('category', $request->category);
+        }
+
+        if ($request->filled('month')) {
+            $query->whereMonth('created_at', $request->integer('month'));
+        }
+
+        if ($request->filled('year')) {
+            $query->whereYear('created_at', $request->integer('year'));
         }
 
         $per_page  = $request->per_page ?? 12;

@@ -242,7 +242,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('{appointment_id}',            [AdminSmeAppointmentController::class, 'destroy']);
         });
 
-        // SEO Packages — super_admin, admin, staff
+        // SEO Packages — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('seo-packages')->group(function () {
             // Appointments — stats and export must be before {appointment_id} wildcard
             Route::prefix('appointments')->group(function () {
@@ -255,36 +255,44 @@ Route::middleware(['auth:api', 'active'])->group(function () {
                 Route::delete('{appointment_id}',       [AdminSeoPackageAppointmentController::class, 'destroy']);
             });
 
-            // Subscriptions — stats must be before {id} wildcard
+            // Subscriptions
             Route::prefix('subscriptions')->group(function () {
-                Route::get('stats',        [AdminSeoPackageSubscriptionController::class, 'stats']);
-                Route::get('/',            [AdminSeoPackageSubscriptionController::class, 'index']);
-                Route::post('/',           [AdminSeoPackageSubscriptionController::class, 'store']);
+                Route::get('stats',         [AdminSeoPackageSubscriptionController::class, 'stats']);
+                Route::get('/',             [AdminSeoPackageSubscriptionController::class, 'index']);
                 Route::patch('{id}/cancel', [AdminSeoPackageSubscriptionController::class, 'cancel']);
             });
 
-            Route::get('/',        [AdminSeoPackageController::class, 'index']);
+            Route::get('/',     [AdminSeoPackageController::class, 'index']);
+            Route::get('/{id}', [AdminSeoPackageController::class, 'show']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('seo-packages')->group(function () {
+            Route::prefix('subscriptions')->group(function () {
+                Route::post('/', [AdminSeoPackageSubscriptionController::class, 'store']);
+            });
+
             Route::post('/',       [AdminSeoPackageController::class, 'store']);
-            Route::get('/{id}',    [AdminSeoPackageController::class, 'show']);
             Route::patch('/{id}',  [AdminSeoPackageController::class, 'update']);
             Route::delete('/{id}', [AdminSeoPackageController::class, 'destroy']);
         });
 
-        // Premium Mentions — super_admin, admin, staff
+        // Premium Mentions — read (super_admin, admin, staff) / write plans (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('premium-mentions')->group(function () {
-            // Plans (A1–A5)
-            Route::get('plans',         [AdminPremiumMentionsPlanController::class, 'index']);
-            Route::post('plans',        [AdminPremiumMentionsPlanController::class, 'store']);
-            Route::get('plans/{id}',    [AdminPremiumMentionsPlanController::class, 'show']);
-            Route::patch('plans/{id}',  [AdminPremiumMentionsPlanController::class, 'update']);
-            Route::delete('plans/{id}', [AdminPremiumMentionsPlanController::class, 'destroy']);
+            // Plans — read only
+            Route::get('plans',      [AdminPremiumMentionsPlanController::class, 'index']);
+            Route::get('plans/{id}', [AdminPremiumMentionsPlanController::class, 'show']);
 
             // Appointments (B1–B5) — stats must be registered before {id}
-            Route::get('appointments',          [AdminPremiumMentionsAppointmentController::class, 'index']);
-            Route::get('appointments/stats',    [AdminPremiumMentionsAppointmentController::class, 'stats']);
-            Route::get('appointments/{id}',     [AdminPremiumMentionsAppointmentController::class, 'show']);
-            Route::put('appointments/{id}',     [AdminPremiumMentionsAppointmentController::class, 'update']);
-            Route::delete('appointments/{id}',  [AdminPremiumMentionsAppointmentController::class, 'destroy']);
+            Route::get('appointments',         [AdminPremiumMentionsAppointmentController::class, 'index']);
+            Route::get('appointments/stats',   [AdminPremiumMentionsAppointmentController::class, 'stats']);
+            Route::get('appointments/{id}',    [AdminPremiumMentionsAppointmentController::class, 'show']);
+            Route::put('appointments/{id}',    [AdminPremiumMentionsAppointmentController::class, 'update']);
+            Route::delete('appointments/{id}', [AdminPremiumMentionsAppointmentController::class, 'destroy']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('premium-mentions')->group(function () {
+            // Plans — write
+            Route::post('plans',        [AdminPremiumMentionsPlanController::class, 'store']);
+            Route::patch('plans/{id}',  [AdminPremiumMentionsPlanController::class, 'update']);
+            Route::delete('plans/{id}', [AdminPremiumMentionsPlanController::class, 'destroy']);
         });
 
         // SME Content service tiers — super_admin, admin, staff
@@ -377,11 +385,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::delete('/{id}', [AdminDiscountController::class, 'destroy']);
         });
 
-        // Content Brief Tiers — super_admin, admin, staff
+        // Content Brief Tiers — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('content-brief-tiers')->group(function () {
-            Route::get('/',        [AdminContentBriefTierController::class, 'index']);
+            Route::get('/',     [AdminContentBriefTierController::class, 'index']);
+            Route::get('/{id}', [AdminContentBriefTierController::class, 'show']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('content-brief-tiers')->group(function () {
             Route::post('/',       [AdminContentBriefTierController::class, 'store']);
-            Route::get('/{id}',    [AdminContentBriefTierController::class, 'show']);
             Route::patch('/{id}',  [AdminContentBriefTierController::class, 'update']);
             Route::delete('/{id}', [AdminContentBriefTierController::class, 'destroy']);
         });
@@ -391,12 +401,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('orders/{order_id}', [AdminContentBriefOrderController::class, 'updateStatus']);
         });
 
-        // Content Optimization Tiers — super_admin, admin, staff
+        // Content Optimization Tiers — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('content-optimization-tiers')->group(function () {
-            Route::get('/', [AdminContentOptimizationTierController::class, 'index']);
-            Route::post('/', [AdminContentOptimizationTierController::class, 'store']);
+            Route::get('/',     [AdminContentOptimizationTierController::class, 'index']);
             Route::get('/{id}', [AdminContentOptimizationTierController::class, 'show']);
-            Route::patch('/{id}', [AdminContentOptimizationTierController::class, 'update']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('content-optimization-tiers')->group(function () {
+            Route::post('/',       [AdminContentOptimizationTierController::class, 'store']);
+            Route::patch('/{id}',  [AdminContentOptimizationTierController::class, 'update']);
             Route::delete('/{id}', [AdminContentOptimizationTierController::class, 'destroy']);
         });
 
@@ -408,12 +420,14 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('orders/{order_id}/status',      [AdminContentOptimizationOrderController::class, 'updateStatus']);
         });
 
-        // New Content Tiers — super_admin, admin, staff
+        // New Content Tiers — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('new-content-tiers')->group(function () {
-            Route::get('/', [AdminNewContentTierController::class, 'index']);
-            Route::post('/', [AdminNewContentTierController::class, 'store']);
+            Route::get('/',     [AdminNewContentTierController::class, 'index']);
             Route::get('/{id}', [AdminNewContentTierController::class, 'show']);
-            Route::patch('/{id}', [AdminNewContentTierController::class, 'update']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('new-content-tiers')->group(function () {
+            Route::post('/',       [AdminNewContentTierController::class, 'store']);
+            Route::patch('/{id}',  [AdminNewContentTierController::class, 'update']);
             Route::delete('/{id}', [AdminNewContentTierController::class, 'destroy']);
         });
 
@@ -428,20 +442,24 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('orders/{order_id}/items/{item_id}/intake-rows',                  [AdminNewContentIntakeRowController::class, 'store']);
         });
 
-        // Content Refresh Tiers — super_admin, admin, staff
+        // Content Refresh Tiers — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('content-refresh-tiers')->group(function () {
             Route::get('/', [AdminContentRefreshTierController::class, 'index']);
-            Route::post('/', [AdminContentRefreshTierController::class, 'store']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('content-refresh-tiers')->group(function () {
+            Route::post('/',      [AdminContentRefreshTierController::class, 'store']);
             Route::patch('/{id}', [AdminContentRefreshTierController::class, 'update']);
             Route::delete('/{id}', [AdminContentRefreshTierController::class, 'destroy']);
         });
 
-        // DR Tiers — super_admin, admin, staff
+        // DR Tiers — read (super_admin, admin, staff) / write (super_admin, admin)
         Route::middleware('role:super_admin,admin,staff')->prefix('dr-tiers')->group(function () {
-            Route::get('/', [AdminLinkBuildingTierController::class, 'index']);
-            Route::post('/', [AdminLinkBuildingTierController::class, 'store']);
+            Route::get('/',     [AdminLinkBuildingTierController::class, 'index']);
             Route::get('/{id}', [AdminLinkBuildingTierController::class, 'show']);
-            Route::patch('/{id}', [AdminLinkBuildingTierController::class, 'update']);
+        });
+        Route::middleware('role:super_admin,admin')->prefix('dr-tiers')->group(function () {
+            Route::post('/',       [AdminLinkBuildingTierController::class, 'store']);
+            Route::patch('/{id}',  [AdminLinkBuildingTierController::class, 'update']);
             Route::delete('/{id}', [AdminLinkBuildingTierController::class, 'destroy']);
         });
 

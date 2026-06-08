@@ -53,6 +53,8 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'orders.view', 'display_name' => 'View Orders'],
             ['name' => 'invoices.view', 'display_name' => 'View Invoices'],
             ['name' => 'invitations.manage', 'display_name' => 'Manage Invitations'],
+            // Service management — restricted to super_admin and admin
+            ['name' => 'services.manage', 'display_name' => 'Manage Services'],
         ];
 
         foreach ($permissions as $permission) {
@@ -94,6 +96,7 @@ class RolePermissionSeeder extends Seeder
                 'orders.view',
                 'invoices.view',
                 'invitations.manage',
+                'services.manage',
                 // Legacy permissions kept for backward compat
                 'users.create', 'users.update',
                 'clients.view', 'clients.create', 'clients.update',

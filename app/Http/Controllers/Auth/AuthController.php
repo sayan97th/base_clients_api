@@ -48,7 +48,13 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $credentials = $request->validated();
+        $validated        = $request->validated();
+        $keep_me_logged_in = (bool) ($validated['keep_me_logged_in'] ?? false);
+
+        $credentials = [
+            'email'    => $validated['email'],
+            'password' => $validated['password'],
+        ];
 
         $existing_user = User::where('email', $credentials['email'])->first();
 
@@ -59,6 +65,7 @@ class AuthController extends Controller
             ], 403);
         }
 
+        $this->applyTokenTtl($keep_me_logged_in);
         $token = auth()->attempt($credentials);
 
         if (! $token) {
@@ -81,7 +88,10 @@ class AuthController extends Controller
 
             Cache::put(
                 'two_factor_pending:' . $two_factor_token,
-                $user->id,
+                [
+                    'user_id'           => $user->id,
+                    'keep_me_logged_in' => $keep_me_logged_in,
+                ],
                 now()->addMinutes(10)
             );
 
@@ -97,13 +107,17 @@ class AuthController extends Controller
     public function twoFactorChallenge(TwoFactorChallengeRequest $request, Google2FA $google2fa): JsonResponse
     {
         $cache_key = 'two_factor_pending:' . $request->two_factor_token;
-        $user_id   = Cache::get($cache_key);
+        $cached    = Cache::get($cache_key);
 
-        if (! $user_id) {
+        if (! $cached) {
             return response()->json([
                 'message' => 'The verification session has expired or is invalid. Please sign in again.',
             ], 422);
         }
+
+        // Support both old scalar format and new array format.
+        $user_id           = is_array($cached) ? $cached['user_id'] : $cached;
+        $keep_me_logged_in = is_array($cached) ? (bool) ($cached['keep_me_logged_in'] ?? false) : false;
 
         $user = User::find($user_id);
 
@@ -127,6 +141,8 @@ class AuthController extends Controller
         Cache::forget($cache_key);
 
         $user->update(['last_login_at' => now()]);
+
+        $this->applyTokenTtl($keep_me_logged_in);
 
         /** @var string $token */
         $token = auth()->login($user);
@@ -230,6 +246,15 @@ class AuthController extends Controller
             ])->values(),
             'organization' => $user->organization,
         ];
+    }
+
+    protected function applyTokenTtl(bool $keep_me_logged_in): void
+    {
+        $ttl = $keep_me_logged_in
+            ? (int) config('jwt.long_ttl', 43200)
+            : (int) config('jwt.ttl', 60);
+
+        auth()->factory()->setTTL($ttl);
     }
 
     protected function respondWithToken(string $token, $user = null): JsonResponse

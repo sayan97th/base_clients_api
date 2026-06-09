@@ -14,8 +14,9 @@ class TwoFactorChallengeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'two_factor_token' => ['required', 'string'],
-            'code'             => ['required', 'string', 'digits:6'],
+            'two_factor_token'  => ['required', 'string'],
+            'code'              => ['required', 'string', 'digits:6'],
+            'keep_me_logged_in' => ['sometimes', 'boolean'],
         ];
     }
 

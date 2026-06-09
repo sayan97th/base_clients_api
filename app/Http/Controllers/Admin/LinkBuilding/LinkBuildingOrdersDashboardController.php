@@ -674,7 +674,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (! $applied) {
-            $query->orderBy('id', 'desc');
+            $query->orderBy('created_at', 'desc');
         }
     }
 }

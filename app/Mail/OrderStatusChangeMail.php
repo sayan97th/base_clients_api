@@ -28,6 +28,19 @@ class OrderStatusChangeMail extends Mailable
         );
     }
 
+    private function formatStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'new_request'     => 'New Request',
+            'pending'         => 'New Request',
+            'processing'      => 'Processing',
+            'completed'       => 'Completed',
+            'cancelled'       => 'Cancelled',
+            'payment_pending' => 'Payment Pending',
+            default           => ucwords(str_replace('_', ' ', $status)),
+        };
+    }
+
     public function content(): Content
     {
         return new Content(
@@ -35,7 +48,7 @@ class OrderStatusChangeMail extends Mailable
             with: [
                 'user_name'  => $this->user->full_name,
                 'user_email' => $this->user->email,
-                'new_status' => ucfirst($this->new_status),
+                'new_status' => $this->formatStatusLabel($this->new_status),
                 'order_url'  => config('app.frontend_url') . '/orders/' . $this->order_id,
                 'app_name'   => config('app.name'),
             ],

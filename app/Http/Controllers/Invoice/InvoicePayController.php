@@ -201,7 +201,7 @@ class InvoicePayController extends Controller
     private function updatePaymentPendingOrders(Invoice $invoice, ?string $payment_intent_id): void
     {
         $attributes = [
-            'status'            => 'pending',
+            'status'            => 'new_request',
             'payment_intent_id' => $payment_intent_id,
         ];
 

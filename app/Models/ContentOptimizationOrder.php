@@ -17,7 +17,7 @@ class ContentOptimizationOrder extends Model
 {
     use HasUuids;
 
-    public const STATUSES = ['pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
+    public const STATUSES = ['new_request', 'pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
 
     protected $fillable = [
         'user_id',

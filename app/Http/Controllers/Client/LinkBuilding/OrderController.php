@@ -185,7 +185,7 @@ class OrderController extends Controller
                 'order_notes'              => $request->order_notes,
                 'subtotal_before_discount' => $subtotal,
                 'total_amount'             => $calculated_total,
-                'status'                   => 'pending',
+                'status'                   => 'new_request',
                 'payment_intent_id'        => $payment_intent_id,
             ]);
 

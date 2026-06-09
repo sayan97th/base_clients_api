@@ -13,7 +13,7 @@ class LinkBuildingOrder extends Model
 {
     use HasUuids;
 
-    const STATUSES = ['pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
+    const STATUSES = ['new_request', 'pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
 
     protected $fillable = [
         'user_id',

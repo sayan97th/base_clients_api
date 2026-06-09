@@ -26,7 +26,7 @@ class TrackingController extends Controller
         $needs_update_filter = $request->boolean('needs_update');
         $product_type_filter = $request->input('product_type');
 
-        $valid_statuses = ['pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
+        $valid_statuses = ['new_request', 'pending', 'processing', 'completed', 'cancelled', 'payment_pending'];
 
         $product_models = filled($product_type_filter) && isset(self::PRODUCT_MODELS[$product_type_filter])
             ? [$product_type_filter => self::PRODUCT_MODELS[$product_type_filter]]
@@ -58,7 +58,7 @@ class TrackingController extends Controller
             }
 
             if ($needs_update_filter) {
-                $query->where('status', 'pending')->whereDoesntHave('updates');
+                $query->whereIn('status', ['new_request', 'pending'])->whereDoesntHave('updates');
             }
 
             $orders = $query->get()->map(fn($order) => [

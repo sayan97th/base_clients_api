@@ -203,7 +203,7 @@ class ContentOptimizationOrderController extends Controller
                 'order_notes'              => $request->order_notes ?? null,
                 'subtotal_before_discount' => $subtotal,
                 'total_amount'             => $final_total,
-                'status'                   => 'pending',
+                'status'                   => 'new_request',
                 'payment_intent_id'        => $payment_method_id,
             ]);
 

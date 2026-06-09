@@ -121,7 +121,7 @@ class ContentBriefOrderController extends Controller
                 'user_id'           => $user->id,
                 'order_notes'       => $request->order_notes ?? null,
                 'total_amount'      => $final_total,
-                'status'            => 'pending',
+                'status'            => 'new_request',
                 'payment_intent_id' => $payment_intent_id,
             ]);
 

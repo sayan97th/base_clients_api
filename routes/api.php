@@ -39,6 +39,7 @@ use App\Http\Controllers\Admin\Role\RoleController;
 use App\Http\Controllers\Admin\Service\ServiceController as AdminServiceController;
 use App\Http\Controllers\Admin\User\UserController as AdminUserController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\BroadcastAuthController;
@@ -137,6 +138,12 @@ Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
 Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
 Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
 Route::get('/test/send-payment-successful-email', [TestEmailController::class, 'sendPaymentSuccessfulEmail']);
+
+// ─── Google OAuth routes (browser redirect flow, no JSON middleware) ──────────
+Route::prefix('auth/google')->group(function () {
+    Route::get('redirect', [GoogleAuthController::class, 'redirect']);
+    Route::get('callback', [GoogleAuthController::class, 'callback']);
+});
 
 // ─── Auth routes ──────────────────────────────────────────────────────────────
 Route::prefix('auth')->group(function () {

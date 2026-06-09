@@ -100,4 +100,46 @@ class TrackingController extends Controller
 
         return response()->json(['data' => $sorted]);
     }
+
+    public function show(string $id): JsonResponse
+    {
+        foreach (self::PRODUCT_MODELS as $product_type => $model_class) {
+            $table_name = (new $model_class)->getTable();
+
+            $query = $model_class::with('user:id,first_name,last_name,email')
+                ->withCount(['items as items_count' => function ($q) {
+                    $q->selectRaw('sum(quantity)');
+                }])
+                ->withCount('updates as updates_count')
+                ->addSelect([
+                    'last_update_at' => LinkBuildingOrderUpdate::select('created_at')
+                        ->whereColumn('order_id', "{$table_name}.id")
+                        ->latest()
+                        ->limit(1),
+                ]);
+
+            if ($product_type === 'link_building') {
+                $query->where('is_hidden', false);
+            }
+
+            $order = $query->find($id);
+
+            if ($order) {
+                return response()->json(['data' => [
+                    'id'             => $order->id,
+                    'product_type'   => $product_type,
+                    'order_title'    => $order->order_title,
+                    'total_amount'   => $order->total_amount,
+                    'status'         => $order->status,
+                    'created_at'     => $order->created_at?->toISOString(),
+                    'items_count'    => (int)($order->items_count ?? 0),
+                    'updates_count'  => (int)($order->updates_count ?? 0),
+                    'last_update_at' => $order->last_update_at,
+                    'user'           => $order->user,
+                ]]);
+            }
+        }
+
+        return response()->json(['message' => 'Order not found'], 404);
+    }
 }

@@ -201,6 +201,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Order tracking dashboard — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->prefix('tracking')->group(function () {
             Route::get('orders', [AdminTrackingController::class, 'orders']);
+            Route::get('orders/{id}', [AdminTrackingController::class, 'show']);
         });
 
         // WebSocket test panel — super_admin, admin, staff

@@ -48,12 +48,7 @@ class AuthController extends Controller
 
     public function login(LoginRequest $request): JsonResponse
     {
-        $validated_data = $request->validated();
-        $remember_me    = (bool) ($validated_data['remember_me'] ?? false);
-        $credentials    = [
-            'email'    => $validated_data['email'],
-            'password' => $validated_data['password'],
-        ];
+        $credentials = $request->validated();
 
         $existing_user = User::where('email', $credentials['email'])->first();
 
@@ -62,10 +57,6 @@ class AuthController extends Controller
                 'message' => 'Your account has been disabled. Please contact support if you believe this is a mistake.',
                 'code'    => 'account_disabled',
             ], 403);
-        }
-
-        if ($remember_me) {
-            auth()->factory()->setTTL(60 * 24 * 30); // 30 days in minutes
         }
 
         $token = auth()->attempt($credentials);
@@ -90,7 +81,7 @@ class AuthController extends Controller
 
             Cache::put(
                 'two_factor_pending:' . $two_factor_token,
-                ['user_id' => $user->id, 'remember_me' => $remember_me],
+                $user->id,
                 now()->addMinutes(10)
             );
 
@@ -105,18 +96,14 @@ class AuthController extends Controller
 
     public function twoFactorChallenge(TwoFactorChallengeRequest $request, Google2FA $google2fa): JsonResponse
     {
-        $cache_key   = 'two_factor_pending:' . $request->two_factor_token;
-        $cached_data = Cache::get($cache_key);
+        $cache_key = 'two_factor_pending:' . $request->two_factor_token;
+        $user_id   = Cache::get($cache_key);
 
-        if (! $cached_data) {
+        if (! $user_id) {
             return response()->json([
                 'message' => 'The verification session has expired or is invalid. Please sign in again.',
             ], 422);
         }
-
-        // Support both legacy (scalar user_id) and current (array) cache format.
-        $user_id     = is_array($cached_data) ? $cached_data['user_id'] : $cached_data;
-        $remember_me = is_array($cached_data) ? (bool) ($cached_data['remember_me'] ?? false) : false;
 
         $user = User::find($user_id);
 
@@ -140,10 +127,6 @@ class AuthController extends Controller
         Cache::forget($cache_key);
 
         $user->update(['last_login_at' => now()]);
-
-        if ($remember_me) {
-            auth()->factory()->setTTL(60 * 24 * 30); // 30 days in minutes
-        }
 
         /** @var string $token */
         $token = auth()->login($user);

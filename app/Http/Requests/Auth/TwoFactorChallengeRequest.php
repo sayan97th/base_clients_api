@@ -16,7 +16,6 @@ class TwoFactorChallengeRequest extends FormRequest
         return [
             'two_factor_token' => ['required', 'string'],
             'code'             => ['required', 'string', 'digits:6'],
-            'remember_me'      => ['sometimes', 'boolean'],
         ];
     }
 

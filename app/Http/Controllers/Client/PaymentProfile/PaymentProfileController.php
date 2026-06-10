@@ -63,13 +63,27 @@ class PaymentProfileController extends Controller
             return response()->json(['message' => 'Failed to link payment method to your account.'], 500);
         }
 
-        $attach_result = $this->stripeService->attachPaymentMethod(
-            $request->stripe_payment_method_id,
-            $customer_result['customer_id']
-        );
+        $pm_customer_id = $stripe_result['customer_id'] ?? null;
 
-        if (!$attach_result['success']) {
-            return response()->json(['message' => 'Failed to attach payment method to your account.'], 500);
+        // When the PaymentIntent was created with setup_future_usage (save-at-checkout
+        // flow), Stripe automatically attaches the PM to the Customer during confirmation.
+        // If the PM is already on the correct customer we skip the redundant attach call.
+        if ($pm_customer_id !== $customer_result['customer_id']) {
+            if ($pm_customer_id !== null) {
+                // PM is attached to a different Stripe Customer — cannot save.
+                return response()->json([
+                    'message' => 'This payment method is already associated with a different account.',
+                ], 409);
+            }
+
+            $attach_result = $this->stripeService->attachPaymentMethod(
+                $request->stripe_payment_method_id,
+                $customer_result['customer_id']
+            );
+
+            if (!$attach_result['success']) {
+                return response()->json(['message' => 'Failed to attach payment method to your account.'], 500);
+            }
         }
 
         $card       = $stripe_result['card'];

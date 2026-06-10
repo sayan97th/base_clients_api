@@ -18,16 +18,25 @@ class StripeService
     /**
      * Retrieve a PaymentMethod from Stripe and return its card details.
      *
-     * Returns ['success' => true, 'card' => [...]] or ['success' => false, 'message' => '...']
+     * Returns ['success' => true, 'card' => [...], 'customer_id' => string|null]
+     *      or ['success' => false, 'message' => '...']
      */
     public function retrievePaymentMethod(string $payment_method_id): array
     {
         try {
             $payment_method = $this->client->paymentMethods->retrieve($payment_method_id);
 
+            $customer_id = null;
+            if ($payment_method->customer !== null) {
+                $customer_id = is_string($payment_method->customer)
+                    ? $payment_method->customer
+                    : $payment_method->customer->id;
+            }
+
             return [
-                'success' => true,
-                'card'    => [
+                'success'     => true,
+                'customer_id' => $customer_id,
+                'card'        => [
                     'brand'     => $payment_method->card->brand,
                     'last4'     => $payment_method->card->last4,
                     'exp_month' => (string) $payment_method->card->exp_month,

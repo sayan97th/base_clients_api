@@ -82,23 +82,43 @@ class CartController extends Controller
         $payment_method_id  = $request->input('payment_method_id');
         $is_credits_payment = str_starts_with($payment_method_id, 'credits_');
 
+        // Atomic credits format: credits_pay_<amount> — credit deduction happens
+        // inside the DB transaction so it is fully rolled back on any failure.
+        // Legacy format: credits_<transaction_id> — the transaction was created
+        // before checkout; a reversal is issued in the catch block if needed.
+        $is_atomic_credits = str_starts_with($payment_method_id, 'credits_pay_');
+        $credits_amount    = null;
+
         // Calculate the expected order total server-side so it can be verified
         // against the Stripe PaymentIntent amount before any data is written.
         $expected_total = $this->calculateExpectedTotal($request);
 
         if ($is_credits_payment) {
-            $credit_transaction_id = (int) substr($payment_method_id, strlen('credits_'));
-            $credit_transaction    = CreditTransaction::find($credit_transaction_id);
+            if ($is_atomic_credits) {
+                $credits_amount = (int) substr($payment_method_id, strlen('credits_pay_'));
 
-            if (
-                ! $credit_transaction
-                || $credit_transaction->user_id !== $user->id
-                || $credit_transaction->type !== 'debit'
-            ) {
-                return response()->json([
-                    'message' => 'Invalid credit payment reference.',
-                    'error'   => 'The provided credit transaction is not valid for this payment.',
-                ], 422);
+                if ($credits_amount <= 0) {
+                    return response()->json([
+                        'message' => 'Invalid credits amount.',
+                        'error'   => 'invalid_credits_amount',
+                    ], 422);
+                }
+                // Balance check and deduction happen atomically inside DB::transaction below.
+            } else {
+                // Legacy pre-deducted credits flow.
+                $credit_transaction_id = (int) substr($payment_method_id, strlen('credits_'));
+                $credit_transaction    = CreditTransaction::find($credit_transaction_id);
+
+                if (
+                    ! $credit_transaction
+                    || $credit_transaction->user_id !== $user->id
+                    || $credit_transaction->type !== 'debit'
+                ) {
+                    return response()->json([
+                        'message' => 'Invalid credit payment reference.',
+                        'error'   => 'The provided credit transaction is not valid for this payment.',
+                    ], 422);
+                }
             }
 
             // Credits already represent a discounted value — no additional
@@ -150,18 +170,49 @@ class CartController extends Controller
         $session_id    = $request->input('session_id') ?? (string) Str::uuid();
         $session_title = $order_title;
 
+        // $effective_payment_method_id starts as the raw payment_method_id but is
+        // replaced with credits_<tx_id> inside the transaction for atomic credits.
+        $effective_payment_method_id = $payment_method_id;
+
         try {
             DB::transaction(function () use (
-                $user, $payment_method_id, $billing, $order_title, $order_notes,
+                $user, $billing, $order_title, $order_notes,
                 $coupon_models, $session_id, $session_title, $is_credits_payment,
+                $is_atomic_credits, $credits_amount,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
+                &$effective_payment_method_id,
                 &$created_orders
             ) {
+                // For the atomic credits flow, deduct credits inside this transaction
+                // so that the credit deduction and all order creation are fully atomic.
+                // If anything fails below, both the credit deduction and the orders
+                // are rolled back together — no credits are lost.
+                if ($is_atomic_credits) {
+                    $fresh_user = User::where('id', $user->id)->lockForUpdate()->first();
+
+                    if ($fresh_user->credit_balance < $credits_amount) {
+                        throw new \DomainException('insufficient_balance');
+                    }
+
+                    $fresh_user->decrement('credit_balance', $credits_amount);
+
+                    $credit_tx = CreditTransaction::create([
+                        'user_id'     => $user->id,
+                        'amount'      => $credits_amount,
+                        'type'        => 'debit',
+                        'description' => 'Order payment via account credits',
+                        'created_by'  => null,
+                    ]);
+
+                    // Use the real transaction ID as the stored payment reference.
+                    $effective_payment_method_id = 'credits_' . $credit_tx->id;
+                }
+
                 if (! empty($link_building_items)) {
                     $created_orders[] = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $billing,
-                        $payment_method_id, $coupon_models,
+                        $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
                         $is_credits_payment
                     );
@@ -170,7 +221,7 @@ class CartController extends Controller
                 if (! empty($content_optimization_items)) {
                     $created_orders[] = $this->createContentOptimizationOrder(
                         $user, $content_optimization_items, $billing,
-                        $payment_method_id, $coupon_models,
+                        $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
                         $is_credits_payment
                     );
@@ -179,7 +230,7 @@ class CartController extends Controller
                 if (! empty($new_content_items)) {
                     $created_orders[] = $this->createNewContentOrder(
                         $user, $new_content_items, $billing,
-                        $payment_method_id, $coupon_models,
+                        $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
                         $is_credits_payment
                     );
@@ -188,7 +239,7 @@ class CartController extends Controller
                 if (! empty($content_brief_items)) {
                     $created_orders[] = $this->createContentBriefOrder(
                         $user, $content_brief_items, $billing,
-                        $payment_method_id, $coupon_models,
+                        $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
                         $is_credits_payment
                     );
@@ -196,6 +247,26 @@ class CartController extends Controller
 
                 Cart::where('user_id', $user->id)->delete();
             });
+        } catch (\DomainException $e) {
+            // Insufficient balance is caught here: the DB transaction rolled back
+            // automatically and no credits were deducted, so nothing to reverse.
+            if ($e->getMessage() === 'insufficient_balance') {
+                return response()->json([
+                    'message' => 'Insufficient credit balance. Please check your account credits and try again.',
+                    'error'   => 'insufficient_credits',
+                ], 422);
+            }
+
+            Log::error('Unexpected domain error during cart checkout.', [
+                'user_id'           => $user->id,
+                'payment_method_id' => $payment_method_id,
+                'error'             => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'An unexpected error occurred while creating your orders. Please contact support.',
+                'error'   => 'order_creation_failed',
+            ], 500);
         } catch (Throwable $e) {
             Log::error('Unified cart checkout failed after payment was charged.', [
                 'user_id'           => $user->id,
@@ -204,11 +275,12 @@ class CartController extends Controller
                 'trace'             => $e->getTraceAsString(),
             ]);
 
-            // If the payment was already charged via Stripe and the DB transaction
-            // failed, automatically issue a full refund so the customer is never
-            // billed without receiving an order.
             $refund_note = '';
+
             if (! $is_credits_payment) {
+                // If the payment was already charged via Stripe and the DB transaction
+                // failed, automatically issue a full refund so the customer is never
+                // billed without receiving an order.
                 $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
 
                 if ($refund_result['success']) {
@@ -225,6 +297,44 @@ class CartController extends Controller
                         'refund_error'      => $refund_result['message'] ?? 'Unknown error',
                     ]);
                     $refund_note = ' We were unable to process an automatic refund. Please contact support immediately with your payment reference: ' . $payment_method_id;
+                }
+            } elseif (! $is_atomic_credits) {
+                // Legacy credits flow: credits were pre-deducted before checkout was
+                // called, so we must reverse the deduction if order creation failed.
+                // For the atomic flow, the DB transaction already rolled back and no
+                // credits were deducted — no reversal needed.
+                $legacy_tx_id = (int) substr($payment_method_id, strlen('credits_'));
+                $legacy_tx    = CreditTransaction::find($legacy_tx_id);
+
+                if ($legacy_tx && $legacy_tx->user_id === $user->id) {
+                    try {
+                        DB::transaction(function () use ($user, $legacy_tx) {
+                            $fresh_user = User::where('id', $user->id)->lockForUpdate()->first();
+                            $fresh_user->increment('credit_balance', $legacy_tx->amount);
+                            CreditTransaction::create([
+                                'user_id'     => $user->id,
+                                'amount'      => $legacy_tx->amount,
+                                'type'        => 'credit',
+                                'description' => "Automatic reversal of transaction #{$legacy_tx->id}: order creation failed",
+                                'created_by'  => null,
+                            ]);
+                        });
+
+                        Log::info('Automatic credit reversal issued after failed checkout.', [
+                            'user_id'                 => $user->id,
+                            'original_transaction_id' => $legacy_tx->id,
+                            'amount'                  => $legacy_tx->amount,
+                        ]);
+                        $refund_note = ' Your credits have been automatically restored to your account.';
+                    } catch (Throwable $reversal_error) {
+                        Log::critical('Automatic credit reversal FAILED after failed checkout — manual action required.', [
+                            'user_id'                 => $user->id,
+                            'original_transaction_id' => $legacy_tx->id,
+                            'amount'                  => $legacy_tx->amount,
+                            'reversal_error'          => $reversal_error->getMessage(),
+                        ]);
+                        $refund_note = ' We were unable to automatically restore your credits. Please contact support immediately with reference: credits_' . $legacy_tx->id;
+                    }
                 }
             }
 

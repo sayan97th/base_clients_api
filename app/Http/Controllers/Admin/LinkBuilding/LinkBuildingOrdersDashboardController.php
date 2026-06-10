@@ -493,7 +493,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         $display_order_id = $placement->order_id
-            ?? 'LBO-' . strtoupper(substr(str_replace('-', '', $placement->id), 0, 10));
+            ?? 'BL-' . strtoupper(substr(str_replace('-', '', $placement->id), 0, 10));
 
         Mail::to($user->email)->queue(
             new OrderStatusChangeMail(
@@ -508,21 +508,11 @@ class LinkBuildingOrdersDashboardController extends Controller
 
     /**
      * Generates the next sequential order ID in the BL-{n} format.
-     *
-     * Queries the highest existing numeric suffix from all BL-{digits} order IDs
-     * and returns BL-{max+1}, ensuring new orders continue the existing sequence.
-     * Example: if the highest is BL-25009, the next returned is BL-25010.
+     * Delegates to the model so cart checkout and dashboard creation share the same sequence.
      */
     private function generateNextOrderId(): string
     {
-        $max_num = LinkBuildingOrderPlacement::whereNotNull('order_id')
-            ->whereRaw("order_id REGEXP '^BL-[0-9]+$'")
-            ->selectRaw('MAX(CAST(SUBSTRING(order_id, 4) AS UNSIGNED)) as max_num')
-            ->value('max_num');
-
-        $next = ($max_num === null ? 0 : (int) $max_num) + 1;
-
-        return 'BL-' . $next;
+        return LinkBuildingOrderPlacement::generateNextOrderId();
     }
 
     /**

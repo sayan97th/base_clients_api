@@ -101,12 +101,29 @@ class LinkBuildingOrderPlacement extends Model
     }
 
     /**
+     * Generates the next sequential BL-{n} order_id by querying the current maximum
+     * across all placements. Used by dashboard creation and cart checkout controllers
+     * so every placement receives a consistent human-readable identifier.
+     */
+    public static function generateNextOrderId(): string
+    {
+        $max_num = static::whereNotNull('order_id')
+            ->whereRaw("order_id REGEXP '^BL-[0-9]+$'")
+            ->selectRaw('MAX(CAST(SUBSTRING(order_id, 4) AS UNSIGNED)) as max_num')
+            ->value('max_num');
+
+        $next = ($max_num === null ? 0 : (int) $max_num) + 1;
+
+        return 'BL-' . $next;
+    }
+
+    /**
      * Returns the full API row shape for the admin dashboard, including computed
      * fields days_left and projected_health. The exact_match boolean is converted
      * to a "Yes"/"No" string to match the frontend's editable select field.
      *
      * For client-purchased placements (order_item_id set, no order_id):
-     * - order_id is derived deterministically from the placement UUID
+     * - order_id is derived from the placement UUID as a BL- prefixed fallback
      * - client is derived from the purchase order's user name when not set directly
      */
     public function toApiArray(): array
@@ -184,13 +201,13 @@ class LinkBuildingOrderPlacement extends Model
     }
 
     /**
-     * Generates a deterministic, unique display order_id from the placement UUID.
-     * Format: LBO-{first 10 hex chars of UUID uppercased}
-     * Example: UUID 550e8400-e29b-41d4-a716-... → LBO-550E8400E2
+     * Fallback display order_id for legacy placements that pre-date sequential assignment.
+     * Format: BL-{first 10 hex chars of UUID uppercased}
+     * New placements always receive a proper BL-{n} sequential id at creation time.
      */
     private function derivedOrderId(): string
     {
-        return 'LBO-' . strtoupper(substr(str_replace('-', '', $this->id), 0, 10));
+        return 'BL-' . strtoupper(substr(str_replace('-', '', $this->id), 0, 10));
     }
 
     /**

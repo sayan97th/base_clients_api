@@ -13,6 +13,7 @@ use App\Models\Coupon;
 use App\Models\CreditTransaction;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
+use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
@@ -672,6 +673,15 @@ class CartController extends Controller
             ]);
         }
 
+        // Reserve starting sequence number for BL- order IDs once per checkout call
+        // so all placements in this order receive consecutive identifiers without
+        // issuing a separate MAX query for every individual row.
+        $max_bl_num   = LinkBuildingOrderPlacement::whereNotNull('order_id')
+            ->whereRaw("order_id REGEXP '^BL-[0-9]+$'")
+            ->selectRaw('MAX(CAST(SUBSTRING(order_id, 4) AS UNSIGNED)) as max_num')
+            ->value('max_num');
+        $next_bl_num  = ($max_bl_num === null ? 0 : (int) $max_bl_num) + 1;
+
         foreach ($items as $item_data) {
             $item_subtotal = round((float) $item_data['unit_price'] * (int) $item_data['quantity'], 2);
 
@@ -686,6 +696,7 @@ class CartController extends Controller
 
             foreach ($item_data['placements'] as $placement_data) {
                 $item->placements()->create([
+                    'order_id'     => 'BL-' . $next_bl_num++,
                     'row_index'    => $placement_data['row_index'],
                     'keyword'      => $placement_data['keyword'] ?: null,
                     'landing_page' => $placement_data['landing_page'] ?: null,

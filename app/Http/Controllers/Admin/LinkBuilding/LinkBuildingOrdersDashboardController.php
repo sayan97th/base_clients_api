@@ -68,7 +68,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         // Include all visible placements: admin-created (order_id), client-purchased
         // (order_item_id), or admin-assigned to a client (user_id).
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam', 'assignedAdminUser'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')
@@ -265,6 +265,29 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * GET /api/admin/link-building-orders/assignable-clients
+     *
+     * Lightweight list of client users for the "Client Account" dropdown in the
+     * link building orders dashboard. Allows admins to link an order to a specific
+     * registered client account in the application.
+     */
+    public function assignableClients(): JsonResponse
+    {
+        $clients = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->orderBy('first_name')
+            ->orderBy('last_name')
+            ->get(['id', 'first_name', 'last_name', 'email', 'profile_photo_url'])
+            ->map(fn (User $u) => [
+                'id'         => $u->id,
+                'name'       => trim($u->first_name . ' ' . $u->last_name),
+                'email'      => $u->email,
+                'avatar_url' => $u->profile_photo_url,
+            ]);
+
+        return response()->json(['data' => $clients->values()]);
+    }
+
+    /**
      * POST /api/admin/link-building-orders/import
      *
      * Accepts a CSV file upload, stores it, and dispatches a background job
@@ -340,7 +363,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $sort_rules     = $request->input('sort_rules', []);
         $column_filters = $request->input('column_filters', []);
 
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'adminTeam', 'assignedAdminUser'])
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
             ->where(function ($q) {
                 $q->whereNotNull('order_id')
                   ->orWhereNotNull('order_item_id')

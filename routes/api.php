@@ -492,6 +492,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Note: named sub-routes are registered before the generic POST store to avoid route shadowing.
         Route::middleware('role:super_admin,admin,staff')->group(function () {
             Route::get('/link-building-orders/assignable-users',         [LinkBuildingOrdersDashboardController::class, 'assignableUsers']);
+            Route::get('/link-building-orders/assignable-clients',       [LinkBuildingOrdersDashboardController::class, 'assignableClients']);
             Route::post('/link-building-orders/search',                  [LinkBuildingOrdersDashboardController::class, 'search']);
             Route::post('/link-building-orders/export',                  [LinkBuildingOrdersDashboardController::class, 'export']);
             Route::post('/link-building-orders/batch-update',            [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);

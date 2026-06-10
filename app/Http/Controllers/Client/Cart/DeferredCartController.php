@@ -256,12 +256,18 @@ class DeferredCartController extends Controller
                 'subtotal'   => $item_subtotal,
             ]);
 
+            $client_name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+
             foreach ($item_data['placements'] as $placement_data) {
                 $item->placements()->create([
                     'row_index'    => $placement_data['row_index'],
                     'keyword'      => $placement_data['keyword'] ?: null,
                     'landing_page' => $placement_data['landing_page'] ?: null,
                     'exact_match'  => $placement_data['exact_match'],
+                    'client'       => $client_name ?: null,
+                    'status'       => 'New Request',
+                    'request_date' => now()->format('m/d/Y'),
+                    'user_id'      => $user->id,
                 ]);
             }
         }

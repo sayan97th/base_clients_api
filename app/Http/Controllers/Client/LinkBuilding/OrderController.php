@@ -220,6 +220,8 @@ class OrderController extends Controller
                         'client'       => $client_name ?: null,
                         'status'       => 'New Request',
                         'request_date' => now()->format('m/d/Y'),
+                        // Link to the purchasing client account for the Client Account column.
+                        'user_id'      => $user->id,
                     ]);
                 }
             }

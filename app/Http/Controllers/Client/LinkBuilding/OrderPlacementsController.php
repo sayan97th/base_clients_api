@@ -48,6 +48,9 @@ class OrderPlacementsController extends Controller
                 'p.completed_date',
                 'p.dr',
                 DB::raw("'purchased' as source"),
+                // Human-readable BL-format ID: use the placement's own order_id when present,
+                // otherwise derive from the placement UUID (matches toApiArray() derivedOrderId logic).
+                DB::raw("COALESCE(NULLIF(p.order_id, ''), CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
             ]);
 
         // ── Admin-assigned standalone placements (linked directly via user_id) ──
@@ -67,6 +70,9 @@ class OrderPlacementsController extends Controller
                 DB::raw('NULL as completed_date'),
                 DB::raw('NULL as dr'),
                 DB::raw("'admin_assigned' as source"),
+                // Human-readable BL-format ID: use the stored order_id (always BL-XXXXX for admin-created)
+                // or derive from placement UUID as fallback (matches toApiArray() derivedOrderId logic).
+                DB::raw("COALESCE(p.order_id, CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
             ]);
 
         // Union both sets, apply search/status filters, then paginate.

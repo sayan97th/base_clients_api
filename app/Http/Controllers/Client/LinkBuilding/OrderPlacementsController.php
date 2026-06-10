@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Client\LinkBuilding;
 
 use App\Http\Controllers\Controller;
+use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class OrderPlacementsController extends Controller
@@ -44,6 +47,7 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 'p.completed_date',
                 'p.dr',
+                DB::raw("'purchased' as source"),
             ]);
 
         // ── Admin-assigned standalone placements (linked directly via user_id) ──
@@ -62,6 +66,7 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
                 DB::raw('NULL as dr'),
+                DB::raw("'admin_assigned' as source"),
             ]);
 
         // Union both sets, apply search/status filters, then paginate.
@@ -93,6 +98,54 @@ class OrderPlacementsController extends Controller
             'last_page'    => $paginator->lastPage(),
             'per_page'     => $paginator->perPage(),
             'total'        => $paginator->total(),
+        ]);
+    }
+
+    /**
+     * GET /api/link-building/order-placements/{id}
+     *
+     * Returns the detail of a single admin-assigned placement belonging to the
+     * authenticated client. Only placements directly linked via user_id are
+     * accessible here; client-purchased placements are accessed via the order
+     * detail endpoint instead.
+     */
+    public function show(string $id): JsonResponse
+    {
+        if (! Str::isUuid($id)) {
+            return response()->json(['message' => 'Placement not found.'], 404);
+        }
+
+        /** @var User $user */
+        $user = auth()->user();
+
+        $placement = LinkBuildingOrderPlacement::find($id);
+
+        if (! $placement) {
+            return response()->json(['message' => 'Placement not found.'], 404);
+        }
+
+        if ((int) $placement->user_id !== $user->id) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        return response()->json([
+            'data' => [
+                'id'                      => $placement->id,
+                'order_id'                => $placement->order_id ?? null,
+                'status'                  => $placement->status ?? 'New Request',
+                'link_type'               => $placement->link_type ?? '',
+                'keyword'                 => $placement->keyword ?? null,
+                'landing_page'            => $placement->landing_page ?? null,
+                'exact_match'             => (bool) $placement->exact_match,
+                'notes'                   => $placement->notes ?? null,
+                'live_link'               => $placement->live_link ?? null,
+                'live_link_date'          => $placement->live_link_date ?? null,
+                'dr_lbs'                  => $placement->dr_lbs ?? null,
+                'request_date'            => $placement->request_date ?? null,
+                'estimated_delivery_date' => $placement->estimated_delivery_date ?? null,
+                'created_at'              => $placement->created_at?->toIso8601String(),
+                'updated_at'              => $placement->updated_at?->toIso8601String(),
+            ],
         ]);
     }
 }

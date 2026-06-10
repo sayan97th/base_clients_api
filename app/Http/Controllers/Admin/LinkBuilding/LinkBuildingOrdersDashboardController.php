@@ -56,15 +56,17 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function search(Request $request): JsonResponse
     {
-        $page           = max(1, (int) $request->input('page', 1));
-        $per_page       = min((int) $request->input('per_page', 50), 500);
-        $search         = $request->input('search');
-        $status         = $request->input('status');
-        $link_type      = $request->input('link_type');
-        $client         = $request->input('client');
-        $link_builder   = $request->input('link_builder');
-        $sort_rules     = $request->input('sort_rules', []);
-        $column_filters = $request->input('column_filters', []);
+        $page              = max(1, (int) $request->input('page', 1));
+        $per_page          = min((int) $request->input('per_page', 50), 500);
+        $search            = $request->input('search');
+        $status            = $request->input('status');
+        $link_type         = $request->input('link_type');
+        $client            = $request->input('client');
+        $link_builder      = $request->input('link_builder');
+        $client_user_id    = $request->input('client_user_id');
+        $assigned_user_id  = $request->input('assigned_user_id');
+        $sort_rules        = $request->input('sort_rules', []);
+        $column_filters    = $request->input('column_filters', []);
 
         // Include all visible placements: admin-created (order_id), client-purchased
         // (order_item_id), or admin-assigned to a client (user_id).
@@ -76,7 +78,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             });
 
         $this->applyGlobalSearch($query, $search);
-        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
         $this->applyColumnFilters($query, $column_filters);
         $this->applySortRules($query, $sort_rules);
 
@@ -354,14 +356,16 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function export(Request $request): StreamedResponse
     {
-        $row_ids        = (array) ($request->input('row_ids') ?? []);
-        $search         = $request->input('search');
-        $status         = $request->input('status');
-        $link_type      = $request->input('link_type');
-        $client         = $request->input('client');
-        $link_builder   = $request->input('link_builder');
-        $sort_rules     = $request->input('sort_rules', []);
-        $column_filters = $request->input('column_filters', []);
+        $row_ids           = (array) ($request->input('row_ids') ?? []);
+        $search            = $request->input('search');
+        $status            = $request->input('status');
+        $link_type         = $request->input('link_type');
+        $client            = $request->input('client');
+        $link_builder      = $request->input('link_builder');
+        $client_user_id    = $request->input('client_user_id');
+        $assigned_user_id  = $request->input('assigned_user_id');
+        $sort_rules        = $request->input('sort_rules', []);
+        $column_filters    = $request->input('column_filters', []);
 
         $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
             ->where(function ($q) {
@@ -375,7 +379,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             $query->whereIn('id', $row_ids);
         } else {
             $this->applyGlobalSearch($query, $search);
-            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder);
+            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
             $this->applyColumnFilters($query, $column_filters);
             $this->applySortRules($query, $sort_rules);
         }
@@ -553,7 +557,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         });
     }
 
-    private function applyQuickFilters($query, ?string $status, ?string $link_type, ?string $client, ?string $link_builder): void
+    private function applyQuickFilters($query, ?string $status, ?string $link_type, ?string $client, ?string $link_builder, $client_user_id = null, $assigned_user_id = null): void
     {
         if (filled($status)) {
             $query->where('status', $status);
@@ -569,6 +573,14 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         if (filled($link_builder)) {
             $query->where('link_builder', 'like', '%' . $link_builder . '%');
+        }
+
+        if (filled($client_user_id)) {
+            $query->where('user_id', (int) $client_user_id);
+        }
+
+        if (filled($assigned_user_id)) {
+            $query->where('assigned_admin_user_id', (int) $assigned_user_id);
         }
     }
 

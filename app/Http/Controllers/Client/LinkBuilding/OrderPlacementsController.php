@@ -55,7 +55,7 @@ class OrderPlacementsController extends Controller
                 'p.id',
                 'p.order_id',
                 'p.created_at as start_date',
-                DB::raw("'Admin Assigned' as dr_type"),
+                DB::raw("COALESCE(NULLIF(p.link_type, ''), 'Admin Assigned') as dr_type"),
                 'p.keyword',
                 'p.landing_page',
                 'p.status',

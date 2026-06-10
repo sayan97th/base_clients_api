@@ -79,7 +79,8 @@ class StripeService
      * Verify that a PaymentIntent exists and has status 'succeeded' or 'requires_capture'.
      * When $expected_amount is provided, the PaymentIntent amount (in USD) must match.
      *
-     * Returns ['verified' => true] or ['verified' => false, 'message' => '...']
+     * Returns ['verified' => true, 'intent' => $intent]
+     *      or ['verified' => false, 'message' => '...']
      */
     public function verifyPaymentIntent(string $payment_intent_id, ?float $expected_amount = null): array
     {
@@ -100,18 +101,91 @@ class StripeService
                 if ($intent->amount !== $expected_cents) {
                     return [
                         'verified' => false,
-                        'message'  => 'Payment verification failed. Amount does not match the invoice total.',
+                        'message'  => 'Payment amount mismatch. Expected $' . number_format($expected_amount, 2) . ' but the payment was for $' . number_format($intent->amount / 100, 2) . '. Please contact support.',
                     ];
                 }
             }
 
-            return ['verified' => true];
+            return ['verified' => true, 'intent' => $intent];
         } catch (ApiErrorException $e) {
             return [
                 'verified' => false,
                 'message'  => 'Payment verification failed. The payment could not be verified.',
             ];
         }
+    }
+
+    /**
+     * Refund a PaymentIntent in full. Used as a safety net when a charge succeeds
+     * but the subsequent order creation fails — ensures the customer is not billed
+     * without receiving an order.
+     *
+     * Returns ['success' => true, 'refund_id' => '...']
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function refundPaymentIntent(string $payment_intent_id, string $reason = 'other'): array
+    {
+        try {
+            $refund = $this->client->refunds->create([
+                'payment_intent' => $payment_intent_id,
+                'reason'         => $reason,
+            ]);
+
+            return [
+                'success'   => true,
+                'refund_id' => $refund->id,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Map a Stripe error code to a user-friendly message.
+     */
+    public static function getUserFriendlyErrorMessage(string $error_code, string $fallback = 'Your payment could not be processed. Please try again or use a different card.'): string
+    {
+        return match ($error_code) {
+            'card_declined'              => 'Your card was declined. Please check your card details or contact your bank.',
+            'insufficient_funds'         => 'Your card has insufficient funds. Please use a different card or add funds to your account.',
+            'incorrect_cvc'              => 'The security code (CVC) is incorrect. Please double-check and try again.',
+            'expired_card'               => 'Your card has expired. Please use a different card.',
+            'incorrect_number'           => 'Your card number is incorrect. Please check and try again.',
+            'invalid_cvc'                => 'The security code (CVC) is invalid. Please check and try again.',
+            'invalid_expiry_month'       => 'The expiration month is invalid.',
+            'invalid_expiry_year'        => 'The expiration year is invalid.',
+            'invalid_number'             => 'Your card number is invalid.',
+            'card_velocity_exceeded'     => 'Your card has exceeded its usage limit. Please contact your bank or use a different card.',
+            'do_not_honor'               => 'Your card was declined. Please contact your bank for more information.',
+            'do_not_try_again'           => 'Your card was declined and should not be retried. Please use a different card.',
+            'fraudulent'                 => 'This transaction was flagged as potentially fraudulent. Please contact your bank.',
+            'generic_decline'            => 'Your card was declined. Please contact your bank or try a different card.',
+            'lost_card'                  => 'Your card has been reported as lost. Please use a different card.',
+            'merchant_blacklist'         => 'Your card was declined. Please use a different card.',
+            'new_account_information_available' => 'Your card information has changed. Please update your card details.',
+            'no_action_taken'            => 'Your card was declined. Please contact your bank.',
+            'not_permitted'              => 'This transaction is not permitted on your card. Please contact your bank.',
+            'offline_pin_required'       => 'A PIN is required for this card.',
+            'online_or_offline_pin_required' => 'A PIN is required for this card.',
+            'pickup_card'                => 'Your card has been reported and cannot be used. Please contact your bank.',
+            'pin_try_exceeded'           => 'Too many PIN attempts. Please contact your bank.',
+            'processing_error'           => 'A processing error occurred. Please try again in a moment.',
+            'reenter_transaction'        => 'Please re-enter your card details and try again.',
+            'restricted_card'            => 'Your card is restricted. Please contact your bank.',
+            'revocation_of_all_authorizations' => 'Your card authorizations have been revoked. Please contact your bank.',
+            'security_violation'         => 'A security violation occurred. Please contact your bank.',
+            'service_not_allowed'        => 'This service is not allowed on your card. Please use a different card.',
+            'stolen_card'                => 'Your card has been reported as stolen. Please use a different card.',
+            'stop_payment_order'         => 'A stop payment order is in place on your card. Please contact your bank.',
+            'testmode_decline'           => 'Your test card was declined.',
+            'transaction_not_allowed'    => 'This transaction is not allowed on your card. Please contact your bank.',
+            'try_again_later'            => 'The payment could not be processed. Please try again in a few minutes.',
+            'withdrawal_count_limit_exceeded' => 'Your withdrawal limit has been exceeded. Please try again later or use a different card.',
+            default                      => $fallback,
+        };
     }
 
     /**

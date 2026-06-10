@@ -82,6 +82,10 @@ class CartController extends Controller
         $payment_method_id  = $request->input('payment_method_id');
         $is_credits_payment = str_starts_with($payment_method_id, 'credits_');
 
+        // Calculate the expected order total server-side so it can be verified
+        // against the Stripe PaymentIntent amount before any data is written.
+        $expected_total = $this->calculateExpectedTotal($request);
+
         if ($is_credits_payment) {
             $credit_transaction_id = (int) substr($payment_method_id, strlen('credits_'));
             $credit_transaction    = CreditTransaction::find($credit_transaction_id);
@@ -105,8 +109,11 @@ class CartController extends Controller
                 ], 422);
             }
         } else {
-            // Verify the Stripe PaymentIntent before writing anything to the database
-            $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id);
+            // Verify the Stripe PaymentIntent before writing anything to the database.
+            // The expected_total is passed so the amount is confirmed server-side —
+            // this prevents a tampered or reused payment intent from covering a
+            // different order amount.
+            $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id, $expected_total);
 
             if (! $stripe_result['verified']) {
                 return response()->json([
@@ -197,9 +204,33 @@ class CartController extends Controller
                 'trace'             => $e->getTraceAsString(),
             ]);
 
+            // If the payment was already charged via Stripe and the DB transaction
+            // failed, automatically issue a full refund so the customer is never
+            // billed without receiving an order.
+            $refund_note = '';
+            if (! $is_credits_payment) {
+                $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
+
+                if ($refund_result['success']) {
+                    Log::info('Automatic refund issued after failed checkout.', [
+                        'user_id'           => $user->id,
+                        'payment_method_id' => $payment_method_id,
+                        'refund_id'         => $refund_result['refund_id'],
+                    ]);
+                    $refund_note = ' Your payment has been automatically refunded. Funds typically appear within 5–10 business days.';
+                } else {
+                    Log::critical('Automatic refund FAILED after failed checkout — manual action required.', [
+                        'user_id'           => $user->id,
+                        'payment_method_id' => $payment_method_id,
+                        'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                    ]);
+                    $refund_note = ' We were unable to process an automatic refund. Please contact support immediately with your payment reference: ' . $payment_method_id;
+                }
+            }
+
             return response()->json([
-                'message' => 'An error occurred while creating your orders. Please contact support.',
-                'error'   => $e->getMessage(),
+                'message' => 'An error occurred while creating your orders.' . $refund_note . ' Please contact support if you need assistance.',
+                'error'   => 'order_creation_failed',
             ], 500);
         }
 
@@ -262,6 +293,118 @@ class CartController extends Controller
             'session_id' => $session_id,
             'orders'     => $response_orders,
         ]]);
+    }
+
+    /**
+     * Calculate the expected total server-side so it can be verified against the
+     * Stripe PaymentIntent amount. This prevents clients from submitting a tampered
+     * total_amount field and having it accepted without charge verification.
+     *
+     * Applies the same bulk-discount and coupon logic used in the create* methods
+     * but only to arrive at a final total — order models are not touched here.
+     */
+    private function calculateExpectedTotal(CheckoutCartRequest $request): float
+    {
+        $link_building_items        = $request->input('link_building_items', []);
+        $content_optimization_items = $request->input('content_optimization_items', []);
+        $new_content_items          = $request->input('new_content_items', []);
+        $content_brief_items        = $request->input('content_brief_items', []);
+        $coupon_ids                 = $request->input('coupon_ids', []);
+        $is_credits_payment         = str_starts_with($request->input('payment_method_id', ''), 'credits_');
+
+        // Pre-load coupon models so we can apply them below
+        $coupon_models = [];
+        foreach ($coupon_ids as $coupon_id) {
+            $coupon = Coupon::find($coupon_id);
+            if ($coupon) {
+                $coupon_models[$coupon_id] = $coupon;
+            }
+        }
+
+        $grand_total = 0.0;
+
+        // ── Link Building ──
+        if (! empty($link_building_items)) {
+            $total_links = 0;
+            $subtotal    = 0.0;
+            foreach ($link_building_items as $item) {
+                $total_links += (int) $item['quantity'];
+                $subtotal    += (float) $item['unit_price'] * (int) $item['quantity'];
+            }
+            $subtotal      = round($subtotal, 2);
+            $bulk_discount = (! $is_credits_payment && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
+                ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
+                : 0.0;
+            $amount        = round($subtotal - $bulk_discount, 2);
+            if (! $is_credits_payment) {
+                foreach ($coupon_models as $coupon) {
+                    $result = $this->couponService->validateAndCalculate($coupon, $amount, auth()->id());
+                    if ($result['valid']) {
+                        $amount = round($amount - $result['discount_amount'], 2);
+                    }
+                }
+            }
+            $grand_total += max(0.0, $amount);
+        }
+
+        // ── Content Optimization ──
+        if (! empty($content_optimization_items)) {
+            $subtotal = 0.0;
+            foreach ($content_optimization_items as $item) {
+                $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+            }
+            $subtotal = round($subtotal, 2);
+            $amount   = $subtotal;
+            if (! $is_credits_payment) {
+                foreach ($coupon_models as $coupon) {
+                    $result = $this->couponService->validateAndCalculate($coupon, $amount, auth()->id());
+                    if ($result['valid']) {
+                        $amount = round($amount - $result['discount_amount'], 2);
+                    }
+                }
+            }
+            $grand_total += max(0.0, $amount);
+        }
+
+        // ── New Content ──
+        if (! empty($new_content_items)) {
+            $subtotal = 0.0;
+            foreach ($new_content_items as $item) {
+                $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+            }
+            $subtotal = round($subtotal, 2);
+            $amount   = $subtotal;
+            if (! $is_credits_payment) {
+                foreach ($coupon_models as $coupon) {
+                    $result = $this->couponService->validateAndCalculate($coupon, $amount, auth()->id());
+                    if ($result['valid']) {
+                        $amount = round($amount - $result['discount_amount'], 2);
+                    }
+                }
+            }
+            $grand_total += max(0.0, $amount);
+        }
+
+        // ── Content Briefs ──
+        if (! empty($content_brief_items)) {
+            $subtotal = 0.0;
+            foreach ($content_brief_items as $item) {
+                $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
+            }
+            $subtotal = round($subtotal, 2);
+            $amount   = $subtotal;
+            if (! $is_credits_payment) {
+                foreach ($coupon_models as $coupon) {
+                    $result = $this->couponService->validateAndCalculate($coupon, $amount, auth()->id());
+                    if ($result['valid']) {
+                        $amount = round($amount - $result['discount_amount'], 2);
+                    }
+                }
+            }
+            $grand_total += max(0.0, $amount);
+        }
+
+        return round($grand_total, 2);
     }
 
     private function createLinkBuildingOrder(

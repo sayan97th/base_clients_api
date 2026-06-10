@@ -89,6 +89,12 @@ class CartController extends Controller
         $is_atomic_credits = str_starts_with($payment_method_id, 'credits_pay_');
         $credits_amount    = null;
 
+        // Hybrid payment: Stripe PI + partial credits applied as discount.
+        // credits_amount holds the number of credits to atomically deduct inside the DB
+        // transaction; the card covers the remaining balance.
+        $hybrid_credits_amount = (float) ($request->input('credits_amount', 0));
+        $is_hybrid_payment     = ! $is_credits_payment && $hybrid_credits_amount > 0;
+
         // Calculate the expected order total server-side so it can be verified
         // against the Stripe PaymentIntent amount before any data is written.
         $expected_total = $this->calculateExpectedTotal($request);
@@ -130,16 +136,46 @@ class CartController extends Controller
             }
         } else {
             // Verify the Stripe PaymentIntent before writing anything to the database.
-            // The expected_total is passed so the amount is confirmed server-side —
-            // this prevents a tampered or reused payment intent from covering a
-            // different order amount.
-            $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id, $expected_total);
+            // For hybrid payments the expected Stripe charge = total - credits; for pure
+            // card payments expected Stripe charge = total. This prevents a tampered or
+            // reused intent from covering a different order amount.
+            $expected_stripe_amount = $is_hybrid_payment
+                ? max(0.0, round($expected_total - $hybrid_credits_amount, 2))
+                : $expected_total;
+
+            $stripe_result = $this->stripeService->verifyPaymentIntent($payment_method_id, $expected_stripe_amount);
 
             if (! $stripe_result['verified']) {
                 return response()->json([
                     'message' => 'Payment could not be processed.',
                     'error'   => $stripe_result['message'] ?? 'Your payment could not be verified.',
                 ], 402);
+            }
+
+            // For hybrid payments, do a quick pre-check of the credit balance.
+            // If it fails the Stripe charge was already made — issue a full refund.
+            if ($is_hybrid_payment) {
+                $fresh_balance = User::where('id', $user->id)->value('credit_balance');
+                if ($hybrid_credits_amount > $fresh_balance) {
+                    $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
+
+                    if (! $refund_result['success']) {
+                        Log::critical('Stripe refund FAILED after hybrid credit pre-check failed — manual action required.', [
+                            'user_id'           => $user->id,
+                            'payment_method_id' => $payment_method_id,
+                            'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                        ]);
+                        return response()->json([
+                            'message' => 'Insufficient credit balance. We were unable to process an automatic refund — please contact support immediately with reference: ' . $payment_method_id,
+                            'error'   => 'insufficient_credits',
+                        ], 422);
+                    }
+
+                    return response()->json([
+                        'message' => 'Insufficient credit balance. Your card charge has been automatically refunded.',
+                        'error'   => 'insufficient_credits',
+                    ], 422);
+                }
             }
         }
 
@@ -179,6 +215,7 @@ class CartController extends Controller
                 $user, $billing, $order_title, $order_notes,
                 $coupon_models, $session_id, $session_title, $is_credits_payment,
                 $is_atomic_credits, $credits_amount,
+                $is_hybrid_payment, $hybrid_credits_amount,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
                 &$effective_payment_method_id,
@@ -207,6 +244,27 @@ class CartController extends Controller
 
                     // Use the real transaction ID as the stored payment reference.
                     $effective_payment_method_id = 'credits_' . $credit_tx->id;
+                }
+
+                // For hybrid payments (Stripe card + credits), atomically deduct the
+                // credit portion here so it rolls back with the orders if anything fails.
+                // The card was already charged before entering this transaction.
+                if ($is_hybrid_payment) {
+                    $fresh_user = User::where('id', $user->id)->lockForUpdate()->first();
+
+                    if ($fresh_user->credit_balance < $hybrid_credits_amount) {
+                        throw new \DomainException('insufficient_balance');
+                    }
+
+                    $fresh_user->decrement('credit_balance', $hybrid_credits_amount);
+
+                    CreditTransaction::create([
+                        'user_id'     => $user->id,
+                        'amount'      => $hybrid_credits_amount,
+                        'type'        => 'debit',
+                        'description' => 'Credit discount applied to order (hybrid payment)',
+                        'created_by'  => null,
+                    ]);
                 }
 
                 if (! empty($link_building_items)) {
@@ -248,9 +306,35 @@ class CartController extends Controller
                 Cart::where('user_id', $user->id)->delete();
             });
         } catch (\DomainException $e) {
-            // Insufficient balance is caught here: the DB transaction rolled back
-            // automatically and no credits were deducted, so nothing to reverse.
+            // Insufficient balance: the DB transaction rolled back automatically so
+            // no credits or orders were written. For hybrid payments the Stripe charge
+            // already happened — issue a full refund immediately.
             if ($e->getMessage() === 'insufficient_balance') {
+                if ($is_hybrid_payment) {
+                    $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
+                    if ($refund_result['success']) {
+                        Log::info('Stripe refund issued after hybrid payment credit balance insufficient.', [
+                            'user_id'           => $user->id,
+                            'payment_method_id' => $payment_method_id,
+                            'refund_id'         => $refund_result['refund_id'],
+                        ]);
+                        return response()->json([
+                            'message' => 'Insufficient credit balance. Your card charge has been automatically refunded.',
+                            'error'   => 'insufficient_credits',
+                        ], 422);
+                    }
+
+                    Log::critical('Stripe refund FAILED after hybrid payment credit balance insufficient — manual action required.', [
+                        'user_id'           => $user->id,
+                        'payment_method_id' => $payment_method_id,
+                        'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                    ]);
+                    return response()->json([
+                        'message' => 'Insufficient credit balance. We were unable to process an automatic refund — please contact support immediately with reference: ' . $payment_method_id,
+                        'error'   => 'insufficient_credits',
+                    ], 422);
+                }
+
                 return response()->json([
                     'message' => 'Insufficient credit balance. Please check your account credits and try again.',
                     'error'   => 'insufficient_credits',
@@ -280,7 +364,9 @@ class CartController extends Controller
             if (! $is_credits_payment) {
                 // If the payment was already charged via Stripe and the DB transaction
                 // failed, automatically issue a full refund so the customer is never
-                // billed without receiving an order.
+                // billed without receiving an order. For hybrid payments the DB
+                // transaction rolled back both orders and the credit deduction atomically,
+                // so only the Stripe charge needs to be refunded here.
                 $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
 
                 if ($refund_result['success']) {
@@ -406,9 +492,9 @@ class CartController extends Controller
     }
 
     /**
-     * Calculate the expected total server-side so it can be verified against the
-     * Stripe PaymentIntent amount. This prevents clients from submitting a tampered
-     * total_amount field and having it accepted without charge verification.
+     * Calculate the expected full order total server-side (after bulk/coupon discounts,
+     * before any credits deduction) so it can be used for Stripe PaymentIntent amount
+     * verification. The caller subtracts credits_amount for hybrid payments.
      *
      * Applies the same bulk-discount and coupon logic used in the create* methods
      * but only to arrive at a final total — order models are not touched here.

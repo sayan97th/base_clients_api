@@ -39,7 +39,7 @@ class OrderPlacementsController extends Controller
                 'p.id',
                 'o.id as order_id',
                 'o.created_at as start_date',
-                'dt.label as dr_type',
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), dt.label) as dr_type"),
                 'p.keyword',
                 'p.landing_page',
                 // Use the placement-level status when set; fall back to the order status.
@@ -62,7 +62,7 @@ class OrderPlacementsController extends Controller
                 'p.id',
                 'p.order_id',
                 'p.created_at as start_date',
-                DB::raw("COALESCE(NULLIF(p.link_type, ''), 'Admin Assigned') as dr_type"),
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), 'Admin Assigned') as dr_type"),
                 'p.keyword',
                 'p.landing_page',
                 'p.status',

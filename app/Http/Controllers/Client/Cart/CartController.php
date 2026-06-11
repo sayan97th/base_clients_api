@@ -11,9 +11,10 @@ use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
 use App\Models\CreditTransaction;
+use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
-use App\Models\NewContentOrder;
 use App\Models\LinkBuildingOrderPlacement;
+use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
@@ -693,6 +694,8 @@ class CartController extends Controller
             ]);
 
             $client_name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+            $dr_tier     = DrTier::find($item_data['dr_tier_id']);
+            $link_type   = $dr_tier ? $dr_tier->label . ' External' : null;
 
             foreach ($item_data['placements'] as $placement_data) {
                 $item->placements()->create([
@@ -705,6 +708,7 @@ class CartController extends Controller
                     'status'       => 'New Request',
                     'request_date' => now()->format('m/d/Y'),
                     'user_id'      => $user->id,
+                    'link_type'    => $link_type,
                 ]);
             }
         }

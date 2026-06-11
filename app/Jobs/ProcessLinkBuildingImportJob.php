@@ -7,6 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -68,9 +69,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
     private const URL_COLUMNS = ['landing_page', 'partnership', 'article', 'live_link'];
 
     public function __construct(
-        private readonly string $import_id,
-        private readonly string $file_path,
-        private readonly int    $total_rows,
+        private readonly string  $import_id,
+        private readonly string  $file_path,
+        private readonly int     $total_rows,
+        private readonly ?string $date_from = null,
+        private readonly ?string $date_to   = null,
+        private readonly string  $link_type_filter = 'external_only',
     ) {}
 
     public function handle(): void
@@ -115,6 +119,16 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $order_id = trim($mapped['order_id'] ?? '');
 
                 if ($order_id === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                if (! $this->passesLinkTypeFilter((string) ($mapped['link_type'] ?? ''))) {
+                    $skipped++;
+                    continue;
+                }
+
+                if (! $this->passesDateFilter((string) ($mapped['request_date'] ?? ''))) {
                     $skipped++;
                     continue;
                 }
@@ -336,6 +350,58 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         }
 
         return [$chunk_created, $chunk_updated];
+    }
+
+    private function passesLinkTypeFilter(string $link_type): bool
+    {
+        if ($this->link_type_filter === 'all') {
+            return true;
+        }
+
+        $lower = strtolower($link_type);
+
+        if ($this->link_type_filter === 'external_only') {
+            return str_contains($lower, 'external');
+        }
+
+        if ($this->link_type_filter === 'internal_only') {
+            return str_contains($lower, 'internal');
+        }
+
+        return true;
+    }
+
+    private function passesDateFilter(string $date_str): bool
+    {
+        if ($this->date_from === null && $this->date_to === null) {
+            return true;
+        }
+
+        if ($date_str === '') {
+            return false;
+        }
+
+        try {
+            $date = Carbon::createFromFormat('m/d/Y', $date_str)->startOfDay();
+
+            if ($this->date_from !== null) {
+                $from = Carbon::createFromFormat('m/d/Y', $this->date_from)->startOfDay();
+                if ($date->lt($from)) {
+                    return false;
+                }
+            }
+
+            if ($this->date_to !== null) {
+                $to = Carbon::createFromFormat('m/d/Y', $this->date_to)->endOfDay();
+                if ($date->gt($to)) {
+                    return false;
+                }
+            }
+
+            return true;
+        } catch (\Exception) {
+            return false;
+        }
     }
 
     private function saveProgress(

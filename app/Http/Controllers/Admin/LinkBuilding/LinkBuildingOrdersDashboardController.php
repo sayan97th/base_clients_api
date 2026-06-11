@@ -295,15 +295,42 @@ class LinkBuildingOrdersDashboardController extends Controller
      * Accepts a CSV file upload, stores it, and dispatches a background job
      * that upserts rows by order_id (no duplicates). Returns an import_id
      * that the caller can poll via /import-status/{import_id}.
+     *
+     * Optional filter parameters:
+     *   apply_date_filter  (bool, default true)  — when false, no date restriction is applied
+     *   date_from          (string MM/DD/YYYY)    — lower bound for request_date
+     *   date_to            (string MM/DD/YYYY)    — upper bound for request_date
+     *   link_type_filter   (string)               — 'external_only' (default) | 'internal_only' | 'all'
      */
     public function import(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'file'             => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'apply_date_filter'=> ['sometimes', 'boolean'],
+            'date_from'        => ['sometimes', 'nullable', 'string'],
+            'date_to'          => ['sometimes', 'nullable', 'string'],
+            'link_type_filter' => ['sometimes', 'string', 'in:external_only,internal_only,all'],
         ]);
 
         $file      = $request->file('file');
         $import_id = Str::uuid()->toString();
+
+        // Date range defaults: last year to today (external only)
+        $apply_date_filter = filter_var($request->input('apply_date_filter', true), FILTER_VALIDATE_BOOLEAN);
+        $date_from         = null;
+        $date_to           = null;
+
+        if ($apply_date_filter) {
+            $date_from = filled($request->input('date_from'))
+                ? $request->input('date_from')
+                : Carbon::now()->subYear()->format('m/d/Y');
+
+            $date_to = filled($request->input('date_to'))
+                ? $request->input('date_to')
+                : Carbon::now()->format('m/d/Y');
+        }
+
+        $link_type_filter = $request->input('link_type_filter', 'external_only');
 
         $stored_path = $file->storeAs(
             'imports/link-building',
@@ -322,7 +349,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'errors'    => [],
         ], now()->addHours(2));
 
-        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows);
+        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows, $date_from, $date_to, $link_type_filter);
 
         return response()->json([
             'message'   => 'Import queued successfully.',

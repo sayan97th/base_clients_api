@@ -223,6 +223,25 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * DELETE /api/admin/link-building-orders
+     *
+     * Permanently deletes ALL admin-created link building orders (those with an order_id set).
+     * This is a "clean slate" operation intended to be run before a fresh CSV import so the
+     * portal table contains only the newly imported data.
+     *
+     * Client-purchased placements (order_item_id set without order_id) are not affected.
+     */
+    public function clearAll(): JsonResponse
+    {
+        $deleted_count = LinkBuildingOrderPlacement::whereNotNull('order_id')->delete();
+
+        return response()->json([
+            'message'       => "Cleared {$deleted_count} link building order(s) successfully.",
+            'deleted_count' => $deleted_count,
+        ]);
+    }
+
+    /**
      * DELETE /api/admin/link-building-orders/{id}
      *
      * Permanently deletes a link building order row.

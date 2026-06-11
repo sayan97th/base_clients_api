@@ -501,6 +501,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders',                         [LinkBuildingOrdersDashboardController::class, 'store']);
             Route::put('/link-building-orders/{id}',                     [LinkBuildingOrdersDashboardController::class, 'update']);
             Route::delete('/link-building-orders/{id}',                  [LinkBuildingOrdersDashboardController::class, 'destroy']);
+            Route::delete('/link-building-orders',                       [LinkBuildingOrdersDashboardController::class, 'clearAll']);
         });
 
         // News Placements — super_admin, admin, staff

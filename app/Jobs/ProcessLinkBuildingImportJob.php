@@ -430,13 +430,18 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
      * Builds a map of normalized name strings → user_id for all admin-side users
      * (super_admin, admin, staff). Each user is indexed under multiple key variants
      * so that CSV values like "2. Allan, Abigail" or "Tyler Coley" all resolve correctly.
+     *
+     * Also indexes by email-derived name parts: if the email prefix starts with the
+     * user's first name, the remainder is treated as an alternative last name. This
+     * allows "Anderson, Kaitlin" to resolve to a user whose legal last name differs
+     * from their email alias (e.g. Kaitlin Ogden, email kaitlinanderson@...).
      */
     private function loadAdminUserNameMap(): array
     {
         $map = [];
 
         User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
-            ->get(['id', 'first_name', 'last_name'])
+            ->get(['id', 'first_name', 'last_name', 'email'])
             ->each(function (User $user) use (&$map) {
                 $first = strtolower(trim((string) $user->first_name));
                 $last  = strtolower(trim((string) $user->last_name));
@@ -449,6 +454,22 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                     $map[$last] = $user->id;
                 } elseif ($first !== '') {
                     $map[$first] = $user->id;
+                }
+
+                // Email-based fallback: if the email prefix (letters only) starts with
+                // the user's first name, treat the remainder as an alternative last name.
+                // Example: email "kaitlinanderson@..." → first="kaitlin" → email_last="anderson"
+                //          adds "kaitlin anderson", "anderson kaitlin", "anderson" to the map.
+                if ($first !== '' && filled($user->email)) {
+                    $email_prefix = strtolower(preg_replace('/[^a-z]/i', '', explode('@', $user->email)[0]));
+                    if ($email_prefix !== '' && str_starts_with($email_prefix, $first) && strlen($email_prefix) > strlen($first)) {
+                        $email_last = substr($email_prefix, strlen($first));
+                        if ($email_last !== '' && $email_last !== $last) {
+                            $map["{$first} {$email_last}"] = $user->id;
+                            $map["{$email_last} {$first}"] = $user->id;
+                            $map[$email_last]               = $user->id;
+                        }
+                    }
                 }
             });
 

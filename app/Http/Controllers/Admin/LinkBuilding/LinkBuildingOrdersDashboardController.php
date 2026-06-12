@@ -470,6 +470,50 @@ class LinkBuildingOrdersDashboardController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
+    /**
+     * POST /api/admin/link-building-orders/resolve-assignments
+     *
+     * Scans all existing placements that have a link_builder value and attempts to
+     * resolve each one to an admin-side user by name (same matching logic used during
+     * CSV import). Rows that already carry a matching assigned_admin_user_id are
+     * left unchanged. Useful after a bulk import that predates the auto-assign feature.
+     *
+     * Returns:
+     *   resolved  — number of rows where assigned_admin_user_id was set or updated
+     *   unchanged — number of rows whose assignment was already correct or had no match
+     */
+    public function resolveAssignments(): JsonResponse
+    {
+        $admin_user_name_map = $this->buildAdminUserNameMap();
+
+        $resolved  = 0;
+        $unchanged = 0;
+
+        LinkBuildingOrderPlacement::whereNotNull('link_builder')
+            ->where('link_builder', '!=', '')
+            ->chunk(500, function ($placements) use ($admin_user_name_map, &$resolved, &$unchanged) {
+                foreach ($placements as $placement) {
+                    $admin_user_id = $this->resolveAdminUserIdFromText(
+                        trim((string) $placement->link_builder),
+                        $admin_user_name_map
+                    );
+
+                    if ($admin_user_id !== null && (int) $admin_user_id !== (int) $placement->assigned_admin_user_id) {
+                        $placement->update(['assigned_admin_user_id' => $admin_user_id]);
+                        $resolved++;
+                    } else {
+                        $unchanged++;
+                    }
+                }
+            });
+
+        return response()->json([
+            'message'   => "Resolved {$resolved} assignment(s).",
+            'resolved'  => $resolved,
+            'unchanged' => $unchanged,
+        ]);
+    }
+
     // ── Order status sync & notifications ────────────────────────────────────
 
     /**
@@ -707,6 +751,96 @@ class LinkBuildingOrdersDashboardController extends Controller
                 // Invalid date — skip this bound
             }
         }
+    }
+
+    /**
+     * Builds a map of normalized name strings → user_id for admin-side users,
+     * including email-derived alternative last-name entries so that CSV values such
+     * as "Anderson, Kaitlin" resolve to a user whose current last name differs
+     * from their email alias (e.g. Kaitlin Ogden, email kaitlinanderson@...).
+     */
+    private function buildAdminUserNameMap(): array
+    {
+        $map = [];
+
+        User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
+            ->get(['id', 'first_name', 'last_name', 'email'])
+            ->each(function (User $u) use (&$map) {
+                $first = strtolower(trim((string) $u->first_name));
+                $last  = strtolower(trim((string) $u->last_name));
+
+                if ($first !== '' && $last !== '') {
+                    $map["{$first} {$last}"] = $u->id;
+                    $map["{$last} {$first}"] = $u->id;
+                    $map[$last]              = $u->id;
+                } elseif ($last !== '') {
+                    $map[$last] = $u->id;
+                } elseif ($first !== '') {
+                    $map[$first] = $u->id;
+                }
+
+                // Email prefix fallback (e.g. kaitlinanderson → first=kaitlin, email_last=anderson)
+                if ($first !== '' && filled($u->email)) {
+                    $email_prefix = strtolower(preg_replace('/[^a-z]/i', '', explode('@', $u->email)[0]));
+                    if ($email_prefix !== '' && str_starts_with($email_prefix, $first) && strlen($email_prefix) > strlen($first)) {
+                        $email_last = substr($email_prefix, strlen($first));
+                        if ($email_last !== '' && $email_last !== $last) {
+                            $map["{$first} {$email_last}"] = $u->id;
+                            $map["{$email_last} {$first}"] = $u->id;
+                            $map[$email_last]               = $u->id;
+                        }
+                    }
+                }
+            });
+
+        return $map;
+    }
+
+    /**
+     * Parses a raw "Link Builder" value and returns the matching admin user ID, or null.
+     * Supports formats: "2. Allan, Abigail", "1. Coley, Tyler", "Tyler Coley", "Allan".
+     */
+    private function resolveAdminUserIdFromText(string $raw, array $admin_user_name_map): ?int
+    {
+        $value = preg_replace('/^\d+\.\s*/', '', $raw);
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (str_contains($value, ',')) {
+            [$last, $first] = array_map('trim', explode(',', $value, 2));
+            $last  = strtolower($last);
+            $first = strtolower($first);
+
+            if ($first !== '' && $last !== '' && isset($admin_user_name_map["{$first} {$last}"])) {
+                return $admin_user_name_map["{$first} {$last}"];
+            }
+            if ($last !== '' && $first !== '' && isset($admin_user_name_map["{$last} {$first}"])) {
+                return $admin_user_name_map["{$last} {$first}"];
+            }
+            if ($last !== '' && isset($admin_user_name_map[$last])) {
+                return $admin_user_name_map[$last];
+            }
+
+            return null;
+        }
+
+        $normalized = strtolower($value);
+        if (isset($admin_user_name_map[$normalized])) {
+            return $admin_user_name_map[$normalized];
+        }
+
+        $parts = preg_split('/\s+/', $normalized);
+        if (is_array($parts) && count($parts) >= 2) {
+            $last_word = end($parts);
+            if ($last_word !== false && isset($admin_user_name_map[$last_word])) {
+                return $admin_user_name_map[$last_word];
+            }
+        }
+
+        return null;
     }
 
     private function applySortRules($query, array $sort_rules): void

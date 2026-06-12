@@ -81,8 +81,11 @@ class OrderPlacementsController extends Controller
             ->orderBy('start_date', 'desc');
 
         // Wrap in a subquery so we can filter on the union result.
+        // addBinding(..., 'from') places all inner bindings in the 'from' slot, which
+        // getBindings() flushes before 'where'. This preserves the correct PDO positional
+        // binding order when outer WHERE conditions (search, whereIn, etc.) are appended.
         $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
-            ->mergeBindings($query);
+            ->addBinding($query->getBindings(), 'from');
 
         if ($search) {
             $wrapped->where(function ($q) use ($search) {
@@ -172,7 +175,7 @@ class OrderPlacementsController extends Controller
         $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
 
         $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
-            ->mergeBindings($query);
+            ->addBinding($query->getBindings(), 'from');
 
         if (! empty($row_ids)) {
             $wrapped->whereIn('id', $row_ids);
@@ -286,7 +289,7 @@ class OrderPlacementsController extends Controller
         $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
 
         $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
-            ->mergeBindings($query);
+            ->addBinding($query->getBindings(), 'from');
 
         if ($search) {
             $wrapped->where(function ($q) use ($search) {

@@ -92,6 +92,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         $created   = 0;
         $updated   = 0;
         $skipped   = 0;
+        $assigned  = 0;
         $errors    = [];
         $chunk     = [];
 
@@ -158,27 +159,29 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $chunk[] = $mapped;
 
                 if (count($chunk) >= self::CHUNK_SIZE) {
-                    [$c, $u] = $this->processChunk($chunk, $errors);
+                    [$c, $u, $a] = $this->processChunk($chunk, $errors);
                     $created   += $c;
                     $updated   += $u;
+                    $assigned  += $a;
                     $processed += count($chunk);
                     $chunk      = [];
 
-                    $this->saveProgress('processing', $processed + $skipped, $created, $updated, $skipped, $errors);
+                    $this->saveProgress('processing', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors);
                 }
             }
 
             if (!empty($chunk)) {
-                [$c, $u] = $this->processChunk($chunk, $errors);
+                [$c, $u, $a] = $this->processChunk($chunk, $errors);
                 $created   += $c;
                 $updated   += $u;
+                $assigned  += $a;
                 $processed += count($chunk);
             }
 
             fclose($handle);
             Storage::delete($this->file_path);
 
-            $this->saveProgress('completed', $processed + $skipped, $created, $updated, $skipped, $errors);
+            $this->saveProgress('completed', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors);
 
         } catch (\Exception $e) {
             Log::error('LBO CSV import failed', [
@@ -186,7 +189,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 'error'     => $e->getMessage(),
             ]);
 
-            $this->saveProgress('failed', $processed + $skipped, $created, $updated, $skipped, [
+            $this->saveProgress('failed', $processed + $skipped, $created, $updated, $skipped, $assigned, [
                 ['order_id' => '—', 'message' => 'Import failed: ' . $e->getMessage()],
             ]);
         }
@@ -322,11 +325,14 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $admin_user_id_assignments[$order_id] = $resolved_admin_user_id;
             }
 
+            // Always include id and created_at so every row in the chunk has identical
+            // column shape. For existing rows, ON DUPLICATE KEY UPDATE excludes both
+            // columns, so the generated values are never written to the database.
+            $row['id']         = Str::uuid()->toString();
+            $row['created_at'] = $now;
             $row['updated_at'] = $now;
 
             if (!isset($existing_set[$order_id])) {
-                $row['id']         = Str::uuid()->toString();
-                $row['created_at'] = $now;
                 $chunk_created++;
             } else {
                 $chunk_updated++;
@@ -336,9 +342,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         }
 
         if (empty($rows)) {
-            return [0, 0];
+            return [0, 0, 0];
         }
 
+        // Exclude id, order_id, and created_at from the ON DUPLICATE KEY UPDATE clause.
+        // All rows now have identical column shapes (id and created_at are always set),
+        // so the upsert can be expressed as a single bulk statement without fallback.
         $update_columns = array_values(array_diff(
             array_keys($rows[0]),
             ['id', 'order_id', 'created_at']
@@ -394,6 +403,8 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             }
         }
 
+        $chunk_assigned = count($admin_user_id_assignments);
+
         // Phase 2: set user_id for rows whose CSV "client" column matched a client's company.
         // Done after the main upsert so existing manual assignments are not cleared for
         // rows where no company match was found.
@@ -412,7 +423,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 ->update(['assigned_admin_user_id' => $admin_uid, 'updated_at' => $now]);
         }
 
-        return [$chunk_created, $chunk_updated];
+        return [$chunk_created, $chunk_updated, $chunk_assigned];
     }
 
     /**
@@ -578,6 +589,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         int $created = 0,
         int $updated = 0,
         int $skipped = 0,
+        int $assigned = 0,
         array $errors = []
     ): void {
         Cache::put("lbo_import_{$this->import_id}", [
@@ -587,6 +599,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             'created'   => $created,
             'updated'   => $updated,
             'skipped'   => $skipped,
+            'assigned'  => $assigned,
             'errors'    => array_slice($errors, 0, 50),
         ], now()->addHours(2));
     }

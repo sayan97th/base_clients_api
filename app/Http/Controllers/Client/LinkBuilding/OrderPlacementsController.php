@@ -17,17 +17,27 @@ class OrderPlacementsController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'per_page' => ['nullable', 'integer', 'min:1'],
-            'page'     => ['nullable', 'integer', 'min:1'],
-            'search'   => ['nullable', 'string', 'max:255'],
-            'status'   => ['nullable', 'string', Rule::in(['pending', 'processing', 'completed', 'cancelled', 'New Request', 'Reviewing', 'Ordered', 'Pending', 'Live', 'Quality Control', 'Cancelled'])],
+            'per_page'  => ['nullable', 'integer', 'min:1'],
+            'page'      => ['nullable', 'integer', 'min:1'],
+            'search'    => ['nullable', 'string', 'max:255'],
+            'status'    => ['nullable', 'string', Rule::in([
+                'pending', 'processing', 'completed', 'cancelled', 'new_request', 'payment_pending',
+                'New Request', 'Reviewing', 'Ordered', 'Pending', 'Live', 'Quality Control',
+                'Cancelled', 'Partnership Check', 'Approved', 'Not Approved', 'Ready', 'Rejected', 'Scheduled',
+            ])],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to'   => ['nullable', 'date_format:Y-m-d'],
+            'dr_type'   => ['nullable', 'string', 'max:50'],
         ]);
 
         /** @var User $user */
-        $user     = auth()->user();
-        $per_page = min((int) $request->get('per_page', 10), 100);
-        $search   = $request->get('search');
-        $status   = $request->get('status');
+        $user      = auth()->user();
+        $per_page  = min((int) $request->get('per_page', 10), 100);
+        $search    = $request->get('search');
+        $status    = $request->get('status');
+        $date_from = $request->get('date_from');
+        $date_to   = $request->get('date_to');
+        $dr_type   = $request->get('dr_type');
 
         // ── Client-purchased placements (linked via order → order_item → placement) ──
         $purchased = DB::table('link_building_order_placements as p')
@@ -100,6 +110,18 @@ class OrderPlacementsController extends Controller
             $wrapped->where('status', $status);
         }
 
+        if ($date_from) {
+            $wrapped->where('start_date', '>=', $date_from);
+        }
+
+        if ($date_to) {
+            $wrapped->where('start_date', '<=', $date_to . ' 23:59:59');
+        }
+
+        if ($dr_type) {
+            $wrapped->where('dr_type', 'like', '%' . $dr_type . '%');
+        }
+
         $paginator = $wrapped->paginate($per_page);
 
         return response()->json([
@@ -127,14 +149,20 @@ class OrderPlacementsController extends Controller
             'row_ids'   => ['nullable', 'array'],
             'row_ids.*' => ['string'],
             'format'    => ['nullable', 'string', 'in:csv,json'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to'   => ['nullable', 'date_format:Y-m-d'],
+            'dr_type'   => ['nullable', 'string', 'max:50'],
         ]);
 
         /** @var User $user */
-        $user    = auth()->user();
-        $search  = $request->get('search');
-        $status  = $request->get('status');
-        $row_ids = (array) $request->get('row_ids', []);
-        $format  = $request->get('format', 'csv');
+        $user      = auth()->user();
+        $search    = $request->get('search');
+        $status    = $request->get('status');
+        $row_ids   = (array) $request->get('row_ids', []);
+        $format    = $request->get('format', 'csv');
+        $date_from = $request->get('date_from');
+        $date_to   = $request->get('date_to');
+        $dr_type   = $request->get('dr_type');
 
         $purchased = DB::table('link_building_order_placements as p')
             ->join('link_building_order_items as i', 'i.id', '=', 'p.order_item_id')
@@ -190,6 +218,18 @@ class OrderPlacementsController extends Controller
             }
             if ($status) {
                 $wrapped->where('status', $status);
+            }
+
+            if ($date_from) {
+                $wrapped->where('start_date', '>=', $date_from);
+            }
+
+            if ($date_to) {
+                $wrapped->where('start_date', '<=', $date_to . ' 23:59:59');
+            }
+
+            if ($dr_type) {
+                $wrapped->where('dr_type', 'like', '%' . $dr_type . '%');
             }
         }
 

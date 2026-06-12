@@ -36,6 +36,11 @@ class LinkBuildingOrdersDashboardController extends Controller
         'currency',
     ];
 
+    /** Columns stored as MM/DD/YYYY strings that require STR_TO_DATE for correct sort order. */
+    private const DATE_COLUMNS = [
+        'request_date', 'estimated_delivery_date', 'live_link_date', 'approval_date',
+    ];
+
     /** All columns that may be targeted by column_filters. */
     private const FILTERABLE_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
@@ -735,6 +740,12 @@ class LinkBuildingOrdersDashboardController extends Controller
                 $query->orderByRaw(
                     "CAST(REGEXP_SUBSTR(`order_id`, '[0-9]+\$') AS UNSIGNED) {$dir}, `order_id` {$dir}"
                 );
+            } elseif (in_array($key, self::DATE_COLUMNS, true)) {
+                // Dates are stored as MM/DD/YYYY strings; use STR_TO_DATE so the database
+                // compares actual calendar values instead of doing an alphabetical sort.
+                $query->orderByRaw(
+                    "STR_TO_DATE(NULLIF(`{$key}`, ''), '%m/%d/%Y') {$dir}"
+                );
             } elseif ($nulls_last) {
                 $query->orderByRaw("(`{$key}` IS NULL OR `{$key}` = ''), `{$key}` {$dir}");
             } else {
@@ -745,7 +756,9 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (! $applied) {
-            $query->orderBy('created_at', 'desc');
+            // Default: most recent request_date first. STR_TO_DATE is required because
+            // dates are stored as MM/DD/YYYY strings, not native DATE columns.
+            $query->orderByRaw("STR_TO_DATE(NULLIF(`request_date`, ''), '%m/%d/%Y') DESC, `created_at` DESC");
         }
     }
 }

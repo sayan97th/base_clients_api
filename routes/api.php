@@ -825,6 +825,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{order_id}/report', [ClientOrderReportController::class, 'show']);
         Route::get('/deliverables', [LinkBuildingDeliverableController::class, 'index']);
         Route::get('/order-placements', [LinkBuildingOrderPlacementsController::class, 'index']);
+        Route::get('/order-placements/export', [LinkBuildingOrderPlacementsController::class, 'export']);
         Route::get('/order-placements/{id}', [LinkBuildingOrderPlacementsController::class, 'show']);
     });
 

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderPlacementsController extends Controller
 {
@@ -105,6 +106,112 @@ class OrderPlacementsController extends Controller
             'per_page'     => $paginator->perPage(),
             'total'        => $paginator->total(),
         ]);
+    }
+
+    /**
+     * GET /api/link-building/order-placements/export
+     *
+     * Streams a CSV file containing all of the authenticated client's placements,
+     * applying the same search and status filters as the index action.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'status' => ['nullable', 'string'],
+        ]);
+
+        /** @var User $user */
+        $user   = auth()->user();
+        $search = $request->get('search');
+        $status = $request->get('status');
+
+        $purchased = DB::table('link_building_order_placements as p')
+            ->join('link_building_order_items as i', 'i.id', '=', 'p.order_item_id')
+            ->join('link_building_orders as o', 'o.id', '=', 'i.order_id')
+            ->join('dr_tiers as dt', 'dt.id', '=', 'i.dr_tier_id')
+            ->where('o.user_id', $user->id)
+            ->where('o.is_hidden', false)
+            ->select([
+                DB::raw("COALESCE(NULLIF(p.order_id, ''), CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
+                'o.created_at as start_date',
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), dt.label) as dr_type"),
+                'p.keyword',
+                'p.landing_page',
+                DB::raw('COALESCE(p.status, o.status) as status'),
+                'p.live_link',
+                'p.completed_date',
+                'p.dr',
+            ]);
+
+        $assigned = DB::table('link_building_order_placements as p')
+            ->whereNotNull('p.user_id')
+            ->whereNull('p.order_item_id')
+            ->where('p.user_id', $user->id)
+            ->select([
+                DB::raw("COALESCE(p.order_id, CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
+                'p.created_at as start_date',
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), 'Admin Assigned') as dr_type"),
+                'p.keyword',
+                'p.landing_page',
+                'p.status',
+                'p.live_link',
+                DB::raw('NULL as completed_date'),
+                DB::raw('NULL as dr'),
+            ]);
+
+        $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
+
+        $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
+            ->mergeBindings($query);
+
+        if ($search) {
+            $wrapped->where(function ($q) use ($search) {
+                $q->where('display_order_id', 'like', "%{$search}%")
+                  ->orWhere('keyword', 'like', "%{$search}%")
+                  ->orWhere('landing_page', 'like', "%{$search}%")
+                  ->orWhere('status', 'like', "%{$search}%");
+            });
+        }
+
+        if ($status) {
+            $wrapped->where('status', $status);
+        }
+
+        $filename = 'order-placements-' . now()->format('Y-m-d') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $columns = ['Order ID', 'Start Date', 'DR Type', 'Keyword', 'Landing Page', 'Status', 'Live Link', 'Completed Date', 'DR'];
+
+        $callback = function () use ($wrapped, $columns) {
+            $handle = fopen('php://output', 'w');
+
+            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM for Excel compatibility
+            fputcsv($handle, $columns);
+
+            foreach ($wrapped->cursor() as $row) {
+                $row = (array) $row;
+                fputcsv($handle, [
+                    $row['display_order_id'] ?? '',
+                    $row['start_date']        ?? '',
+                    $row['dr_type']           ?? '',
+                    $row['keyword']           ?? '',
+                    $row['landing_page']      ?? '',
+                    $row['status']            ?? '',
+                    $row['live_link']         ?? '',
+                    $row['completed_date']    ?? '',
+                    $row['dr']               ?? '',
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     /**

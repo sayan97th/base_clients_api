@@ -225,6 +225,43 @@ class UserController extends Controller
     }
 
     /**
+     * PATCH /api/admin/users/{user_id}
+     */
+    public function update(Request $request, int $user_id): JsonResponse
+    {
+        $request->validate([
+            'company'            => ['nullable', 'string', 'max:255'],
+            'google_studio_link' => ['nullable', 'string', 'max:500'],
+            'referrer_id'        => ['nullable', 'string', 'max:255'],
+            'note'               => ['nullable', 'string', 'max:10000'],
+        ]);
+
+        $user = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        $updatable = ['company', 'google_studio_link', 'referrer_id', 'note'];
+        $data      = [];
+
+        foreach ($updatable as $field) {
+            if ($request->has($field)) {
+                $data[$field] = $request->input($field);
+            }
+        }
+
+        if (!empty($data)) {
+            $user->update($data);
+        }
+
+        return response()->json([
+            'message' => 'User updated successfully.',
+            'user'    => new UserWithRolesResource($user->fresh(['roles:id,name,display_name', 'organization'])),
+        ]);
+    }
+
+    /**
      * GET /api/admin/users/{user_id}/orders?page=N
      */
     public function orders(int $user_id): JsonResponse

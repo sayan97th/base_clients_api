@@ -572,10 +572,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('users/{user_id}', [AdminUserController::class, 'show']);
             Route::get('users/{user_id}/orders', [AdminUserController::class, 'orders']);
 
-            // Ban / unban — super_admin and admin only
+            // User meta update, ban / unban — super_admin and admin only
             Route::middleware('role:super_admin,admin')->group(function () {
-                Route::patch('users/{user_id}/ban',   [AdminUserController::class, 'ban']);
-                Route::patch('users/{user_id}/unban', [AdminUserController::class, 'unban']);
+                Route::patch('users/{user_id}',        [AdminUserController::class, 'update']);
+                Route::patch('users/{user_id}/ban',    [AdminUserController::class, 'ban']);
+                Route::patch('users/{user_id}/unban',  [AdminUserController::class, 'unban']);
             });
             Route::get('organizations', [AdminOrganizationController::class, 'index']);
             Route::get('organizations/{id}', [AdminOrganizationController::class, 'show']);

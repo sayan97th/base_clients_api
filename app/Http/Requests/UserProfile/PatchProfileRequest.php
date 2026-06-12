@@ -39,6 +39,7 @@ class PatchProfileRequest extends FormRequest
             'state_province'             => ['sometimes', 'nullable', 'string', 'max:100'],
             'postal_code'                => ['sometimes', 'nullable', 'string', 'max:20'],
             'company'                    => ['sometimes', 'nullable', 'string', 'max:255'],
+            'google_studio_link'         => ['sometimes', 'nullable', 'string', 'max:500'],
         ];
     }
 }

@@ -39,7 +39,9 @@ class ProfileController extends Controller
                 'country'                     => $billing?->country,
                 'state_province'              => $billing?->state_province,
                 'postal_code'                 => $billing?->postal_code,
-                'company'                     => $billing?->company,
+                'company'                     => $user->company ?? $billing?->company,
+                'google_studio_link'          => $user->google_studio_link,
+                'note'                        => $user->note,
                 'profile_photo_path'          => $user->profile_photo_path,
                 'profile_photo_url'           => $user->profile_photo_url,
             ],
@@ -64,15 +66,18 @@ class ProfileController extends Controller
             'state_province'              => ['nullable', 'string', 'max:100'],
             'postal_code'                 => ['nullable', 'string', 'max:20'],
             'company'                     => ['nullable', 'string', 'max:255'],
+            'google_studio_link'          => ['nullable', 'string', 'max:500'],
         ]);
 
         $user = auth()->user();
 
         $user->update([
-            'first_name'     => $validated['first_name'],
-            'last_name'      => $validated['last_name'],
-            'business_email' => $validated['business_email'] ?? null,
-            'phone'          => $validated['phone'] ?? null,
+            'first_name'         => $validated['first_name'],
+            'last_name'          => $validated['last_name'],
+            'business_email'     => $validated['business_email'] ?? null,
+            'phone'              => $validated['phone'] ?? null,
+            'company'            => $validated['company'] ?? null,
+            'google_studio_link' => $validated['google_studio_link'] ?? null,
         ]);
 
         $user->preference()->updateOrCreate(
@@ -103,13 +108,15 @@ class ProfileController extends Controller
         return response()->json([
             'message' => 'Profile updated successfully.',
             'user'    => [
-                'id'                => $user->id,
-                'first_name'        => $user->first_name,
-                'last_name'         => $user->last_name,
-                'email'             => $user->email,
-                'business_email'    => $user->business_email,
-                'phone'             => $user->phone,
-                'profile_photo_url' => $user->profile_photo_url,
+                'id'                 => $user->id,
+                'first_name'         => $user->first_name,
+                'last_name'          => $user->last_name,
+                'email'              => $user->email,
+                'business_email'     => $user->business_email,
+                'phone'              => $user->phone,
+                'company'            => $user->company,
+                'google_studio_link' => $user->google_studio_link,
+                'profile_photo_url'  => $user->profile_photo_url,
             ],
         ]);
     }
@@ -120,7 +127,7 @@ class ProfileController extends Controller
         $user      = auth()->user();
 
         $user_fields = array_intersect_key($validated, array_flip([
-            'first_name', 'last_name', 'business_email', 'phone',
+            'first_name', 'last_name', 'business_email', 'phone', 'company', 'google_studio_link',
         ]));
 
         if (!empty($user_fields)) {
@@ -161,13 +168,15 @@ class ProfileController extends Controller
         return response()->json([
             'message' => 'Profile updated successfully.',
             'user'    => [
-                'id'                => $user->id,
-                'first_name'        => $user->first_name,
-                'last_name'         => $user->last_name,
-                'email'             => $user->email,
-                'business_email'    => $user->business_email,
-                'phone'             => $user->phone,
-                'profile_photo_url' => $user->profile_photo_url,
+                'id'                 => $user->id,
+                'first_name'         => $user->first_name,
+                'last_name'          => $user->last_name,
+                'email'              => $user->email,
+                'business_email'     => $user->business_email,
+                'phone'              => $user->phone,
+                'company'            => $user->company,
+                'google_studio_link' => $user->google_studio_link,
+                'profile_photo_url'  => $user->profile_photo_url,
             ],
         ]);
     }

@@ -6,7 +6,6 @@ use App\Models\BillingAddress;
 use App\Models\Organization;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\UserImportMetadata;
 use App\Models\UserPreference;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -40,7 +39,7 @@ class ImportLegacyAccounts extends Command
         'balance'            => 'users.credit_balance',
         'stripe_customer_id' => 'users.stripe_customer_id',
         'status'             => 'users.is_active  (always enabled — cannot determine active state from legacy data)',
-        'company'            => 'billing_addresses.company',
+        'company'            => 'users.company + billing_addresses.company',
         'tax_id'             => 'billing_addresses.tax_id',
         'address_street'     => 'billing_addresses.address',
         'address_city'       => 'billing_addresses.city',
@@ -50,10 +49,10 @@ class ImportLegacyAccounts extends Command
         'timezone'           => 'user_preferences.timezone',
         'i_am_interested_in' => 'user_preferences.interested_in',
         'role'               => 'user_role  (client/admin/staff/user — falls back to --default-role)',
-        'id'                 => 'user_import_metadata.legacy_id',
-        'note'               => 'user_import_metadata.note',
-        'referrer_id'        => 'user_import_metadata.referrer_id',
-        'google_studio_link' => 'user_import_metadata.google_studio_link',
+        'id'                 => 'skipped (legacy id not stored)',
+        'note'               => 'users.note',
+        'referrer_id'        => 'users.referrer_id',
+        'google_studio_link' => 'users.google_studio_link',
     ];
 
     private const SKIPPED_FIELDS = [
@@ -288,6 +287,7 @@ class ImportLegacyAccounts extends Command
             $created_at     = $this->parseDate($row['created_at'] ?? null) ?? now();
             $last_login_at  = $this->parseDate($row['last_login'] ?? null);
             $credit_balance = $this->parseDecimal($row['balance'] ?? null);
+            $company        = $this->nullable($row['company'] ?? null);
 
             $user = new User();
             $user->forceFill([
@@ -304,12 +304,16 @@ class ImportLegacyAccounts extends Command
                 'organization_id'    => $organization->id,
                 'created_at'         => $created_at,
                 'updated_at'         => $created_at,
+                'company'            => $company,
+                'google_studio_link' => $this->nullable($row['google_studio_link'] ?? null),
+                'referrer_id'        => $this->nullable($row['referrer_id'] ?? null),
+                'note'               => $this->nullable($row['note'] ?? null),
             ]);
             $user->save();
 
             BillingAddress::create([
                 'user_id'        => $user->id,
-                'company'        => $this->nullable($row['company'] ?? null),
+                'company'        => $company,
                 'tax_id'         => $this->nullable($row['tax_id'] ?? null),
                 'address'        => $this->nullable($row['address_street'] ?? null),
                 'city'           => $this->nullable($row['address_city'] ?? null),
@@ -325,8 +329,6 @@ class ImportLegacyAccounts extends Command
                 'language'      => 'en',
                 'interested_in' => $this->parseInterestedIn($row['i_am_interested_in'] ?? null),
             ]);
-
-            $this->upsertImportMetadata($user->id, $row);
 
             $user->syncRoles([$assigned_role->name]);
         });
@@ -346,6 +348,7 @@ class ImportLegacyAccounts extends Command
         DB::transaction(function () use ($user, $row, $organization, $assigned_role): void {
             $last_login_at  = $this->parseDate($row['last_login'] ?? null);
             $credit_balance = $this->parseDecimal($row['balance'] ?? null);
+            $company        = $this->nullable($row['company'] ?? null);
 
             $user->forceFill([
                 'first_name'         => trim($row['name_f'] ?? ''),
@@ -356,13 +359,17 @@ class ImportLegacyAccounts extends Command
                 'credit_balance'     => $credit_balance,
                 'last_login_at'      => $last_login_at,
                 'organization_id'    => $organization->id,
+                'company'            => $company,
+                'google_studio_link' => $this->nullable($row['google_studio_link'] ?? null),
+                'referrer_id'        => $this->nullable($row['referrer_id'] ?? null),
+                'note'               => $this->nullable($row['note'] ?? null),
             ]);
             $user->save();
 
             BillingAddress::updateOrCreate(
                 ['user_id' => $user->id],
                 [
-                    'company'        => $this->nullable($row['company'] ?? null),
+                    'company'        => $company,
                     'tax_id'         => $this->nullable($row['tax_id'] ?? null),
                     'address'        => $this->nullable($row['address_street'] ?? null),
                     'city'           => $this->nullable($row['address_city'] ?? null),
@@ -382,30 +389,8 @@ class ImportLegacyAccounts extends Command
                 ]
             );
 
-            $this->upsertImportMetadata($user->id, $row);
-
             $user->syncRoles([$assigned_role->name]);
         });
-    }
-
-    private function upsertImportMetadata(int $user_id, array $row): void
-    {
-        $legacy_id           = $this->nullable($row['id'] ?? null);
-        $note                = $this->nullable($row['note'] ?? null);
-        $referrer_id         = $this->nullable($row['referrer_id'] ?? null);
-        $google_studio_link  = $this->nullable($row['google_studio_link'] ?? null);
-
-        if ($legacy_id || $note || $referrer_id || $google_studio_link) {
-            UserImportMetadata::updateOrCreate(
-                ['user_id' => $user_id],
-                [
-                    'legacy_id'          => $legacy_id,
-                    'note'               => $note,
-                    'referrer_id'        => $referrer_id,
-                    'google_studio_link' => $google_studio_link,
-                ]
-            );
-        }
     }
 
     private function resolveRole(array $row, string $default_role, array $roles): Role

@@ -41,6 +41,10 @@ class User extends Authenticatable implements JWTSubject
         'presence_color',
         'credit_balance',
         'last_login_at',
+        'company',
+        'google_studio_link',
+        'referrer_id',
+        'note',
     ];
 
     protected $hidden = [
@@ -137,11 +141,6 @@ class User extends Authenticatable implements JWTSubject
     public function unreadNotifications(): HasMany
     {
         return $this->notifications()->where('is_read', false);
-    }
-
-    public function importMetadata(): HasOne
-    {
-        return $this->hasOne(UserImportMetadata::class);
     }
 
     public function newContentOrders(): HasMany

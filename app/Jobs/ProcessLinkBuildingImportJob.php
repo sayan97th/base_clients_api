@@ -85,6 +85,9 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         // Pre-load company name → user_id map for client auto-assignment.
         $client_company_map = $this->loadClientCompanyMap();
 
+        // Pre-load admin user name → user_id map for link builder auto-assignment.
+        $admin_user_name_map = $this->loadAdminUserNameMap();
+
         $processed = 0;
         $created   = 0;
         $updated   = 0;
@@ -141,6 +144,15 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $client_value = strtolower(trim((string) ($mapped['client'] ?? '')));
                 if ($client_value !== '' && isset($client_company_map[$client_value])) {
                     $mapped['_resolved_user_id'] = $client_company_map[$client_value];
+                }
+
+                // Resolve admin user (Assigned To) from the "link_builder" column.
+                $link_builder_value = trim((string) ($mapped['link_builder'] ?? ''));
+                if ($link_builder_value !== '') {
+                    $resolved_admin_id = $this->resolveAdminUserId($link_builder_value, $admin_user_name_map);
+                    if ($resolved_admin_id !== null) {
+                        $mapped['_resolved_admin_user_id'] = $resolved_admin_id;
+                    }
                 }
 
                 $chunk[] = $mapped;
@@ -281,10 +293,11 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             ->flip()
             ->all();
 
-        $rows                = [];
-        $user_id_assignments = []; // order_id => user_id for company-matched rows
-        $chunk_created       = 0;
-        $chunk_updated       = 0;
+        $rows                      = [];
+        $user_id_assignments       = []; // order_id => user_id for company-matched rows
+        $admin_user_id_assignments = []; // order_id => admin user_id for link-builder-matched rows
+        $chunk_created             = 0;
+        $chunk_updated             = 0;
 
         foreach ($chunk as $row) {
             $order_id = trim($row['order_id'] ?? '');
@@ -299,6 +312,14 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
 
             if ($resolved_user_id !== null) {
                 $user_id_assignments[$order_id] = $resolved_user_id;
+            }
+
+            // Extract the internally-resolved admin user_id (not a real CSV column).
+            $resolved_admin_user_id = $row['_resolved_admin_user_id'] ?? null;
+            unset($row['_resolved_admin_user_id']);
+
+            if ($resolved_admin_user_id !== null) {
+                $admin_user_id_assignments[$order_id] = $resolved_admin_user_id;
             }
 
             $row['updated_at'] = $now;
@@ -382,7 +403,105 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 ->update(['user_id' => $uid, 'updated_at' => $now]);
         }
 
+        // Phase 3: set assigned_admin_user_id for rows whose CSV "Link Builder" column matched
+        // an admin-side user by name. Runs after the main upsert so rows without a match
+        // retain any existing manually-set assignment.
+        foreach ($admin_user_id_assignments as $order_id => $admin_uid) {
+            DB::table('link_building_order_placements')
+                ->where('order_id', $order_id)
+                ->update(['assigned_admin_user_id' => $admin_uid, 'updated_at' => $now]);
+        }
+
         return [$chunk_created, $chunk_updated];
+    }
+
+    /**
+     * Builds a map of normalized name strings → user_id for all admin-side users
+     * (super_admin, admin, staff). Each user is indexed under multiple key variants
+     * so that CSV values like "2. Allan, Abigail" or "Tyler Coley" all resolve correctly.
+     */
+    private function loadAdminUserNameMap(): array
+    {
+        $map = [];
+
+        User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
+            ->get(['id', 'first_name', 'last_name'])
+            ->each(function (User $user) use (&$map) {
+                $first = strtolower(trim((string) $user->first_name));
+                $last  = strtolower(trim((string) $user->last_name));
+
+                if ($first !== '' && $last !== '') {
+                    $map["{$first} {$last}"] = $user->id; // "abigail allan"
+                    $map["{$last} {$first}"] = $user->id; // "allan abigail"
+                    $map[$last]              = $user->id; // "allan" (last name only, lower priority)
+                } elseif ($last !== '') {
+                    $map[$last] = $user->id;
+                } elseif ($first !== '') {
+                    $map[$first] = $user->id;
+                }
+            });
+
+        return $map;
+    }
+
+    /**
+     * Parses a raw "Link Builder" CSV value and returns the matching admin user ID, or null.
+     *
+     * Supported formats (as exported from Google Sheets):
+     *   "2. Allan, Abigail"  → last="Allan", first="Abigail"
+     *   "1. Coley, Tyler"    → last="Coley",  first="Tyler"
+     *   "Tyler Coley"        → first="Tyler", last="Coley"
+     *   "Allan"              → last="Allan" only
+     */
+    private function resolveAdminUserId(string $raw, array $admin_user_name_map): ?int
+    {
+        // Strip leading "N. " prefix (e.g. "2. Allan, Abigail" → "Allan, Abigail")
+        $value = preg_replace('/^\d+\.\s*/', '', $raw);
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        // Format: "LastName, FirstName" (Google Sheets export style)
+        if (str_contains($value, ',')) {
+            [$last, $first] = array_map('trim', explode(',', $value, 2));
+            $last  = strtolower($last);
+            $first = strtolower($first);
+
+            // Try "firstname lastname"
+            if ($first !== '' && $last !== '' && isset($admin_user_name_map["{$first} {$last}"])) {
+                return $admin_user_name_map["{$first} {$last}"];
+            }
+            // Try "lastname firstname"
+            if ($last !== '' && $first !== '' && isset($admin_user_name_map["{$last} {$first}"])) {
+                return $admin_user_name_map["{$last} {$first}"];
+            }
+            // Try last name alone
+            if ($last !== '' && isset($admin_user_name_map[$last])) {
+                return $admin_user_name_map[$last];
+            }
+
+            return null;
+        }
+
+        // No comma — try as "Firstname Lastname" or a single word
+        $normalized = strtolower($value);
+
+        if (isset($admin_user_name_map[$normalized])) {
+            return $admin_user_name_map[$normalized];
+        }
+
+        // Split by space and try last word as last name
+        $parts = preg_split('/\s+/', $normalized);
+        if (is_array($parts) && count($parts) >= 2) {
+            $last_word = end($parts);
+            if ($last_word !== false && isset($admin_user_name_map[$last_word])) {
+                return $admin_user_name_map[$last_word];
+            }
+        }
+
+        return null;
     }
 
     /**

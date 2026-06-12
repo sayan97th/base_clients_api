@@ -109,6 +109,129 @@ class OrderPlacementsController extends Controller
     }
 
     /**
+     * POST /api/link-building/order-placements/export
+     *
+     * Exports order placements as CSV or JSON (for client-side Excel generation).
+     * When `row_ids` is provided, only those specific rows are exported (ownership is
+     * enforced through the same user-scoped union query). When `format=json`, returns
+     * a JSON array instead of streaming a file — the frontend uses this to generate XLSX.
+     */
+    public function exportPost(Request $request): StreamedResponse|JsonResponse
+    {
+        $request->validate([
+            'search'    => ['nullable', 'string', 'max:255'],
+            'status'    => ['nullable', 'string'],
+            'row_ids'   => ['nullable', 'array'],
+            'row_ids.*' => ['string'],
+            'format'    => ['nullable', 'string', 'in:csv,json'],
+        ]);
+
+        /** @var User $user */
+        $user    = auth()->user();
+        $search  = $request->get('search');
+        $status  = $request->get('status');
+        $row_ids = (array) $request->get('row_ids', []);
+        $format  = $request->get('format', 'csv');
+
+        $purchased = DB::table('link_building_order_placements as p')
+            ->join('link_building_order_items as i', 'i.id', '=', 'p.order_item_id')
+            ->join('link_building_orders as o', 'o.id', '=', 'i.order_id')
+            ->join('dr_tiers as dt', 'dt.id', '=', 'i.dr_tier_id')
+            ->where('o.user_id', $user->id)
+            ->where('o.is_hidden', false)
+            ->select([
+                'p.id',
+                DB::raw("COALESCE(NULLIF(p.order_id, ''), CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
+                'o.created_at as start_date',
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), dt.label) as dr_type"),
+                'p.keyword',
+                'p.landing_page',
+                DB::raw('COALESCE(p.status, o.status) as status'),
+                'p.live_link',
+                'p.completed_date',
+                'p.dr',
+            ]);
+
+        $assigned = DB::table('link_building_order_placements as p')
+            ->whereNotNull('p.user_id')
+            ->whereNull('p.order_item_id')
+            ->where('p.user_id', $user->id)
+            ->select([
+                'p.id',
+                DB::raw("COALESCE(p.order_id, CONCAT('BL-', UPPER(SUBSTR(REPLACE(p.id, '-', ''), 1, 10)))) as display_order_id"),
+                'p.created_at as start_date',
+                DB::raw("COALESCE(NULLIF(TRIM(REPLACE(REPLACE(p.link_type, ' External', ''), ' Internal', '')), ''), 'Admin Assigned') as dr_type"),
+                'p.keyword',
+                'p.landing_page',
+                'p.status',
+                'p.live_link',
+                DB::raw('NULL as completed_date'),
+                DB::raw('NULL as dr'),
+            ]);
+
+        $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
+
+        $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
+            ->mergeBindings($query);
+
+        if (! empty($row_ids)) {
+            $wrapped->whereIn('id', $row_ids);
+        } else {
+            if ($search) {
+                $wrapped->where(function ($q) use ($search) {
+                    $q->where('display_order_id', 'like', "%{$search}%")
+                      ->orWhere('keyword', 'like', "%{$search}%")
+                      ->orWhere('landing_page', 'like', "%{$search}%")
+                      ->orWhere('status', 'like', "%{$search}%");
+                });
+            }
+            if ($status) {
+                $wrapped->where('status', $status);
+            }
+        }
+
+        if ($format === 'json') {
+            $data = $wrapped->get()->map(fn ($row) => (array) $row)->values();
+            return response()->json(['data' => $data]);
+        }
+
+        $filename = 'order-placements-' . now()->format('Y-m-d') . '.csv';
+
+        $headers = [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $columns = ['Order ID', 'Start Date', 'DR Type', 'Keyword', 'Landing Page', 'Status', 'Live Link', 'Completed Date', 'DR'];
+
+        $callback = function () use ($wrapped, $columns) {
+            $handle = fopen('php://output', 'w');
+
+            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($handle, $columns);
+
+            foreach ($wrapped->cursor() as $row) {
+                $row = (array) $row;
+                fputcsv($handle, [
+                    $row['display_order_id'] ?? '',
+                    $row['start_date']        ?? '',
+                    $row['dr_type']           ?? '',
+                    $row['keyword']           ?? '',
+                    $row['landing_page']      ?? '',
+                    $row['status']            ?? '',
+                    $row['live_link']         ?? '',
+                    $row['completed_date']    ?? '',
+                    $row['dr']               ?? '',
+                ]);
+            }
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
      * GET /api/link-building/order-placements/export
      *
      * Streams a CSV file containing all of the authenticated client's placements,

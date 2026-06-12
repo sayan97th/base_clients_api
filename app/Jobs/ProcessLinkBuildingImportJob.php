@@ -7,6 +7,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,9 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
     {
         $this->saveProgress('processing', 0);
 
+        // Pre-load company name → user_id map for client auto-assignment.
+        $client_company_map = $this->loadClientCompanyMap();
+
         $processed = 0;
         $created   = 0;
         $updated   = 0;
@@ -131,6 +135,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 if (! $this->passesDateFilter((string) ($mapped['request_date'] ?? ''))) {
                     $skipped++;
                     continue;
+                }
+
+                // Resolve client user from the "client" column matched against User.company.
+                $client_value = strtolower(trim((string) ($mapped['client'] ?? '')));
+                if ($client_value !== '' && isset($client_company_map[$client_value])) {
+                    $mapped['_resolved_user_id'] = $client_company_map[$client_value];
                 }
 
                 $chunk[] = $mapped;
@@ -251,6 +261,11 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
     /**
      * Bulk-upserts a chunk via a single SQL statement.
      * Returns [created_count, updated_count].
+     *
+     * After the main upsert, any rows where the CSV "client" column matched a client
+     * account by company name receive a separate user_id UPDATE. This two-phase
+     * approach preserves manually-set assignments for rows where no company match
+     * was found in the CSV.
      */
     private function processChunk(array $chunk, array &$errors): array
     {
@@ -266,15 +281,24 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             ->flip()
             ->all();
 
-        $rows          = [];
-        $chunk_created = 0;
-        $chunk_updated = 0;
+        $rows                = [];
+        $user_id_assignments = []; // order_id => user_id for company-matched rows
+        $chunk_created       = 0;
+        $chunk_updated       = 0;
 
         foreach ($chunk as $row) {
             $order_id = trim($row['order_id'] ?? '');
 
             if ($order_id === '') {
                 continue;
+            }
+
+            // Extract the internally-resolved user_id (not a real CSV column).
+            $resolved_user_id = $row['_resolved_user_id'] ?? null;
+            unset($row['_resolved_user_id']);
+
+            if ($resolved_user_id !== null) {
+                $user_id_assignments[$order_id] = $resolved_user_id;
             }
 
             $row['updated_at'] = $now;
@@ -349,7 +373,32 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             }
         }
 
+        // Phase 2: set user_id for rows whose CSV "client" column matched a client's company.
+        // Done after the main upsert so existing manual assignments are not cleared for
+        // rows where no company match was found.
+        foreach ($user_id_assignments as $order_id => $uid) {
+            DB::table('link_building_order_placements')
+                ->where('order_id', $order_id)
+                ->update(['user_id' => $uid, 'updated_at' => $now]);
+        }
+
         return [$chunk_created, $chunk_updated];
+    }
+
+    /**
+     * Builds a normalized map of company name (lowercase) → user_id for all client
+     * accounts that have a company field set. Used during import to auto-assign orders
+     * to the matching client account based on the CSV "client" column.
+     */
+    private function loadClientCompanyMap(): array
+    {
+        return User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->whereNotNull('company')
+            ->where('company', '!=', '')
+            ->orderBy('id')
+            ->get(['id', 'company'])
+            ->mapWithKeys(fn ($u) => [strtolower(trim((string) $u->company)) => $u->id])
+            ->all();
     }
 
     private function passesLinkTypeFilter(string $link_type): bool

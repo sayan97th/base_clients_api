@@ -24,7 +24,7 @@ class UserController extends Controller
         $search         = $request->query('search');
         $role           = $request->query('role');
         $sort_field     = $request->query('sort_field', 'created_at');
-        $sort_direction = $request->query('sort_direction', 'asc');
+        $sort_direction = $request->query('sort_direction', 'desc');
         $date_from      = $request->query('date_from');
         $date_to        = $request->query('date_to');
         $email_status   = $request->query('email_status');

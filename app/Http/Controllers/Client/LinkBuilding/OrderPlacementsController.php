@@ -58,6 +58,7 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 'p.completed_date',
                 'p.dr',
+                'p.request_date',
                 DB::raw("'purchased' as source"),
                 // Human-readable BL-format ID: use the placement's own order_id when present,
                 // otherwise derive from the placement UUID (matches toApiArray() derivedOrderId logic).
@@ -80,6 +81,7 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
                 DB::raw('NULL as dr'),
+                'p.request_date',
                 DB::raw("'admin_assigned' as source"),
                 // Human-readable BL-format ID: use the stored order_id (always BL-XXXXX for admin-created)
                 // or derive from placement UUID as fallback (matches toApiArray() derivedOrderId logic).
@@ -87,8 +89,7 @@ class OrderPlacementsController extends Controller
             ]);
 
         // Union both sets, apply search/status filters, then paginate.
-        $query = $purchased->unionAll($assigned)
-            ->orderBy('start_date', 'desc');
+        $query = $purchased->unionAll($assigned);
 
         // Wrap in a subquery so we can filter on the union result.
         // addBinding(..., 'from') places all inner bindings in the 'from' slot, which
@@ -121,6 +122,8 @@ class OrderPlacementsController extends Controller
         if ($dr_type) {
             $wrapped->where('dr_type', 'like', '%' . $dr_type . '%');
         }
+
+        $wrapped->orderByRaw('request_date DESC, start_date DESC');
 
         $paginator = $wrapped->paginate($per_page);
 
@@ -181,6 +184,7 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 'p.completed_date',
                 'p.dr',
+                'p.request_date',
             ]);
 
         $assigned = DB::table('link_building_order_placements as p')
@@ -198,9 +202,10 @@ class OrderPlacementsController extends Controller
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
                 DB::raw('NULL as dr'),
+                'p.request_date',
             ]);
 
-        $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
+        $query = $purchased->unionAll($assigned);
 
         $wrapped = DB::table(DB::raw("({$query->toSql()}) as combined"))
             ->addBinding($query->getBindings(), 'from');
@@ -233,6 +238,8 @@ class OrderPlacementsController extends Controller
             }
         }
 
+        $wrapped->orderByRaw('request_date DESC, start_date DESC');
+
         if ($format === 'json') {
             $data = $wrapped->get()->map(fn ($row) => (array) $row)->values();
             return response()->json(['data' => $data]);
@@ -245,7 +252,7 @@ class OrderPlacementsController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        $columns = ['Order ID', 'Start Date', 'DR Type', 'Keyword', 'Landing Page', 'Status', 'Live Link', 'Completed Date', 'DR'];
+        $columns = ['Order ID', 'Start Date', 'Request Date', 'DR Type', 'Keyword', 'Landing Page', 'Status', 'Live Link', 'Completed Date', 'DR'];
 
         $callback = function () use ($wrapped, $columns) {
             $handle = fopen('php://output', 'w');
@@ -258,6 +265,7 @@ class OrderPlacementsController extends Controller
                 fputcsv($handle, [
                     $row['display_order_id'] ?? '',
                     $row['start_date']        ?? '',
+                    $row['request_date']      ?? '',
                     $row['dr_type']           ?? '',
                     $row['keyword']           ?? '',
                     $row['landing_page']      ?? '',

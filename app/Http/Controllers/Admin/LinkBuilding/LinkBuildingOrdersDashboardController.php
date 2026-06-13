@@ -300,6 +300,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     public function assignableClients(): JsonResponse
     {
         $clients = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->orderByRaw("CASE WHEN TRIM(COALESCE(first_name, '')) = '' AND TRIM(COALESCE(last_name, '')) = '' THEN 1 ELSE 0 END")
             ->orderBy('first_name')
             ->orderBy('last_name')
             ->get(['id', 'first_name', 'last_name', 'email', 'profile_photo_url'])

@@ -17,27 +17,36 @@ class OrderPlacementsController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'per_page'  => ['nullable', 'integer', 'min:1'],
-            'page'      => ['nullable', 'integer', 'min:1'],
-            'search'    => ['nullable', 'string', 'max:255'],
-            'status'    => ['nullable', 'string', Rule::in([
+            'per_page'       => ['nullable', 'integer', 'min:1'],
+            'page'           => ['nullable', 'integer', 'min:1'],
+            'search'         => ['nullable', 'string', 'max:255'],
+            'status'         => ['nullable', 'string', Rule::in([
                 'pending', 'processing', 'completed', 'cancelled', 'new_request', 'payment_pending',
                 'New Request', 'Reviewing', 'Ordered', 'Pending', 'Live', 'Quality Control',
                 'Cancelled', 'Partnership Check', 'Approved', 'Not Approved', 'Ready', 'Rejected', 'Scheduled',
             ])],
-            'date_from' => ['nullable', 'date_format:Y-m-d'],
-            'date_to'   => ['nullable', 'date_format:Y-m-d'],
-            'dr_type'   => ['nullable', 'string', 'max:50'],
+            'date_from'      => ['nullable', 'date_format:Y-m-d'],
+            'date_to'        => ['nullable', 'date_format:Y-m-d'],
+            'dr_type'        => ['nullable', 'string', 'max:50'],
+            'sort_by'        => ['nullable', 'string', Rule::in([
+                'display_order_id', 'request_date', 'dr_type', 'keyword',
+                'landing_page', 'status', 'live_link', 'completed_date', 'dr',
+            ])],
+            'sort_direction' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
         ]);
 
         /** @var User $user */
-        $user      = auth()->user();
-        $per_page  = min((int) $request->get('per_page', 10), 100);
-        $search    = $request->get('search');
-        $status    = $request->get('status');
-        $date_from = $request->get('date_from');
-        $date_to   = $request->get('date_to');
-        $dr_type   = $request->get('dr_type');
+        $user           = auth()->user();
+        $per_page       = min((int) $request->get('per_page', 10), 100);
+        $search         = $request->get('search');
+        $status         = $request->get('status');
+        $date_from      = $request->get('date_from');
+        $date_to        = $request->get('date_to');
+        $dr_type        = $request->get('dr_type');
+        $sort_by        = $request->get('sort_by');
+        $sort_direction = in_array(strtolower((string) $request->get('sort_direction', 'asc')), ['asc', 'desc'])
+            ? strtolower($request->get('sort_direction', 'asc'))
+            : 'asc';
 
         // ── Client-purchased placements (linked via order → order_item → placement) ──
         $purchased = DB::table('link_building_order_placements as p')
@@ -123,7 +132,19 @@ class OrderPlacementsController extends Controller
             $wrapped->where('dr_type', 'like', '%' . $dr_type . '%');
         }
 
-        $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
+        // Columns stored as MM/DD/YYYY strings require STR_TO_DATE for correct ordering.
+        $date_string_columns = ['request_date', 'completed_date'];
+
+        if ($sort_by) {
+            $dir = strtoupper($sort_direction);
+            if (in_array($sort_by, $date_string_columns)) {
+                $wrapped->orderByRaw("ISNULL({$sort_by}) ASC, STR_TO_DATE({$sort_by}, '%m/%d/%Y') {$dir}");
+            } else {
+                $wrapped->orderByRaw("ISNULL({$sort_by}) ASC, {$sort_by} {$dir}");
+            }
+        } else {
+            $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
+        }
 
         $paginator = $wrapped->paginate($per_page);
 

@@ -82,6 +82,7 @@ class UserController extends Controller
                   ->orWhere('users.last_name', 'LIKE', "%{$search}%")
                   ->orWhereRaw("CONCAT(users.first_name, ' ', users.last_name) LIKE ?", ["%{$search}%"])
                   ->orWhere('users.email', 'LIKE', "%{$search}%")
+                  ->orWhere('users.company', 'LIKE', "%{$search}%")
                   ->orWhereHas('organization', fn ($q) => $q->where('name', 'LIKE', "%{$search}%"));
             });
         }

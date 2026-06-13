@@ -123,7 +123,7 @@ class OrderPlacementsController extends Controller
             $wrapped->where('dr_type', 'like', '%' . $dr_type . '%');
         }
 
-        $wrapped->orderByRaw('request_date DESC, start_date DESC');
+        $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
 
         $paginator = $wrapped->paginate($per_page);
 
@@ -238,7 +238,7 @@ class OrderPlacementsController extends Controller
             }
         }
 
-        $wrapped->orderByRaw('request_date DESC, start_date DESC');
+        $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
 
         if ($format === 'json') {
             $data = $wrapped->get()->map(fn ($row) => (array) $row)->values();

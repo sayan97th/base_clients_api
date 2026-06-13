@@ -200,7 +200,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
             'current_traffic', 'dr_formula', 'current_poc', 'current_price',
             'lb_tl_approval', 'approval_date', 'final_price', 'currency',
-            'assigned_admin_user_id',
+            'assigned_admin_user_id', 'user_id',
         ];
 
         $safe_updates = array_filter(

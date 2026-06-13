@@ -112,11 +112,11 @@ class OrderPlacementsController extends Controller
         }
 
         if ($date_from) {
-            $wrapped->where('start_date', '>=', $date_from);
+            $wrapped->whereRaw("STR_TO_DATE(request_date, '%m/%d/%Y') >= ?", [$date_from]);
         }
 
         if ($date_to) {
-            $wrapped->where('start_date', '<=', $date_to . ' 23:59:59');
+            $wrapped->whereRaw("STR_TO_DATE(request_date, '%m/%d/%Y') <= ?", [$date_to]);
         }
 
         if ($dr_type) {
@@ -226,11 +226,11 @@ class OrderPlacementsController extends Controller
             }
 
             if ($date_from) {
-                $wrapped->where('start_date', '>=', $date_from);
+                $wrapped->whereRaw("STR_TO_DATE(request_date, '%m/%d/%Y') >= ?", [$date_from]);
             }
 
             if ($date_to) {
-                $wrapped->where('start_date', '<=', $date_to . ' 23:59:59');
+                $wrapped->whereRaw("STR_TO_DATE(request_date, '%m/%d/%Y') <= ?", [$date_to]);
             }
 
             if ($dr_type) {

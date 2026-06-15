@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Client\StoreClientRequest;
 use App\Http\Resources\UserWithRolesResource;
 use App\Mail\ClientWelcomeEmail;
+use App\Mail\ClientPlatformWelcomeEmail;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -57,6 +59,61 @@ class AdminClientController extends Controller
                 'message' => 'Something went wrong. Please try again.',
             ], 500);
         }
+    }
+
+    /**
+     * POST /api/admin/clients/bulk-welcome-email
+     */
+    public function bulkSendWelcomeEmail(Request $request): JsonResponse
+    {
+        $send_to_all = $request->boolean('send_to_all', false);
+        $user_ids    = $request->input('user_ids', []);
+
+        if (! $send_to_all && empty($user_ids)) {
+            return response()->json(['message' => 'No clients selected.'], 422);
+        }
+
+        $query = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']));
+
+        if (! $send_to_all) {
+            $query->whereIn('id', $user_ids);
+        }
+
+        $users = $query->get();
+
+        $sent    = 0;
+        $skipped = 0;
+        $failed  = 0;
+
+        foreach ($users as $user) {
+            if ($user->last_login_at !== null) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                $token     = Password::createToken($user);
+                $email     = urlencode($user->email);
+                $reset_url = rtrim(config('app.frontend_url'), '/') . "/reset-password/{$token}?email={$email}";
+
+                Mail::to($user->email)->send(new ClientPlatformWelcomeEmail(
+                    user: $user,
+                    reset_url: $reset_url,
+                ));
+
+                $sent++;
+            } catch (\Throwable $e) {
+                $failed++;
+            }
+        }
+
+        return response()->json([
+            'message' => "Bulk welcome email operation completed.",
+            'sent'    => $sent,
+            'skipped' => $skipped,
+            'failed'  => $failed,
+        ]);
     }
 
     /**

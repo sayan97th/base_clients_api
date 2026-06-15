@@ -335,14 +335,35 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $admin_user_id_assignments[$order_id] = $resolved_admin_user_id;
             }
 
+            $is_new_record = !isset($existing_set[$order_id]);
+
+            // For new records, derive created_at from request_date so the stored
+            // timestamp reflects the actual order date rather than the import time.
+            // Existing records always retain their original created_at (excluded from
+            // the ON DUPLICATE KEY UPDATE clause below).
+            $created_at_for_row = $now;
+            if ($is_new_record) {
+                $request_date_str = (string) ($row['request_date'] ?? '');
+                if ($request_date_str !== '') {
+                    try {
+                        $parsed = Carbon::createFromFormat('m/d/Y', $request_date_str);
+                        if ($parsed instanceof Carbon) {
+                            $created_at_for_row = $parsed->startOfDay()->toDateTimeString();
+                        }
+                    } catch (\Exception) {
+                        // Fall back to import time
+                    }
+                }
+            }
+
             // Always include id and created_at so every row in the chunk has identical
             // column shape. For existing rows, ON DUPLICATE KEY UPDATE excludes both
             // columns, so the generated values are never written to the database.
             $row['id']         = Str::uuid()->toString();
-            $row['created_at'] = $now;
+            $row['created_at'] = $created_at_for_row;
             $row['updated_at'] = $now;
 
-            if (!isset($existing_set[$order_id])) {
+            if ($is_new_record) {
                 $chunk_created++;
             } else {
                 $chunk_updated++;
@@ -394,11 +415,25 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                             ->update(array_merge($row, ['updated_at' => $now]));
                         $chunk_updated++;
                     } else {
+                        // Derive created_at from request_date for new records.
+                        $request_date_str      = (string) ($row['request_date'] ?? '');
+                        $created_at_for_insert = $now;
+                        if ($request_date_str !== '') {
+                            try {
+                                $parsed = Carbon::createFromFormat('m/d/Y', $request_date_str);
+                                if ($parsed instanceof Carbon) {
+                                    $created_at_for_insert = $parsed->startOfDay()->toDateTimeString();
+                                }
+                            } catch (\Exception) {
+                                // Fall back to import time
+                            }
+                        }
+
                         DB::table('link_building_order_placements')->insert(
                             array_merge($row, [
                                 'id'         => Str::uuid()->toString(),
                                 'order_id'   => $order_id,
-                                'created_at' => $now,
+                                'created_at' => $created_at_for_insert,
                                 'updated_at' => $now,
                             ])
                         );
@@ -587,8 +622,11 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return true;
         }
 
+        // Records without a request_date are not excluded by the date range filter.
+        // The filter restricts records whose date falls outside the range, not records
+        // that simply lack a date value.
         if ($date_str === '') {
-            return false;
+            return true;
         }
 
         $date = $this->parseDateFlexible($date_str);
@@ -630,8 +668,13 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
      *   4/15/2026           → n/j/Y  (no leading zero on month/day)
      *   04/15/26            → m/d/y  (2-digit year)
      *   4/15/26             → n/j/y
-     *   04/15/26 12:38 PM   → m/d/y g:i A  (Google Sheets datetime export)
-     *   4/15/2026 12:38 PM  → n/j/Y g:i A
+     *   04/15/26 12:38 PM   → date extracted, time discarded (Google Sheets datetime export)
+     *   4/15/2026 12:38 PM  → date extracted, time discarded
+     *
+     * Strategy: extract the leading m/d/y(y) portion first and parse only that.
+     * Since we always normalize to start-of-day, the time suffix is irrelevant and
+     * stripping it avoids "trailing data" exceptions that Carbon raises in strict mode
+     * when a shorter format (e.g. m/d/y) is tried against a full datetime string.
      *
      * Returns a Carbon instance (normalized to start-of-day) or null if the value
      * cannot be parsed by any known format.
@@ -644,20 +687,40 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return null;
         }
 
-        // Collapse multiple spaces and uppercase the AM/PM suffix for consistent matching.
+        // Normalize whitespace.
         $value = preg_replace('/\s+/', ' ', $value);
+
+        // Primary strategy: extract only the date component (m/d/yy or m/d/yyyy)
+        // and ignore any trailing time suffix such as " 12:38 PM".
+        // This reliably handles every Google Sheets export variant because the date
+        // always appears first and we never need the time portion.
+        if (preg_match('#^(\d{1,2}/\d{1,2}/\d{2,4})#', $value, $date_match)) {
+            $date_part = $date_match[1];
+            foreach (['m/d/Y', 'n/j/Y', 'm/d/y', 'n/j/y'] as $fmt) {
+                try {
+                    $parsed = Carbon::createFromFormat($fmt, $date_part);
+                    if ($parsed instanceof Carbon) {
+                        return $parsed->startOfDay();
+                    }
+                } catch (\Exception) {
+                    // Try next format
+                }
+            }
+        }
+
+        // Fallback: normalise AM/PM casing and try full datetime formats.
         $value = preg_replace_callback('/\s+(am|pm)$/i', fn ($m) => ' ' . strtoupper($m[1]), $value);
 
         $formats = [
-            'm/d/Y',          // 04/15/2026
-            'n/j/Y',          // 4/15/2026
-            'm/d/y',          // 04/15/26
-            'n/j/y',          // 4/15/26
-            'm/d/Y g:i A',    // 04/15/2026 12:38 PM
-            'n/j/Y g:i A',    // 4/15/2026 12:38 PM
-            'm/d/y g:i A',    // 04/15/26 12:38 PM
-            'n/j/y g:i A',    // 4/15/26 12:38 PM
-            'm/d/Y h:i A',    // 04/15/2026 12:38 PM (zero-padded hour variant)
+            'm/d/Y',
+            'n/j/Y',
+            'm/d/y',
+            'n/j/y',
+            'm/d/Y g:i A',
+            'n/j/Y g:i A',
+            'm/d/y g:i A',
+            'n/j/y g:i A',
+            'm/d/Y h:i A',
             'n/j/Y h:i A',
             'm/d/y h:i A',
             'n/j/y h:i A',

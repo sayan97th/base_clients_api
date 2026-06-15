@@ -246,6 +246,16 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return $value === '' ? 'New Request' : $this->normalizeStatus($value);
         }
 
+        // Normalize any date column to MM/DD/YYYY for consistent storage regardless
+        // of the source format (e.g. "4/15/2026", "04/15/26 12:38 PM", etc.).
+        if (in_array($db_col, ['request_date', 'estimated_delivery_date', 'live_link_date', 'approval_date'], true)) {
+            if ($value === '') {
+                return null;
+            }
+            $parsed = $this->parseDateFlexible($value);
+            return $parsed !== null ? $parsed->format('m/d/Y') : $value;
+        }
+
         if (in_array($db_col, self::URL_COLUMNS, true)) {
             if ($value === '') {
                 return null;
@@ -581,26 +591,94 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return false;
         }
 
-        try {
-            $date = Carbon::createFromFormat('m/d/Y', $date_str)->startOfDay();
+        $date = $this->parseDateFlexible($date_str);
 
-            if ($this->date_from !== null) {
+        if ($date === null) {
+            return false;
+        }
+
+        if ($this->date_from !== null) {
+            try {
                 $from = Carbon::createFromFormat('m/d/Y', $this->date_from)->startOfDay();
                 if ($date->lt($from)) {
                     return false;
                 }
+            } catch (\Exception) {
+                // Invalid date_from bound — skip this check
             }
+        }
 
-            if ($this->date_to !== null) {
+        if ($this->date_to !== null) {
+            try {
                 $to = Carbon::createFromFormat('m/d/Y', $this->date_to)->endOfDay();
                 if ($date->gt($to)) {
                     return false;
                 }
+            } catch (\Exception) {
+                // Invalid date_to bound — skip this check
             }
+        }
 
-            return true;
+        return true;
+    }
+
+    /**
+     * Parses a date string using multiple format attempts to handle the variety of
+     * formats that may appear in imported CSV files:
+     *
+     *   04/15/2026          → m/d/Y
+     *   4/15/2026           → n/j/Y  (no leading zero on month/day)
+     *   04/15/26            → m/d/y  (2-digit year)
+     *   4/15/26             → n/j/y
+     *   04/15/26 12:38 PM   → m/d/y g:i A  (Google Sheets datetime export)
+     *   4/15/2026 12:38 PM  → n/j/Y g:i A
+     *
+     * Returns a Carbon instance (normalized to start-of-day) or null if the value
+     * cannot be parsed by any known format.
+     */
+    private function parseDateFlexible(string $raw): ?Carbon
+    {
+        $value = trim($raw);
+
+        if ($value === '') {
+            return null;
+        }
+
+        // Collapse multiple spaces and uppercase the AM/PM suffix for consistent matching.
+        $value = preg_replace('/\s+/', ' ', $value);
+        $value = preg_replace_callback('/\s+(am|pm)$/i', fn ($m) => ' ' . strtoupper($m[1]), $value);
+
+        $formats = [
+            'm/d/Y',          // 04/15/2026
+            'n/j/Y',          // 4/15/2026
+            'm/d/y',          // 04/15/26
+            'n/j/y',          // 4/15/26
+            'm/d/Y g:i A',    // 04/15/2026 12:38 PM
+            'n/j/Y g:i A',    // 4/15/2026 12:38 PM
+            'm/d/y g:i A',    // 04/15/26 12:38 PM
+            'n/j/y g:i A',    // 4/15/26 12:38 PM
+            'm/d/Y h:i A',    // 04/15/2026 12:38 PM (zero-padded hour variant)
+            'n/j/Y h:i A',
+            'm/d/y h:i A',
+            'n/j/y h:i A',
+        ];
+
+        foreach ($formats as $format) {
+            try {
+                $parsed = Carbon::createFromFormat($format, $value);
+                if ($parsed instanceof Carbon) {
+                    return $parsed->startOfDay();
+                }
+            } catch (\Exception) {
+                // Try next format
+            }
+        }
+
+        // Last resort: let Carbon attempt a generic parse.
+        try {
+            return Carbon::parse($value)->startOfDay();
         } catch (\Exception) {
-            return false;
+            return null;
         }
     }
 

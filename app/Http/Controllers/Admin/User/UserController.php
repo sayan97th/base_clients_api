@@ -20,15 +20,16 @@ class UserController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $type           = $request->query('type');
-        $search         = $request->query('search');
-        $role           = $request->query('role');
-        $sort_field     = $request->query('sort_field', 'created_at');
-        $sort_direction = $request->query('sort_direction', 'desc');
-        $date_from      = $request->query('date_from');
-        $date_to        = $request->query('date_to');
-        $email_status   = $request->query('email_status');
-        $account_status = $request->query('account_status');
+        $type                  = $request->query('type');
+        $search                = $request->query('search');
+        $role                  = $request->query('role');
+        $sort_field            = $request->query('sort_field', 'created_at');
+        $sort_direction        = $request->query('sort_direction', 'desc');
+        $date_from             = $request->query('date_from');
+        $date_to               = $request->query('date_to');
+        $email_status          = $request->query('email_status');
+        $account_status        = $request->query('account_status');
+        $password_reset_status = $request->query('password_reset_status');
 
         if ($type !== null && !\in_array($type, ['staff', 'client'], true)) {
             return response()->json([
@@ -105,6 +106,12 @@ class UserController extends Controller
             $query->where('users.is_active', true);
         } elseif ($account_status === 'disabled') {
             $query->where('users.is_active', false);
+        }
+
+        if ($password_reset_status === 'pending') {
+            $query->whereNull('users.password_reset_at');
+        } elseif ($password_reset_status === 'reset') {
+            $query->whereNotNull('users.password_reset_at');
         }
 
         $users = $query->paginate(15);

@@ -34,9 +34,9 @@ class AdminClientController extends Controller
             return response()->json(['message' => 'This action is only available for client accounts.'], 422);
         }
 
-        if ($user->last_login_at !== null) {
+        if ($user->password_reset_at !== null) {
             return response()->json([
-                'message' => 'This client has already logged in. The welcome email cannot be resent.',
+                'message' => 'This client has already reset their password. The welcome email cannot be resent.',
             ], 422);
         }
 
@@ -87,7 +87,7 @@ class AdminClientController extends Controller
         $failed  = 0;
 
         foreach ($users as $user) {
-            if ($user->last_login_at !== null) {
+            if ($user->password_reset_at !== null) {
                 $skipped++;
                 continue;
             }

@@ -29,7 +29,8 @@ class PasswordResetController extends Controller
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user, string $password) {
                 $user->forceFill([
-                    'password' => Hash::make($password),
+                    'password'           => Hash::make($password),
+                    'password_reset_at'  => now(),
                 ])->save();
             }
         );

@@ -66,7 +66,7 @@
 
                                 <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.7;">
                                     We've been working hard behind the scenes to bring you a completely redesigned
-                                    <strong>{{ $platform_name }}</strong> — and today, we're opening the doors for you to
+                                    <strong>{{ $platform_name }}</strong>, and today, we're opening the doors for you to
                                     step inside.
                                 </p>
 
@@ -96,7 +96,7 @@
                                                 <span style="display:inline-block;width:20px;height:20px;background-color:#ecfdf5;border-radius:50%;text-align:center;line-height:20px;font-size:11px;">✓</span>
                                             </td>
                                             <td style="padding:6px 0 6px 8px;font-size:14px;color:#374151;vertical-align:top;">
-                                                <strong>Faster performance</strong> — built on modern infrastructure
+                                                <strong>Better Organization</strong> — see reports and resources in a central hub
                                             </td>
                                         </tr>
                                         <tr>
@@ -129,7 +129,8 @@
 
                                 {{-- Expiry note --}}
                                 <p style="margin:0 0 28px;font-size:12px;color:#9ca3af;text-align:center;">
-                                    This link expires in <strong>60 minutes</strong>. Need a new one? Contact our support team.
+                                    This link expires in <strong>7 days</strong>. Need a new one? Contact
+                                    <a href="mailto:{{ $support_email }}" style="color:{{ $brand_color }};text-decoration:none;">{{ $support_email }}</a>.
                                 </p>
 
                                 <hr style="border:none;border-top:1px solid #f1f5f9;margin:0 0 24px;">

@@ -13,15 +13,15 @@ class ClientPlatformWelcomeEmail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public string $platform_name;
+    public string $platform_name = 'BASE Portal';
     public string $platform_url;
+    public string $support_email = 'abbyallan@basesearchmarketing.com';
 
     public function __construct(
         public readonly User $user,
         public readonly string $reset_url,
     ) {
-        $this->platform_name = config('app.name');
-        $this->platform_url  = rtrim(config('app.frontend_url'), '/');
+        $this->platform_url = rtrim(config('app.frontend_url'), '/');
     }
 
     public function envelope(): Envelope

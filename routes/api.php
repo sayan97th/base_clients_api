@@ -525,6 +525,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('clients', [AdminClientController::class, 'store']);
             Route::post('clients/bulk-welcome-email', [AdminClientController::class, 'bulkSendWelcomeEmail']);
+            Route::post('clients/send-test-welcome-email', [AdminClientController::class, 'sendTestWelcomeEmail']);
             Route::post('clients/{user_id}/resend-welcome-email', [AdminClientController::class, 'resendWelcomeEmail']);
 
             // Client invitations

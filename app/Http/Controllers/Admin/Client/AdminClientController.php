@@ -51,6 +51,8 @@ class AdminClientController extends Controller
                 temporary_password: null,
             ));
 
+            $user->update(['welcome_email_sent_at' => now()]);
+
             return response()->json([
                 'message' => 'Welcome email has been resent successfully.',
             ]);
@@ -102,6 +104,8 @@ class AdminClientController extends Controller
                     reset_url: $reset_url,
                 ));
 
+                $user->update(['welcome_email_sent_at' => now()]);
+
                 $sent++;
             } catch (\Throwable $e) {
                 $failed++;
@@ -114,6 +118,41 @@ class AdminClientController extends Controller
             'skipped' => $skipped,
             'failed'  => $failed,
         ]);
+    }
+
+    /**
+     * POST /api/admin/clients/send-test-welcome-email
+     */
+    public function sendTestWelcomeEmail(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+
+        $preview_email = $request->input('email');
+
+        $dummy_user                       = new User();
+        $dummy_user->first_name           = 'Test';
+        $dummy_user->last_name            = 'Client';
+        $dummy_user->email                = $preview_email;
+        $dummy_user->welcome_email_sent_at = null;
+
+        $reset_url = rtrim(config('app.frontend_url'), '/') . '/reset-password/preview-token?email=' . urlencode($preview_email);
+
+        try {
+            Mail::to($preview_email)->send(new ClientPlatformWelcomeEmail(
+                user: $dummy_user,
+                reset_url: $reset_url,
+            ));
+
+            return response()->json([
+                'message' => "Test welcome email sent to {$preview_email}.",
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to send test email. Please try again.',
+            ], 500);
+        }
     }
 
     /**
@@ -149,6 +188,8 @@ class AdminClientController extends Controller
                     reset_url: $reset_url,
                     temporary_password: $temporary_password,
                 ));
+
+                $user->update(['welcome_email_sent_at' => now()]);
             }
 
             $user->load(['roles:id,name,display_name', 'organization']);

@@ -42,6 +42,7 @@ class User extends Authenticatable implements JWTSubject
         'credit_balance',
         'last_login_at',
         'password_reset_at',
+        'welcome_email_sent_at',
         'company',
         'google_studio_link',
         'referrer_id',
@@ -71,6 +72,7 @@ class User extends Authenticatable implements JWTSubject
             'credit_balance'        => 'decimal:2',
             'last_login_at'         => 'datetime',
             'password_reset_at'     => 'datetime',
+            'welcome_email_sent_at' => 'datetime',
         ];
     }
 

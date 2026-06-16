@@ -245,8 +245,9 @@ class ImportLegacyOrders extends Command
         $created_at   = $this->parseDate($first_row['created_at'] ?? null) ?? now();
         $updated_at   = $this->parseDate($first_row['updated_at'] ?? null) ?? $created_at;
         $notes        = $this->buildOrderNotes($base_id, $first_row);
+        // The legacy "price" column is already the line total (price * quantity), not a per-unit price.
         $total_amount = array_sum(array_map(
-            fn (array $r) => $this->parseDecimal($r['price'] ?? '0') * max(1, (int) ($r['quantity'] ?? 1)),
+            fn (array $r) => $this->parseDecimal($r['price'] ?? '0'),
             $rows
         ));
 
@@ -271,7 +272,9 @@ class ImportLegacyOrders extends Command
             $service_name = trim($item_row['service'] ?? '');
             $dr_tier      = $this->resolveDrTier($service_name);
             $quantity     = max(1, (int) ($item_row['quantity'] ?? 1));
-            $unit_price   = $this->parseDecimal($item_row['price'] ?? '0');
+            // The legacy "price" column is already the line total (price * quantity), not a per-unit price.
+            $line_total   = $this->parseDecimal($item_row['price'] ?? '0');
+            $unit_price   = round($line_total / $quantity, 2);
 
             if ($dr_tier === null) {
                 continue;
@@ -283,7 +286,7 @@ class ImportLegacyOrders extends Command
                 'dr_tier_id' => $dr_tier->id,
                 'quantity'   => $quantity,
                 'unit_price' => $unit_price,
-                'subtotal'   => round($unit_price * $quantity, 2),
+                'subtotal'   => $line_total,
             ]);
         }
     }

@@ -7,6 +7,7 @@ use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
 use App\Models\User;
+use App\Services\LegacyInvoiceService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,11 @@ class ImportLegacyOrders extends Command
                             {--skip-unknown-users : Skip rows whose client email is not found in the system}';
 
     protected $description = 'Import legacy orders from a CSV export file into the new application';
+
+    public function __construct(private readonly LegacyInvoiceService $legacy_invoice_service)
+    {
+        parent::__construct();
+    }
 
     /** @var array<string, array<string, string>> Transaction rows keyed by their exact legacy id. */
     private array $transactions_by_id = [];
@@ -224,7 +230,7 @@ class ImportLegacyOrders extends Command
             return 'imported';
         }
 
-        DB::transaction(function () use ($base_id, $rows, $user): void {
+        $order = DB::transaction(function () use ($base_id, $rows, $user): LinkBuildingOrder {
             $order_data = $this->buildOrderData($base_id, $rows, $user);
 
             $order = new LinkBuildingOrder();
@@ -232,7 +238,13 @@ class ImportLegacyOrders extends Command
             $order->save();
 
             $this->createOrderItems($order->id, $rows);
+
+            return $order;
         });
+
+        // Generate the invoice from the order's just-imported total/items so a
+        // newly imported legacy order always has a matching invoice right away.
+        $this->legacy_invoice_service->syncForOrder($order->fresh(['items.drTier', 'user', 'orderCoupons.coupon']));
 
         return 'imported';
     }
@@ -248,6 +260,12 @@ class ImportLegacyOrders extends Command
             LinkBuildingOrderItem::where('order_id', $order->id)->delete();
             $this->createOrderItems($order->id, $rows);
         });
+
+        // Re-syncing the invoice here is what keeps invoice totals from drifting
+        // out of sync with the order whenever the legacy CSV is re-imported and
+        // the order's total_amount or items change (e.g. due to reconciliation
+        // against the transactions export, or corrected service/tier mapping).
+        $this->legacy_invoice_service->syncForOrder($order->fresh(['items.drTier', 'user', 'orderCoupons.coupon']));
     }
 
     private function buildOrderData(string $base_id, array $rows, User $user): array

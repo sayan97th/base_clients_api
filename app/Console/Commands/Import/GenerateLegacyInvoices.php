@@ -3,16 +3,14 @@
 namespace App\Console\Commands\Import;
 
 use App\Models\Invoice;
-use App\Models\InvoiceCouponDiscount;
 use App\Models\LinkBuildingOrder;
-use App\Models\User;
-use Carbon\Carbon;
+use App\Services\LegacyInvoiceService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 class GenerateLegacyInvoices extends Command
 {
+    # php artisan invoices:generate-legacy --update
     protected $signature = 'invoices:generate-legacy
                             {--all    : Generate invoices for all legacy orders, including those that already have one}
                             {--update : Update existing invoices instead of skipping them}
@@ -20,13 +18,10 @@ class GenerateLegacyInvoices extends Command
 
     protected $description = 'Generate invoice records for legacy-imported link-building orders';
 
-    private const ORDER_STATUS_TO_INVOICE_STATUS = [
-        'completed'       => 'paid',
-        'processing'      => 'unpaid',
-        'pending'         => 'unpaid',
-        'payment_pending' => 'unpaid',
-        'cancelled'       => 'void',
-    ];
+    public function __construct(private readonly LegacyInvoiceService $legacy_invoice_service)
+    {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -101,7 +96,7 @@ class GenerateLegacyInvoices extends Command
                 if ($dry_run) {
                     return 'updated';
                 }
-                $this->updateInvoice($existing, $order);
+                $this->legacy_invoice_service->refresh($existing, $order);
                 return 'updated';
             }
             return 'skipped';
@@ -111,133 +106,8 @@ class GenerateLegacyInvoices extends Command
             return 'generated';
         }
 
-        $this->createInvoice($order);
+        $this->legacy_invoice_service->generate($order);
         return 'generated';
-    }
-
-    private function createInvoice(LinkBuildingOrder $order): void
-    {
-        $user            = $order->user;
-        $invoice_status  = $this->resolveInvoiceStatus($order->status);
-        $subtotal_amount = (float) $order->items->sum('subtotal');
-        $total_amount    = (float) $order->total_amount;
-        $discount_amount = (float) ($order->coupon_discount_amount ?? 0.0);
-        $date_issued     = $order->created_at ?? now();
-        $date_paid       = $invoice_status === 'paid' ? $date_issued : null;
-
-        DB::transaction(function () use (
-            $order, $user, $invoice_status,
-            $subtotal_amount, $total_amount, $discount_amount,
-            $date_issued, $date_paid
-        ): void {
-            $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
-
-            $invoice = Invoice::create([
-                'unique_id'       => $unique_id,
-                'invoice_number'  => $invoice_number,
-                'user_id'         => $user->id,
-                'order_id'        => $order->id,
-                'session_id'      => $order->session_id,
-                'session_title'   => $order->session_title,
-                'status'          => $invoice_status,
-                'payment_method'  => $invoice_status === 'paid' ? 'Account Balance' : 'Pending',
-                'currency_type'   => 'usd',
-                'subtotal_amount' => $subtotal_amount,
-                'discount_amount' => $discount_amount,
-                'discount_type'   => $discount_amount > 0 ? 'legacy' : null,
-                'total_amount'    => $total_amount,
-                'credit_amount'   => 0.0,
-                'notes'           => $order->order_notes,
-                'date_issued'     => $date_issued,
-                'date_due'        => $date_issued,
-                'date_paid'       => $date_paid,
-            ]);
-
-            $this->createLineItems($invoice, $order);
-            $this->createCouponDiscounts($invoice, $order);
-        });
-    }
-
-    private function updateInvoice(Invoice $invoice, LinkBuildingOrder $order): void
-    {
-        $invoice_status  = $this->resolveInvoiceStatus($order->status);
-        $subtotal_amount = (float) $order->items->sum('subtotal');
-        $total_amount    = (float) $order->total_amount;
-        $discount_amount = (float) ($order->coupon_discount_amount ?? 0.0);
-        $date_issued     = $order->created_at ?? now();
-        $date_paid       = $invoice_status === 'paid' ? $date_issued : null;
-
-        DB::transaction(function () use (
-            $invoice, $order, $invoice_status,
-            $subtotal_amount, $total_amount, $discount_amount,
-            $date_issued, $date_paid
-        ): void {
-            $invoice->forceFill([
-                'session_id'      => $order->session_id,
-                'session_title'   => $order->session_title,
-                'status'          => $invoice_status,
-                'payment_method'  => $invoice_status === 'paid' ? 'Account Balance' : 'Pending',
-                'subtotal_amount' => $subtotal_amount,
-                'discount_amount' => $discount_amount,
-                'discount_type'   => $discount_amount > 0 ? 'legacy' : null,
-                'total_amount'    => $total_amount,
-                'notes'           => $order->order_notes,
-                'date_issued'     => $date_issued,
-                'date_due'        => $date_issued,
-                'date_paid'       => $date_paid,
-            ]);
-            $invoice->save();
-
-            $invoice->lineItems()->delete();
-            $invoice->couponDiscounts()->delete();
-
-            $this->createLineItems($invoice, $order);
-            $this->createCouponDiscounts($invoice, $order);
-        });
-    }
-
-    private function createLineItems(Invoice $invoice, LinkBuildingOrder $order): void
-    {
-        foreach ($order->items as $item) {
-            $item_name = $item->drTier
-                ? $item->drTier->label . ' Link Building'
-                : 'Link Building Service';
-
-            $invoice->lineItems()->create([
-                'order_id'     => $order->id,
-                'item_name'    => $item_name,
-                'product_type' => 'link_building',
-                'price'        => $item->unit_price,
-                'quantity'     => $item->quantity,
-                'item_total'   => $item->subtotal,
-            ]);
-        }
-    }
-
-    private function createCouponDiscounts(Invoice $invoice, LinkBuildingOrder $order): void
-    {
-        foreach ($order->orderCoupons as $order_coupon) {
-            $coupon = $order_coupon->coupon;
-
-            if (!$coupon) {
-                continue;
-            }
-
-            InvoiceCouponDiscount::create([
-                'invoice_id'      => $invoice->id,
-                'code'            => $coupon->code,
-                'name'            => $coupon->name ?? null,
-                'discount_type'   => $coupon->discount_type,
-                'discount_value'  => $coupon->discount_value,
-                'discount_amount' => $order_coupon->discount_amount,
-            ]);
-        }
-    }
-
-    private function resolveInvoiceStatus(string $order_status): string
-    {
-        return self::ORDER_STATUS_TO_INVOICE_STATUS[$order_status] ?? 'unpaid';
     }
 
     private function printSummary(array $stats, array $errors, bool $dry_run): void

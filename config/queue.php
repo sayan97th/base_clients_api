@@ -131,14 +131,25 @@ return [
     | Email Throttle Settings
     |--------------------------------------------------------------------------
     |
-    | These settings control the rate at which emails are dispatched to
-    | prevent SMTP providers from blocking the application due to
-    | excessive email sending in a short period of time.
+    | These settings control the rate at which bulk emails are dispatched to
+    | prevent SMTP provider rate limits and connection blocking.
+    |
+    | email_throttle_delay: Seconds between each individual email job dispatch.
+    |   Each job in a bulk batch is staggered by this many seconds (job N runs
+    |   after N * delay seconds). Lower values send faster but risk SMTP blocks.
+    |   Recommended values:
+    |     Mailtrap free:  3-5  (≈12–20 emails/min)
+    |     Mailtrap paid:  1-2  (≈30–60 emails/min)
+    |     Production SMTP: 1   (≈60 emails/min)
+    |
+    | email_rate_limit: Safety cap — max emails per minute via the queue rate
+    |   limiter (used as a secondary guard). Derived automatically from
+    |   email_throttle_delay in AppServiceProvider when left at 0.
     |
     */
 
-    'email_rate_limit' => (int) env('QUEUE_EMAIL_RATE_LIMIT', 10),
+    'email_throttle_delay' => (int) env('QUEUE_EMAIL_THROTTLE_DELAY', 3),
 
-    'email_throttle_delay' => (int) env('QUEUE_EMAIL_THROTTLE_DELAY', 5),
+    'email_rate_limit' => (int) env('QUEUE_EMAIL_RATE_LIMIT', 0),
 
 ];

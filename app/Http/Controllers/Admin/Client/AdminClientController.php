@@ -112,14 +112,21 @@ class AdminClientController extends Controller
             'total_count' => count($ids),
         ]);
 
-        foreach ($ids as $user_id) {
-            SendWelcomeEmailInBatchJob::dispatch($user_id, $batch->id);
+        $throttle_delay = (int) config('queue.email_throttle_delay', 3);
+
+        foreach ($ids as $index => $user_id) {
+            $delay_seconds = $index * $throttle_delay;
+
+            SendWelcomeEmailInBatchJob::dispatch($user_id, $batch->id)
+                ->delay(now()->addSeconds($delay_seconds));
         }
 
         return response()->json([
-            'batch_id'    => $batch->id,
-            'total_count' => $batch->total_count,
-            'status'      => $batch->status,
+            'batch_id'          => $batch->id,
+            'total_count'       => $batch->total_count,
+            'status'            => $batch->status,
+            'throttle_delay'    => $throttle_delay,
+            'estimated_seconds' => (count($ids) - 1) * $throttle_delay,
         ], 202);
     }
 

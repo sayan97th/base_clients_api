@@ -36,9 +36,10 @@ class AppServiceProvider extends ServiceProvider
     protected function configureRateLimiting(): void
     {
         RateLimiter::for('emails', function (object $job) {
-            return Limit::perMinute(
-                (int) config('queue.email_rate_limit', 10)
-            );
+            $throttle_delay = max(1, (int) config('queue.email_throttle_delay', 3));
+            $per_minute     = (int) floor(60 / $throttle_delay);
+
+            return Limit::perMinute($per_minute);
         });
     }
 

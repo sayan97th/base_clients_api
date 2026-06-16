@@ -340,7 +340,10 @@ class LinkBuildingOrdersDashboardController extends Controller
         $file      = $request->file('file');
         $import_id = Str::uuid()->toString();
 
-        // Date range defaults: last year to today (external only)
+        // Date range defaults: only a lower bound (last year) is applied automatically.
+        // No automatic upper bound — defaulting date_to to "today" would silently reject
+        // legitimately future-dated request_date values (e.g. orders scheduled ahead),
+        // which caused valid records to be skipped without explanation.
         $apply_date_filter = filter_var($request->input('apply_date_filter', true), FILTER_VALIDATE_BOOLEAN);
         $date_from         = null;
         $date_to           = null;
@@ -352,7 +355,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
             $date_to = filled($request->input('date_to'))
                 ? $request->input('date_to')
-                : Carbon::now()->format('m/d/Y');
+                : null;
         }
 
         $link_type_filter = $request->input('link_type_filter', 'external_only');

@@ -88,13 +88,14 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         // Pre-load admin user name → user_id map for link builder auto-assignment.
         $admin_user_name_map = $this->loadAdminUserNameMap();
 
-        $processed = 0;
-        $created   = 0;
-        $updated   = 0;
-        $skipped   = 0;
-        $assigned  = 0;
-        $errors    = [];
-        $chunk     = [];
+        $processed       = 0;
+        $created         = 0;
+        $updated         = 0;
+        $skipped         = 0;
+        $assigned        = 0;
+        $errors          = [];
+        $skipped_records = []; // per-row skip log: [['order_id' => ..., 'reason' => ...]]
+        $chunk           = [];
 
         try {
             $full_path = Storage::path($this->file_path);
@@ -133,11 +134,32 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
 
                 if (! $this->passesLinkTypeFilter((string) ($mapped['link_type'] ?? ''))) {
                     $skipped++;
+                    if (count($skipped_records) < 100) {
+                        $skipped_records[] = [
+                            'order_id' => $order_id,
+                            'reason'   => 'Link type not included in filter: "' . ($mapped['link_type'] ?? '') . '"',
+                        ];
+                    }
                     continue;
                 }
 
                 if (! $this->passesDateFilter((string) ($mapped['request_date'] ?? ''))) {
                     $skipped++;
+                    if (count($skipped_records) < 100) {
+                        $req_date = (string) ($mapped['request_date'] ?? '');
+                        $bounds   = [];
+                        if ($this->date_from !== null) {
+                            $bounds[] = 'after ' . $this->date_from;
+                        }
+                        if ($this->date_to !== null) {
+                            $bounds[] = 'before ' . $this->date_to;
+                        }
+                        $range_desc = $bounds !== [] ? ' (must be ' . implode(' and ', $bounds) . ')' : '';
+                        $skipped_records[] = [
+                            'order_id' => $order_id,
+                            'reason'   => 'Request date (' . $req_date . ') is outside the import filter range' . $range_desc,
+                        ];
+                    }
                     continue;
                 }
 
@@ -166,7 +188,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                     $processed += count($chunk);
                     $chunk      = [];
 
-                    $this->saveProgress('processing', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors);
+                    $this->saveProgress('processing', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors, $skipped_records);
                 }
             }
 
@@ -181,7 +203,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             fclose($handle);
             Storage::delete($this->file_path);
 
-            $this->saveProgress('completed', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors);
+            $this->saveProgress('completed', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors, $skipped_records);
 
         } catch (\Exception $e) {
             Log::error('LBO CSV import failed', [
@@ -191,7 +213,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
 
             $this->saveProgress('failed', $processed + $skipped, $created, $updated, $skipped, $assigned, [
                 ['order_id' => '—', 'message' => 'Import failed: ' . $e->getMessage()],
-            ]);
+            ], $skipped_records);
         }
     }
 
@@ -261,7 +283,18 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 return null;
             }
 
-            return preg_match('#^https?://#i', $value) ? $value : 'https://' . $value;
+            // If value already has a URL scheme, keep it (truncated to 2000 chars for safety).
+            if (preg_match('#^https?://#i', $value)) {
+                return mb_substr($value, 0, 2000);
+            }
+
+            // Values containing spaces are plain text/notes, not URLs — store as-is
+            // rather than corrupting them with a "https://" prefix.
+            if (str_contains($value, ' ')) {
+                return mb_substr($value, 0, 2000);
+            }
+
+            return 'https://' . mb_substr($value, 0, 1993); // 1993 + 7 = 2000
         }
 
         return $value === '' ? null : $value;
@@ -272,13 +305,19 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         $lower = strtolower(preg_replace('/[^a-zA-Z\s]/', ' ', $raw));
         $lower = trim(preg_replace('/\s+/', ' ', $lower));
 
-        if (str_contains($lower, 'quality')) return 'Quality Control';
-        if (str_contains($lower, 'live'))    return 'Live';
-        if (str_contains($lower, 'cancel'))  return 'Cancelled';
-        if (str_contains($lower, 'review'))  return 'Reviewing';
-        if (str_contains($lower, 'ordered')) return 'Ordered';
-        if (str_contains($lower, 'order'))   return 'Ordered';
-        if (str_contains($lower, 'pending')) return 'Pending';
+        if (str_contains($lower, 'quality'))       return 'Quality Control';
+        if (str_contains($lower, 'live'))          return 'Live';
+        if (str_contains($lower, 'cancel'))        return 'Cancelled';
+        if (str_contains($lower, 'review'))        return 'Reviewing';
+        if (str_contains($lower, 'not approved'))  return 'Not Approved'; // before 'approved'
+        if (str_contains($lower, 'approved'))      return 'Approved';
+        if (str_contains($lower, 'ordered'))       return 'Ordered';
+        if (str_contains($lower, 'order'))         return 'Ordered';
+        if (str_contains($lower, 'pending'))       return 'Pending';
+        if (str_contains($lower, 'partnership'))   return 'Partnership Check';
+        if (str_contains($lower, 'ready'))         return 'Ready';
+        if (str_contains($lower, 'rejected'))      return 'Rejected';
+        if (str_contains($lower, 'scheduled'))     return 'Scheduled';
 
         return 'New Request';
     }
@@ -752,17 +791,19 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         int $updated = 0,
         int $skipped = 0,
         int $assigned = 0,
-        array $errors = []
+        array $errors = [],
+        array $skipped_records = []
     ): void {
         Cache::put("lbo_import_{$this->import_id}", [
-            'status'    => $status,
-            'total'     => $this->total_rows,
-            'processed' => $processed,
-            'created'   => $created,
-            'updated'   => $updated,
-            'skipped'   => $skipped,
-            'assigned'  => $assigned,
-            'errors'    => array_slice($errors, 0, 50),
+            'status'          => $status,
+            'total'           => $this->total_rows,
+            'processed'       => $processed,
+            'created'         => $created,
+            'updated'         => $updated,
+            'skipped'         => $skipped,
+            'assigned'        => $assigned,
+            'errors'          => array_slice($errors, 0, 50),
+            'skipped_records' => array_slice($skipped_records, 0, 100),
         ], now()->addHours(2));
     }
 }

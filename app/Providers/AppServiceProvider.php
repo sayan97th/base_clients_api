@@ -3,9 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
 
@@ -18,7 +16,6 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->configureRateLimiting();
         $this->configureHorizon();
         $this->configurePasswordReset();
     }
@@ -30,16 +27,6 @@ class AppServiceProvider extends ServiceProvider
             $email        = urlencode($user->getEmailForPasswordReset());
 
             return "{$frontend_url}/reset-password/{$token}?email={$email}";
-        });
-    }
-
-    protected function configureRateLimiting(): void
-    {
-        RateLimiter::for('emails', function (object $job) {
-            $throttle_delay = max(1, (int) config('queue.email_throttle_delay', 3));
-            $per_minute     = (int) floor(60 / $throttle_delay);
-
-            return Limit::perMinute($per_minute);
         });
     }
 

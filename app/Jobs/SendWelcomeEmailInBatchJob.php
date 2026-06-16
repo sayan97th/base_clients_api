@@ -9,7 +9,6 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -19,19 +18,14 @@ class SendWelcomeEmailInBatchJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 2;
-    public array $backoff = [30, 60];
+    public int $tries = 3;
+    public array $backoff = [15, 30, 60];
 
     public function __construct(
         public int $user_id,
         public int $batch_id,
     ) {
         $this->onQueue('emails');
-    }
-
-    public function middleware(): array
-    {
-        return [new RateLimited('emails')];
     }
 
     public function handle(): void

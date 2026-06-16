@@ -326,6 +326,9 @@ class LinkBuildingOrdersDashboardController extends Controller
      *   date_from          (string MM/DD/YYYY)    — lower bound for request_date
      *   date_to            (string MM/DD/YYYY)    — upper bound for request_date
      *   link_type_filter   (string)               — 'external_only' (default) | 'internal_only' | 'all'
+     *   only_new_records   (bool, default false)  — when true, rows whose order_id already
+     *                                                exists are left untouched and counted as
+     *                                                skipped instead of being updated
      */
     public function import(Request $request): JsonResponse
     {
@@ -335,6 +338,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'date_from'        => ['sometimes', 'nullable', 'string'],
             'date_to'          => ['sometimes', 'nullable', 'string'],
             'link_type_filter' => ['sometimes', 'string', 'in:external_only,internal_only,all'],
+            'only_new_records' => ['sometimes', 'boolean'],
         ]);
 
         $file      = $request->file('file');
@@ -359,6 +363,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         $link_type_filter = $request->input('link_type_filter', 'external_only');
+        $only_new_records = filter_var($request->input('only_new_records', false), FILTER_VALIDATE_BOOLEAN);
 
         $stored_path = $file->storeAs(
             'imports/link-building',
@@ -377,7 +382,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'errors'    => [],
         ], now()->addHours(2));
 
-        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows, $date_from, $date_to, $link_type_filter);
+        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows, $date_from, $date_to, $link_type_filter, $only_new_records);
 
         return response()->json([
             'message'   => 'Import queued successfully.',

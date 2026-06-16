@@ -76,6 +76,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         private readonly ?string $date_from = null,
         private readonly ?string $date_to   = null,
         private readonly string  $link_type_filter = 'external_only',
+        private readonly bool    $only_new_records = false,
     ) {}
 
     public function handle(): void
@@ -181,11 +182,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $chunk[] = $mapped;
 
                 if (count($chunk) >= self::CHUNK_SIZE) {
-                    [$c, $u, $a] = $this->processChunk($chunk, $errors);
+                    [$c, $u, $a, $s] = $this->processChunk($chunk, $errors, $skipped_records);
                     $created   += $c;
                     $updated   += $u;
                     $assigned  += $a;
-                    $processed += count($chunk);
+                    $skipped   += $s;
+                    $processed += count($chunk) - $s;
                     $chunk      = [];
 
                     $this->saveProgress('processing', $processed + $skipped, $created, $updated, $skipped, $assigned, $errors, $skipped_records);
@@ -193,11 +195,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             }
 
             if (!empty($chunk)) {
-                [$c, $u, $a] = $this->processChunk($chunk, $errors);
+                [$c, $u, $a, $s] = $this->processChunk($chunk, $errors, $skipped_records);
                 $created   += $c;
                 $updated   += $u;
                 $assigned  += $a;
-                $processed += count($chunk);
+                $skipped   += $s;
+                $processed += count($chunk) - $s;
             }
 
             fclose($handle);
@@ -324,14 +327,19 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
 
     /**
      * Bulk-upserts a chunk via a single SQL statement.
-     * Returns [created_count, updated_count].
+     * Returns [created_count, updated_count, assigned_count, skipped_count].
      *
      * After the main upsert, any rows where the CSV "client" column matched a client
      * account by company name receive a separate user_id UPDATE. This two-phase
      * approach preserves manually-set assignments for rows where no company match
      * was found in the CSV.
+     *
+     * When $only_new_records is enabled, rows whose order_id already exists in the
+     * table are left completely untouched (not upserted, not assigned) and are
+     * counted as skipped instead — this lets the client import strictly additive
+     * batches without risking changes to records that have already been reviewed.
      */
-    private function processChunk(array $chunk, array &$errors): array
+    private function processChunk(array $chunk, array &$errors, array &$skipped_records): array
     {
         $now           = now()->toDateTimeString();
         $chunk_order_ids = array_filter(
@@ -350,11 +358,25 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         $admin_user_id_assignments = []; // order_id => admin user_id for link-builder-matched rows
         $chunk_created             = 0;
         $chunk_updated             = 0;
+        $chunk_skipped             = 0;
 
         foreach ($chunk as $row) {
             $order_id = trim($row['order_id'] ?? '');
 
             if ($order_id === '') {
+                continue;
+            }
+
+            $is_new_record = !isset($existing_set[$order_id]);
+
+            if ($this->only_new_records && !$is_new_record) {
+                $chunk_skipped++;
+                if (count($skipped_records) < 100) {
+                    $skipped_records[] = [
+                        'order_id' => $order_id,
+                        'reason'   => 'Order already exists — skipped because "Import new records only" is enabled',
+                    ];
+                }
                 continue;
             }
 
@@ -373,8 +395,6 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             if ($resolved_admin_user_id !== null) {
                 $admin_user_id_assignments[$order_id] = $resolved_admin_user_id;
             }
-
-            $is_new_record = !isset($existing_set[$order_id]);
 
             // For new records, derive created_at from request_date so the stored
             // timestamp reflects the actual order date rather than the import time.
@@ -412,7 +432,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         }
 
         if (empty($rows)) {
-            return [0, 0, 0];
+            return [0, 0, 0, $chunk_skipped];
         }
 
         // Exclude id, order_id, and created_at from the ON DUPLICATE KEY UPDATE clause.
@@ -507,7 +527,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 ->update(['assigned_admin_user_id' => $admin_uid, 'updated_at' => $now]);
         }
 
-        return [$chunk_created, $chunk_updated, $chunk_assigned];
+        return [$chunk_created, $chunk_updated, $chunk_assigned, $chunk_skipped];
     }
 
     /**

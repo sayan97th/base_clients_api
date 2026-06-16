@@ -524,7 +524,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Client management — super_admin, admin only
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('clients', [AdminClientController::class, 'store']);
-            Route::post('clients/bulk-welcome-email', [AdminClientController::class, 'bulkSendWelcomeEmail']);
+            Route::get('clients/pending-count', [AdminClientController::class, 'getPendingClientsCount']);
+            Route::post('clients/bulk-welcome-email', [AdminClientController::class, 'startBulkWelcomeEmail']);
+            Route::get('clients/bulk-email-batch/{batch_id}', [AdminClientController::class, 'getBulkEmailBatchStatus']);
+            Route::post('clients/bulk-email-batch/{batch_id}/stop', [AdminClientController::class, 'stopBulkEmailBatch']);
             Route::post('clients/send-test-welcome-email', [AdminClientController::class, 'sendTestWelcomeEmail']);
             Route::post('clients/{user_id}/resend-welcome-email', [AdminClientController::class, 'resendWelcomeEmail']);
 

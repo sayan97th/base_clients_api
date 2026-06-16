@@ -15,8 +15,10 @@ use Throwable;
 
 class ImportLegacyOrders extends Command
 {
+    # php artisan orders:import --update --skip-unknown-users
     protected $signature = 'orders:import
                             {file? : Path to the CSV orders export file (defaults to import/orders/base-orders.csv)}
+                            {transactions-file? : Path to the CSV transactions export file used to reconcile order totals (defaults to import/transactions/base-transactions.csv)}
                             {--dry-run : Preview the import without saving any data}
                             {--force : Skip duplicate orders instead of failing}
                             {--update : Update existing orders and credit transactions instead of skipping them}
@@ -24,11 +26,18 @@ class ImportLegacyOrders extends Command
 
     protected $description = 'Import legacy orders from a CSV export file into the new application';
 
+    /** @var array<string, array<string, string>> Transaction rows keyed by their exact legacy id. */
+    private array $transactions_by_id = [];
+
+    /** @var array<string, array<int, array{id: string, refund: float}>> Refund entries keyed by the Stripe charge (transaction_id) they apply to. */
+    private array $refund_rows_by_charge = [];
+
     private const STATUS_MAP = [
         'working'        => 'processing',
         'order complete' => 'completed',
         'completed'      => 'completed',
         'cancelled'      => 'cancelled',
+        'canceled'       => 'cancelled',
         'pending'        => 'pending',
     ];
 
@@ -63,11 +72,12 @@ class ImportLegacyOrders extends Command
 
     public function handle(): int
     {
-        $file_path          = $this->argument('file') ?? base_path('import/orders/base-orders.csv');
-        $dry_run            = (bool) $this->option('dry-run');
-        $force              = (bool) $this->option('force');
-        $update             = (bool) $this->option('update');
-        $skip_unknown_users = (bool) $this->option('skip-unknown-users');
+        $file_path              = $this->argument('file') ?? base_path('import/orders/base-orders.csv');
+        $transactions_file_path = $this->argument('transactions-file') ?? base_path('import/transactions/base-transactions.csv');
+        $dry_run                = (bool) $this->option('dry-run');
+        $force                  = (bool) $this->option('force');
+        $update                 = (bool) $this->option('update');
+        $skip_unknown_users     = (bool) $this->option('skip-unknown-users');
 
         if (!$this->argument('file')) {
             $this->line("No file specified. Using default: <fg=yellow>import/orders/base-orders.csv</>");
@@ -87,6 +97,8 @@ class ImportLegacyOrders extends Command
             $this->newLine();
         }
 
+        $this->loadTransactions($transactions_file_path);
+
         $rows = $this->parseCsv($file_path);
         if ($rows === null) {
             return self::FAILURE;
@@ -102,6 +114,7 @@ class ImportLegacyOrders extends Command
 
         $this->line('<fg=yellow>Note:</> Orders paid with "Account Balance" (CRD) are imported as link-building orders.');
         $this->line('<fg=yellow>Note:</> Credit-package purchases are imported as credit transactions.');
+        $this->line('<fg=yellow>Note:</> Order totals are reconciled against <fg=white>' . basename($transactions_file_path) . '</> (' . count($this->transactions_by_id) . ' matched record(s)) to net out cancellations/refunds.');
         $this->newLine();
 
         if (!$this->confirm('Proceed with the import?', true)) {
@@ -250,6 +263,13 @@ class ImportLegacyOrders extends Command
             fn (array $r) => $this->parseDecimal($r['price'] ?? '0'),
             $rows
         ));
+
+        // Prefer the actual settled amount from the transactions export — it nets out
+        // cancellations/refunds that never show up as their own row in the orders export.
+        $reconciled_total = $this->reconcileTotalFromTransaction($base_id);
+        if ($reconciled_total !== null) {
+            $total_amount = $reconciled_total;
+        }
 
         return [
             'user_id'                  => $user->id,
@@ -546,9 +566,122 @@ class ImportLegacyOrders extends Command
         return (float) ($cleaned ?: '0');
     }
 
+    /**
+     * Like parseDecimal(), but preserves a leading "-" so refund amounts
+     * (always stored as negative numbers in the transactions export) stay negative.
+     */
+    private function parseSignedDecimal(?string $value): float
+    {
+        $trimmed = trim($value ?? '');
+        if ($trimmed === '') {
+            return 0.0;
+        }
+
+        $is_negative = str_starts_with($trimmed, '-');
+        $amount      = $this->parseDecimal($trimmed);
+
+        return $is_negative ? -$amount : $amount;
+    }
+
     private function nullable(?string $value): ?string
     {
         $trimmed = trim($value ?? '');
         return $trimmed !== '' ? $trimmed : null;
+    }
+
+    /**
+     * Loads the transactions export and indexes it for reconciliation:
+     *  - transactions_by_id: exact legacy id -> row, used to find the settled total/subtotal
+     *    for a given order (only the row whose id has no "_N" suffix represents the order itself —
+     *    suffixed rows are usually separate renewal charges or refund/fee line items).
+     *  - refund_by_charge: sum of refund amounts grouped by Stripe charge (transaction_id), so a
+     *    refund recorded under a different row id can still be matched back to the original charge.
+     */
+    private function loadTransactions(string $file_path): void
+    {
+        if (!file_exists($file_path)) {
+            $this->warn("Transactions file not found, skipping total reconciliation: {$file_path}");
+            $this->newLine();
+            return;
+        }
+
+        $handle = fopen($file_path, 'r');
+        if ($handle === false) {
+            $this->warn("Cannot open transactions file, skipping total reconciliation: {$file_path}");
+            $this->newLine();
+            return;
+        }
+
+        $headers = null;
+
+        while (($columns = fgetcsv($handle, 0, ',', '"')) !== false) {
+            if ($headers === null) {
+                $headers = array_map(
+                    fn (string $h) => rtrim(trim(ltrim($h, "\xEF\xBB\xBF")), ':'),
+                    $columns
+                );
+                continue;
+            }
+
+            $col_count    = \count($columns);
+            $header_count = \count($headers);
+
+            if ($col_count === 0 || $col_count === 1 && trim($columns[0]) === '') {
+                continue;
+            }
+
+            if ($col_count < $header_count) {
+                $columns = array_pad($columns, $header_count, '');
+            } elseif ($col_count > $header_count) {
+                $columns = \array_slice($columns, 0, $header_count);
+            }
+
+            $row = array_combine($headers, $columns);
+            $id  = trim($row['id'] ?? '');
+
+            if ($id !== '') {
+                $this->transactions_by_id[$id] = $row;
+            }
+
+            $charge_id = trim($row['transaction_id'] ?? '');
+            $refund    = $this->parseSignedDecimal($row['refund'] ?? null);
+
+            if ($charge_id !== '' && $refund !== 0.0) {
+                $this->refund_rows_by_charge[$charge_id][] = ['id' => $id, 'refund' => $refund];
+            }
+        }
+
+        fclose($handle);
+    }
+
+    /**
+     * Returns the settled total for an order, taken from its matching transaction
+     * (net of any refund issued against the same Stripe charge), or null if no
+     * matching transaction was found — callers should fall back to the orders export sum.
+     */
+    private function reconcileTotalFromTransaction(string $base_id): ?float
+    {
+        $transaction = $this->transactions_by_id[$base_id] ?? null;
+        if ($transaction === null) {
+            return null;
+        }
+
+        $total = $this->nullable($transaction['total'] ?? null) !== null
+            ? $this->parseDecimal($transaction['total'])
+            : $this->parseDecimal($transaction['subtotal'] ?? '0');
+
+        $charge_id = trim($transaction['transaction_id'] ?? '');
+
+        // A refund recorded on the matched row itself is already netted into its
+        // total/subtotal — only apply refunds that live on a separate row (e.g. a
+        // dedicated "Refund for #XYZ" line) sharing the same Stripe charge.
+        $refund_adjustment = 0.0;
+        foreach ($this->refund_rows_by_charge[$charge_id] ?? [] as $entry) {
+            if ($entry['id'] !== $base_id) {
+                $refund_adjustment += $entry['refund'];
+            }
+        }
+
+        return max(0.0, round($total + $refund_adjustment, 2));
     }
 }

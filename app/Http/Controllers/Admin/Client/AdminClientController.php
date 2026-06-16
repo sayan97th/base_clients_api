@@ -67,25 +67,37 @@ class AdminClientController extends Controller
 
     /**
      * GET /api/admin/clients/pending-count
+     * Returns two counts used to inform the bulk-send confirmation modal:
+     *   not_sent_count              → clients who have never received the welcome email
+     *   password_reset_pending_count → clients whose password has not been reset yet
      */
     public function getPendingClientsCount(): JsonResponse
     {
-        $count = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
-            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']))
-            ->whereNull('password_reset_at')
-            ->count();
+        $base = User::whereHas('roles', fn ($q) => $q->where('name', 'client'))
+            ->whereDoesntHave('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin', 'staff']));
 
-        return response()->json(['pending_count' => $count]);
+        $not_sent_count               = (clone $base)->whereNull('welcome_email_sent_at')->count();
+        $password_reset_pending_count = (clone $base)->whereNull('password_reset_at')->count();
+
+        return response()->json([
+            'not_sent_count'               => $not_sent_count,
+            'password_reset_pending_count' => $password_reset_pending_count,
+        ]);
     }
 
     /**
      * POST /api/admin/clients/bulk-welcome-email
      * Creates a batch and dispatches individual queue jobs for each recipient.
      * Returns immediately with a batch_id so the frontend can poll for progress.
+     *
+     * send_mode values (only relevant when send_to_all is true):
+     *   'not_sent'    → targets clients whose welcome email has never been sent
+     *   'all_pending' → targets clients who have not yet reset their password
      */
     public function startBulkWelcomeEmail(Request $request): JsonResponse
     {
         $send_to_all = $request->boolean('send_to_all', false);
+        $send_mode   = $request->input('send_mode', 'not_sent'); // 'not_sent' | 'all_pending'
         $user_ids    = $request->input('user_ids', []);
 
         if (! $send_to_all && empty($user_ids)) {
@@ -97,8 +109,12 @@ class AdminClientController extends Controller
 
         if (! $send_to_all) {
             $query->whereIn('id', $user_ids);
-        } else {
+            $send_mode = 'all_pending'; // selected clients: skip those who already reset
+        } elseif ($send_mode === 'all_pending') {
             $query->whereNull('password_reset_at');
+        } else {
+            $send_mode = 'not_sent';
+            $query->whereNull('welcome_email_sent_at');
         }
 
         $ids = $query->pluck('id')->all();
@@ -109,6 +125,7 @@ class AdminClientController extends Controller
 
         $batch = BulkEmailBatch::create([
             'status'      => 'processing',
+            'send_mode'   => $send_mode,
             'total_count' => count($ids),
         ]);
 

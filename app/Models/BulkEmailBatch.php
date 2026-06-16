@@ -8,6 +8,7 @@ class BulkEmailBatch extends Model
 {
     protected $fillable = [
         'status',
+        'send_mode',
         'total_count',
         'sent_count',
         'skipped_count',

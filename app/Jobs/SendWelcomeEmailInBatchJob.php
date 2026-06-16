@@ -53,7 +53,12 @@ class SendWelcomeEmailInBatchJob implements ShouldQueue
             return;
         }
 
-        if ($user->password_reset_at !== null) {
+        $send_mode   = $batch->send_mode ?? 'not_sent';
+        $should_skip = $send_mode === 'all_pending'
+            ? $user->password_reset_at !== null
+            : $user->welcome_email_sent_at !== null;
+
+        if ($should_skip) {
             DB::table('bulk_email_batches')
                 ->where('id', $this->batch_id)
                 ->increment('skipped_count');

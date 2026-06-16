@@ -399,7 +399,7 @@ class ImportLegacyOrders extends Command
             $title   = strtolower(trim($row['title'] ?? ''));
 
             $mentions_credits  = str_contains($service, 'credits') || str_contains($title, 'credits');
-            $is_tier_order     = (bool) preg_match('/^d[ar]\s*\d+\+/i', $service);
+            $is_tier_order     = (bool) preg_match('/^(?:base\s*-\s*)?d[ar]\s*\d+\+/i', $service);
 
             if ($mentions_credits && !$is_tier_order) {
                 return true;
@@ -415,8 +415,9 @@ class ImportLegacyOrders extends Command
             return null;
         }
 
-        // Extract the tier number from either "DR 40+" or "DA 40+ (Credit)" formats
-        if (!preg_match('/^d[ar]\s*(\d+)\+/i', $service_name, $matches)) {
+        // Extract the tier number from "DR 40+", "DA 40+ (Credit)", or the
+        // "BASE - DA 40+" / "BASE- DA 40+" legacy naming variant.
+        if (!preg_match('/^(?:base\s*-\s*)?d[ar]\s*(\d+)\+/i', $service_name, $matches)) {
             return null;
         }
 

@@ -700,23 +700,32 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
     }
 
     /**
-     * Parses a date string using multiple format attempts to handle the variety of
-     * formats that may appear in imported CSV files:
+     * Parses a date string from the variety of US-formatted (month/day/year) values
+     * that appear in imported CSV files:
      *
-     *   04/15/2026          → m/d/Y
-     *   4/15/2026           → n/j/Y  (no leading zero on month/day)
-     *   04/15/26            → m/d/y  (2-digit year)
-     *   4/15/26             → n/j/y
+     *   04/15/2026          → 4-digit year
+     *   4/15/2026           → no leading zero on month/day, 4-digit year
+     *   04/15/26            → 2-digit year
+     *   4/15/26             → no leading zero on month/day, 2-digit year
      *   04/15/26 12:38 PM   → date extracted, time discarded (Google Sheets datetime export)
+     *   05/28/26 7:29 PM    → single-digit hour, date extracted, time discarded
      *   4/15/2026 12:38 PM  → date extracted, time discarded
      *
-     * Strategy: extract the leading m/d/y(y) portion first and parse only that.
-     * Since we always normalize to start-of-day, the time suffix is irrelevant and
-     * stripping it avoids "trailing data" exceptions that Carbon raises in strict mode
-     * when a shorter format (e.g. m/d/y) is tried against a full datetime string.
+     * Strategy: extract the month/day/year components directly with a regex and build
+     * the date numerically, rather than looping through Carbon::createFromFormat()
+     * attempts. That loop-based approach previously had a critical bug: PHP's
+     * DateTime::createFromFormat() is lenient about digit count, so a 4-digit-year
+     * format like "m/d/Y" silently "succeeds" against a 2-digit year (e.g. "04/15/26"
+     * is parsed as year 26 AD instead of failing over to the "m/d/y" format). Since no
+     * exception was thrown, the bogus year-26 date was accepted as the parse result —
+     * which then always fails the "last year" import date filter and the row is
+     * silently skipped. Parsing the year digit count explicitly avoids this ambiguity.
+     *
+     * All two-digit years are assumed to be in the 2000s (US date convention for this
+     * import), since the source data only contains recent/near-future order dates.
      *
      * Returns a Carbon instance (normalized to start-of-day) or null if the value
-     * cannot be parsed by any known format.
+     * cannot be parsed.
      */
     private function parseDateFlexible(string $raw): ?Carbon
     {
@@ -726,59 +735,40 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return null;
         }
 
-        // Normalize whitespace.
+        // Normalize whitespace (collapses the gap before any trailing time suffix).
         $value = preg_replace('/\s+/', ' ', $value);
 
-        // Primary strategy: extract only the date component (m/d/yy or m/d/yyyy)
-        // and ignore any trailing time suffix such as " 12:38 PM".
-        // This reliably handles every Google Sheets export variant because the date
-        // always appears first and we never need the time portion.
-        if (preg_match('#^(\d{1,2}/\d{1,2}/\d{2,4})#', $value, $date_match)) {
-            $date_part = $date_match[1];
-            foreach (['m/d/Y', 'n/j/Y', 'm/d/y', 'n/j/y'] as $fmt) {
-                try {
-                    $parsed = Carbon::createFromFormat($fmt, $date_part);
-                    if ($parsed instanceof Carbon) {
-                        return $parsed->startOfDay();
-                    }
-                } catch (\Exception) {
-                    // Try next format
-                }
-            }
-        }
-
-        // Fallback: normalise AM/PM casing and try full datetime formats.
-        $value = preg_replace_callback('/\s+(am|pm)$/i', fn ($m) => ' ' . strtoupper($m[1]), $value);
-
-        $formats = [
-            'm/d/Y',
-            'n/j/Y',
-            'm/d/y',
-            'n/j/y',
-            'm/d/Y g:i A',
-            'n/j/Y g:i A',
-            'm/d/y g:i A',
-            'n/j/y g:i A',
-            'm/d/Y h:i A',
-            'n/j/Y h:i A',
-            'm/d/y h:i A',
-            'n/j/y h:i A',
-        ];
-
-        foreach ($formats as $format) {
+        // Extract the leading m/d/y(y) portion and ignore any trailing time suffix
+        // such as " 12:38 PM" or " 7:29 PM" — since we always normalize to
+        // start-of-day, the time portion is never needed.
+        if (! preg_match('#^(\d{1,2})/(\d{1,2})/(\d{2,4})#', $value, $date_match)) {
+            // Last resort: let Carbon attempt a generic parse for anything that
+            // doesn't match the expected m/d/y(y) shape.
             try {
-                $parsed = Carbon::createFromFormat($format, $value);
-                if ($parsed instanceof Carbon) {
-                    return $parsed->startOfDay();
-                }
+                return Carbon::parse($value)->startOfDay();
             } catch (\Exception) {
-                // Try next format
+                return null;
             }
         }
 
-        // Last resort: let Carbon attempt a generic parse.
+        $month     = (int) $date_match[1];
+        $day       = (int) $date_match[2];
+        $year_part = $date_match[3];
+
+        $year = match (strlen($year_part)) {
+            2       => 2000 + (int) $year_part, // 2-digit year → assume 2000s
+            4       => (int) $year_part,
+            default => null, // unexpected digit count (e.g. 3 digits) — not a valid year
+        };
+
+        if ($year === null || $month < 1 || $month > 12 || $day < 1 || $day > 31) {
+            return null;
+        }
+
         try {
-            return Carbon::parse($value)->startOfDay();
+            $parsed = Carbon::createSafe($year, $month, $day);
+
+            return $parsed instanceof Carbon ? $parsed->startOfDay() : null;
         } catch (\Exception) {
             return null;
         }

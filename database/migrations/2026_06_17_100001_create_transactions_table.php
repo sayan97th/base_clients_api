@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('payment_intent_id')->nullable();
             $table->string('session_id')->nullable()->index();
             $table->string('session_title')->nullable();
-            $table->unsignedBigInteger('order_id')->nullable();  // nullable — may fail before order is created
+            $table->string('order_id', 36)->nullable()->index(); // nullable — UUID from any order type
             $table->string('invoice_id')->nullable();            // nullable — invoice created after order
             $table->text('description')->nullable();
             $table->text('error_message')->nullable();

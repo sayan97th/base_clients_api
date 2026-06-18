@@ -8,6 +8,7 @@ use App\Mail\PaymentSuccessfulEmail;
 use App\Models\Invoice;
 use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Stripe\Exception\ApiErrorException;
 use Stripe\StripeClient;
@@ -119,29 +120,33 @@ class StripePublicPaymentService
     private function markInvoiceAsPaid(Invoice $invoice, string $payment_intent_id): array
     {
         try {
-            $invoice->update([
-                'status'            => 'paid',
-                'date_paid'         => now(),
-                'payment_method'    => 'Credit Card',
-                'payment_intent_id' => $payment_intent_id,
-            ]);
+            DB::transaction(function () use ($invoice, $payment_intent_id) {
+                $invoice->update([
+                    'status'            => 'paid',
+                    'date_paid'         => now(),
+                    'payment_method'    => 'Credit Card',
+                    'payment_intent_id' => $payment_intent_id,
+                ]);
 
-            $invoice->history()->create([
-                'event'       => 'payment_confirmed',
-                'description' => "Payment confirmed via Stripe PaymentIntent: {$payment_intent_id}",
-                'actor_type'  => 'system',
-            ]);
+                $invoice->history()->create([
+                    'event'          => 'payment_confirmed',
+                    'description'    => "Payment confirmed via Stripe PaymentIntent: {$payment_intent_id}",
+                    'actor_name'     => 'System',
+                    'actor_initials' => 'SY',
+                    'actor_type'     => 'system',
+                ]);
 
-            Transaction::create([
-                'user_id'           => $invoice->user_id,
-                'type'              => 'purchase',
-                'status'            => 'success',
-                'amount'            => $invoice->total_amount,
-                'payment_method'    => 'credit_card',
-                'payment_intent_id' => $payment_intent_id,
-                'invoice_id'        => (string) $invoice->id,
-                'description'       => "Invoice {$invoice->invoice_number} paid via public share link.",
-            ]);
+                Transaction::create([
+                    'user_id'           => $invoice->user_id,
+                    'type'              => 'purchase',
+                    'status'            => 'success',
+                    'amount'            => $invoice->total_amount,
+                    'payment_method'    => 'credit_card',
+                    'payment_intent_id' => $payment_intent_id,
+                    'invoice_id'        => (string) $invoice->id,
+                    'description'       => "Invoice {$invoice->invoice_number} paid via public share link.",
+                ]);
+            });
         } catch (\Exception $e) {
             logger()->error("Failed to mark invoice {$invoice->unique_id} as paid — voiding Stripe authorization", [
                 'payment_intent_id' => $payment_intent_id,

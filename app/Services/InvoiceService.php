@@ -131,7 +131,7 @@ class InvoiceService
             'country'             => $order->billing?->country,
         ];
 
-        return $this->buildInvoice(
+        $invoice = $this->buildInvoice(
             user:            $user,
             order_id:        $order->id,
             payment_method:  $payment_method,
@@ -147,6 +147,24 @@ class InvoiceService
             invoice_status:  $invoice_status,
             due_days:        $due_days,
         );
+
+        if ($invoice_status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
+
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $order->total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
+        }
+
+        return $invoice;
     }
 
     public function createForContentOptimizationOrder(
@@ -182,7 +200,7 @@ class InvoiceService
             'country'             => $order->billing?->country,
         ];
 
-        return $this->buildInvoice(
+        $invoice = $this->buildInvoice(
             user:            $user,
             order_id:        $order->id,
             payment_method:  $payment_method,
@@ -198,6 +216,24 @@ class InvoiceService
             invoice_status:  $invoice_status,
             due_days:        $due_days,
         );
+
+        if ($invoice_status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
+
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $order->total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
+        }
+
+        return $invoice;
     }
 
     public function createForContentBriefOrder(
@@ -233,7 +269,7 @@ class InvoiceService
             'country'             => $order->billing?->country,
         ];
 
-        return $this->buildInvoice(
+        $invoice = $this->buildInvoice(
             user:            $user,
             order_id:        $order->id,
             payment_method:  $payment_method,
@@ -249,6 +285,24 @@ class InvoiceService
             invoice_status:  $invoice_status,
             due_days:        $due_days,
         );
+
+        if ($invoice_status === 'paid') {
+            $payer_name = $user->full_name ?? $user->email;
+
+            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
+                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
+                    event(new PaymentCompleted(
+                        $admin,
+                        $payer_name,
+                        $order->total_amount,
+                        $invoice->invoice_number,
+                        '/invoices/' . $invoice->unique_id,
+                        $invoice,
+                    ));
+                });
+        }
+
+        return $invoice;
     }
 
     /**

@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Client\Cart;
 
 use App\Events\LinkBuildingOrderPlaced;
+use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Cart\CheckoutCartRequest;
 use App\Http\Requests\Cart\UpsertCartRequest;
+use App\Jobs\SendAdminInvoicePaidNotificationJob;
+use App\Mail\PaymentSuccessfulEmail;
 use App\Models\Cart;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
 use App\Models\CreditTransaction;
+use App\Models\Invoice;
 use App\Models\Transaction;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
@@ -18,12 +22,14 @@ use App\Models\LinkBuildingOrderPlacement;
 use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
+use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -489,15 +495,17 @@ class CartController extends Controller
             : 0.0;
 
         // Create invoice(s): one combined invoice for multi-product, one per order for single-product
+        $checkout_invoice = null;
+
         if ($session_id && count($created_orders) > 1) {
-            $this->invoiceService->createForMultiProductSession(
+            $checkout_invoice = $this->invoiceService->createForMultiProductSession(
                 $user, $session_id, $session_title, $created_orders,
                 $invoice_payment_method, $invoice_currency_type, $total_credits_used
             );
         } else {
             $entry        = $created_orders[0];
             $order_credit = $is_credits_payment ? $entry['total_amount'] : 0.0;
-            match ($entry['product_type']) {
+            $checkout_invoice = match ($entry['product_type']) {
                 'link_building' => $this->invoiceService->createForLinkBuildingOrder(
                     $user, $entry['model'], $invoice_payment_method, $invoice_currency_type,
                     $order_credit, $entry['total_links']
@@ -513,6 +521,11 @@ class CartController extends Controller
                 ),
                 default => null,
             };
+        }
+
+        // Dispatch payment notifications — non-critical, errors are logged but never fail the response
+        if ($checkout_invoice) {
+            $this->dispatchCheckoutNotifications($checkout_invoice, $user);
         }
 
         $response_orders = array_map(fn ($entry) => [
@@ -1013,6 +1026,60 @@ class CartController extends Controller
             'total_amount' => $order_total,
             'model'        => $order,
         ];
+    }
+
+    /**
+     * Dispatch all post-checkout payment notifications.
+     * Non-critical: failures are logged but never roll back the purchase or fail the response.
+     */
+    private function dispatchCheckoutNotifications(Invoice $invoice, User $user): void
+    {
+        // Client payment confirmation email
+        try {
+            Mail::to($user->email)->queue(new PaymentSuccessfulEmail($user, $invoice));
+        } catch (Throwable $e) {
+            Log::warning('Failed to queue client payment confirmation email after checkout.', [
+                'invoice_id' => $invoice->id,
+                'user_id'    => $user->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
+        // Admin email notifications to all recipients in Email Notification Settings
+        try {
+            SendAdminInvoicePaidNotificationJob::dispatch($invoice->id);
+        } catch (Throwable $e) {
+            Log::warning('Failed to dispatch admin invoice paid notification job after checkout.', [
+                'invoice_id' => $invoice->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
+        // Admin in-app notifications to all configured admin recipients
+        try {
+            $payer_name  = $user->full_name ?? $user->email;
+            $admin_link  = '/admin/invoices/' . $invoice->id;
+            $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
+            $admin_users = User::whereIn('email', array_column($recipients, 'email'))
+                ->where('is_active', true)
+                ->get();
+
+            foreach ($admin_users as $admin) {
+                event(new PaymentCompleted(
+                    user:           $admin,
+                    payer_name:     $payer_name,
+                    amount:         (float) $invoice->total_amount,
+                    invoice_number: $invoice->invoice_number,
+                    link:           $admin_link,
+                    invoice:        $invoice,
+                ));
+            }
+        } catch (Throwable $e) {
+            Log::warning('Failed to dispatch admin in-app payment notifications after checkout.', [
+                'invoice_id' => $invoice->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     private function createContentBriefOrder(

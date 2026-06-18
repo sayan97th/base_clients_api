@@ -26,6 +26,7 @@ class Invoice extends Model
         'session_title',
         'status',
         'payment_method',
+        'payment_intent_id',
         'currency_type',
         'subtotal_amount',
         'discount_amount',

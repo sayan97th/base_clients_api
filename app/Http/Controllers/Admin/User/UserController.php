@@ -113,7 +113,8 @@ class UserController extends Controller
             $query->whereNotNull('users.password_reset_at');
         }
 
-        $users = $query->paginate(15);
+        $per_page = min((int) $request->query('per_page', 15), 500);
+        $users    = $query->paginate($per_page);
 
         return response()->json([
             'data'         => UserWithRolesResource::collection($users->items()),

@@ -257,6 +257,14 @@ class InvoiceController extends Controller
         $changed = [];
 
         $invoice = DB::transaction(function () use ($request, $invoice, $admin, &$changed) {
+            if ($request->has('user_id')) {
+                $new_user = User::find($request->input('user_id'));
+                if ($new_user && $new_user->id !== $invoice->user_id) {
+                    $invoice->user_id = $new_user->id;
+                    $changed[]        = 'client';
+                }
+            }
+
             if ($request->has('date_due')) {
                 $invoice->date_due = $request->input('date_due');
                 $changed[]         = 'due date';

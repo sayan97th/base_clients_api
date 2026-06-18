@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers\Invoice;
 
+use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendAdminInvoicePaidNotificationJob;
+use App\Mail\PaymentSuccessfulEmail;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
@@ -14,6 +17,8 @@ use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 class InvoicePayController extends Controller
@@ -35,7 +40,7 @@ class InvoicePayController extends Controller
     /**
      * POST /api/invoices/{unique_id}/pay
      *
-     * Unified endpoint for Endpoint 3 (authenticated) and Endpoint 6 (public share link).
+     * Unified endpoint for authenticated and public share-link payments.
      * Presence of an Authorization header determines which flow runs.
      */
     public function pay(Request $request, string $unique_id): JsonResponse
@@ -107,6 +112,10 @@ class InvoicePayController extends Controller
 
         $invoice->refresh()->load(['lineItems', 'billedTo', 'couponDiscounts']);
 
+        // Send all payment notifications (client email + admin email + admin in-app).
+        // These are non-critical: failures are logged but never roll back the payment.
+        $this->dispatchPaymentNotifications($invoice, $user);
+
         return response()->json([
             'data'    => $this->buildInvoiceDetail($invoice),
             'message' => 'Invoice paid successfully.',
@@ -143,26 +152,49 @@ class InvoicePayController extends Controller
         return response()->json(['message' => $result['message']]);
     }
 
+    /**
+     * Mark invoice as paid via account balance.
+     * Wrapped in a DB transaction: if the history record fails, the status update is rolled back.
+     */
     private function payViaAccountBalance(Invoice $invoice, User $user): array
     {
-        $invoice->status         = 'paid';
-        $invoice->date_paid      = now();
-        $invoice->payment_method = 'Account Balance';
-        $invoice->save();
+        try {
+            DB::transaction(function () use ($invoice, $user) {
+                $invoice->status         = 'paid';
+                $invoice->date_paid      = now();
+                $invoice->payment_method = 'Account Balance';
+                $invoice->save();
 
-        InvoiceHistory::create([
-            'invoice_id'     => $invoice->id,
-            'event'          => 'invoice_paid',
-            'description'    => 'Invoice paid via Account Balance.',
-            'actor_id'       => $user->id,
-            'actor_name'     => $user->full_name ?? $user->email,
-            'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
-            'actor_type'     => 'client',
-        ]);
+                InvoiceHistory::create([
+                    'invoice_id'     => $invoice->id,
+                    'event'          => 'invoice_paid',
+                    'description'    => 'Invoice paid via Account Balance.',
+                    'actor_id'       => $user->id,
+                    'actor_name'     => $user->full_name ?? $user->email,
+                    'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
+                    'actor_type'     => 'client',
+                ]);
+            });
+        } catch (\Exception $e) {
+            logger()->error("Account balance payment failed for invoice {$invoice->unique_id}", [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+
+            return [
+                'success'     => false,
+                'message'     => 'Payment processing failed. Please try again or contact support.',
+                'status_code' => 500,
+            ];
+        }
 
         return ['success' => true];
     }
 
+    /**
+     * Verify the Stripe PaymentIntent and mark the invoice as paid.
+     * Wrapped in a DB transaction: if the history record fails, the status update is rolled back.
+     */
     private function payViaCreditCard(Invoice $invoice, User $user, string $payment_intent_id): array
     {
         $verify_result = $this->stripe_service->verifyPaymentIntent($payment_intent_id, $invoice->total_amount);
@@ -175,23 +207,80 @@ class InvoicePayController extends Controller
             ];
         }
 
-        $invoice->status            = 'paid';
-        $invoice->date_paid         = now();
-        $invoice->payment_method    = 'Credit Card';
-        $invoice->payment_intent_id = $payment_intent_id;
-        $invoice->save();
+        try {
+            DB::transaction(function () use ($invoice, $user, $payment_intent_id) {
+                $invoice->status            = 'paid';
+                $invoice->date_paid         = now();
+                $invoice->payment_method    = 'Credit Card';
+                $invoice->payment_intent_id = $payment_intent_id;
+                $invoice->save();
 
-        InvoiceHistory::create([
-            'invoice_id'     => $invoice->id,
-            'event'          => 'invoice_paid',
-            'description'    => "Invoice paid via Credit Card. PaymentIntent: {$payment_intent_id}",
-            'actor_id'       => $user->id,
-            'actor_name'     => $user->full_name ?? $user->email,
-            'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
-            'actor_type'     => 'client',
-        ]);
+                InvoiceHistory::create([
+                    'invoice_id'     => $invoice->id,
+                    'event'          => 'invoice_paid',
+                    'description'    => "Invoice paid via Credit Card. PaymentIntent: {$payment_intent_id}",
+                    'actor_id'       => $user->id,
+                    'actor_name'     => $user->full_name ?? $user->email,
+                    'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
+                    'actor_type'     => 'client',
+                ]);
+            });
+        } catch (\Exception $e) {
+            logger()->error("Credit card payment record failed for invoice {$invoice->unique_id}", [
+                'payment_intent_id' => $payment_intent_id,
+                'user_id'           => $user->id,
+                'error'             => $e->getMessage(),
+            ]);
+
+            return [
+                'success'     => false,
+                'message'     => 'Payment was charged but could not be recorded. Please contact support with reference: ' . $payment_intent_id,
+                'status_code' => 500,
+            ];
+        }
 
         return ['success' => true];
+    }
+
+    /**
+     * Send all post-payment notifications.
+     * Non-critical: errors are logged but never bubble up to the client response.
+     */
+    private function dispatchPaymentNotifications(Invoice $invoice, User $user): void
+    {
+        // Client confirmation email
+        try {
+            Mail::to($user->email)->queue(new PaymentSuccessfulEmail($user, $invoice));
+        } catch (\Exception $e) {
+            logger()->warning("Failed to queue client payment confirmation email for invoice {$invoice->unique_id}", [
+                'user_id' => $user->id,
+                'error'   => $e->getMessage(),
+            ]);
+        }
+
+        // Admin email + admin in-app notifications
+        try {
+            SendAdminInvoicePaidNotificationJob::dispatch($invoice->id);
+
+            $payer_name = $user->full_name ?? $user->email;
+
+            User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin']))
+                ->where('is_active', true)
+                ->each(function (User $admin) use ($invoice, $payer_name) {
+                    event(new PaymentCompleted(
+                        user:           $admin,
+                        payer_name:     $payer_name,
+                        amount:         (float) $invoice->total_amount,
+                        invoice_number: $invoice->invoice_number,
+                        link:           '/admin/invoices/' . $invoice->id,
+                        invoice:        $invoice,
+                    ));
+                });
+        } catch (\Exception $e) {
+            logger()->warning("Failed to dispatch admin payment notifications for invoice {$invoice->unique_id}", [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -923,9 +923,9 @@ class CartController extends Controller
                 $item->intakeRows()->create([
                     'row_index'          => $index + 1,
                     'keyword_phrase'     => $row['keyword_phrase'],
-                    'secondary_keywords' => $row['secondary_keywords'] ?? null,
-                    'type_of_content'    => $row['type_of_content'] ?? null,
-                    'notes'              => $row['notes'] ?? null,
+                    'secondary_keywords' => ($row['secondary_keywords'] ?? null) ?: null,
+                    'type_of_content'    => ($row['type_of_content'] ?? null) ?: null,
+                    'notes'              => ($row['notes'] ?? null) ?: null,
                     'status'             => 'pending',
                 ]);
             }

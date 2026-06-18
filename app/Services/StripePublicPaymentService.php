@@ -115,20 +115,32 @@ class StripePublicPaymentService
      * Mark an invoice as paid and capture the Stripe authorization.
      * DB operations run first — if they fail the Stripe authorization is voided so
      * the customer is never charged. Capture happens only after a successful DB commit.
+     * A pessimistic lock prevents duplicate records when two requests arrive simultaneously.
      * Notification side-effects are isolated so a broken email never rolls back a payment.
      */
     private function markInvoiceAsPaid(Invoice $invoice, string $payment_intent_id): array
     {
+        $already_paid = false;
+
         try {
-            DB::transaction(function () use ($invoice, $payment_intent_id) {
-                $invoice->update([
+            DB::transaction(function () use ($invoice, $payment_intent_id, &$already_paid) {
+                // Pessimistic lock: re-fetch inside the transaction so concurrent
+                // requests wait here instead of both writing a Transaction record.
+                $locked = Invoice::where('id', $invoice->id)->lockForUpdate()->first();
+
+                if (! in_array($locked->status, ['unpaid', 'overdue'], true)) {
+                    $already_paid = true;
+                    return;
+                }
+
+                $locked->update([
                     'status'            => 'paid',
                     'date_paid'         => now(),
                     'payment_method'    => 'Credit Card',
                     'payment_intent_id' => $payment_intent_id,
                 ]);
 
-                $invoice->history()->create([
+                $locked->history()->create([
                     'event'          => 'payment_confirmed',
                     'description'    => "Payment confirmed via Stripe PaymentIntent: {$payment_intent_id}",
                     'actor_name'     => 'System',
@@ -137,14 +149,14 @@ class StripePublicPaymentService
                 ]);
 
                 Transaction::create([
-                    'user_id'           => $invoice->user_id,
+                    'user_id'           => $locked->user_id,
                     'type'              => 'purchase',
                     'status'            => 'success',
-                    'amount'            => $invoice->total_amount,
+                    'amount'            => $locked->total_amount,
                     'payment_method'    => 'credit_card',
                     'payment_intent_id' => $payment_intent_id,
-                    'invoice_id'        => (string) $invoice->id,
-                    'description'       => "Invoice {$invoice->invoice_number} paid via public share link.",
+                    'invoice_id'        => (string) $locked->id,
+                    'description'       => "Invoice {$locked->invoice_number} paid via public share link.",
                 ]);
             });
         } catch (\Exception $e) {
@@ -160,6 +172,17 @@ class StripePublicPaymentService
                 'success'     => false,
                 'error'       => 'An error occurred while processing your payment. Your authorization has been voided — you will not be charged. Please try again or contact support.',
                 'status_code' => 500,
+            ];
+        }
+
+        // A concurrent request already processed this payment — treat as success
+        // so the frontend reaches the success state without voiding the Stripe charge.
+        if ($already_paid) {
+            return [
+                'success'     => true,
+                'message'     => 'Payment already confirmed.',
+                'status'      => 'paid',
+                'status_code' => 200,
             ];
         }
 

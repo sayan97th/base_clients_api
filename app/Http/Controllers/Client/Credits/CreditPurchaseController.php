@@ -7,6 +7,7 @@ use App\Mail\CreditPurchaseConfirmationMail;
 use App\Models\CreditPackage;
 use App\Models\CreditPurchase;
 use App\Models\CreditTransaction;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
@@ -104,6 +105,17 @@ class CreditPurchaseController extends Controller
 
         $user->refresh();
         $new_balance = (int) $user->credit_balance;
+
+        Transaction::create([
+            'user_id'           => $user->id,
+            'type'              => 'purchase',
+            'status'            => 'success',
+            'amount'            => (float) $request->amount_paid,
+            'payment_method'    => 'credit_card',
+            'payment_intent_id' => $request->payment_intent_id,
+            'session_title'     => "Credit Purchase — {$package->name}",
+            'description'       => "Purchased {$request->credits_amount} credits ({$package->name})",
+        ]);
 
         Mail::queue(new CreditPurchaseConfirmationMail(
             user: $user,

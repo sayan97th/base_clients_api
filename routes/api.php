@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
 use App\Http\Controllers\Admin\Discount\AdminDiscountController;
+use App\Http\Controllers\Admin\Transaction\AdminTransactionController;
 use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
@@ -382,6 +383,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{support_ticket}',                  [AdminSupportTicketController::class, 'show']);
             Route::patch('/{support_ticket}',                [AdminSupportTicketController::class, 'update']);
             Route::post('/{support_ticket}/messages',        [AdminSupportTicketController::class, 'storeMessage']);
+        });
+
+        // Transactions — super_admin, admin, staff
+        Route::middleware('role:super_admin,admin,staff')->prefix('transactions')->group(function () {
+            Route::get('/',     [AdminTransactionController::class, 'index']);
+            Route::get('/{id}', [AdminTransactionController::class, 'show']);
         });
 
         // Discounts — super_admin, admin, staff

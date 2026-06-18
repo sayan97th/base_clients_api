@@ -11,6 +11,7 @@ use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
 use App\Models\CreditTransaction;
+use App\Models\Transaction;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderPlacement;
@@ -314,6 +315,8 @@ class CartController extends Controller
             // no credits or orders were written. For hybrid payments the card was
             // authorized (not yet captured) — void the authorization immediately.
             if ($e->getMessage() === 'insufficient_balance') {
+                $this->recordFailedTransaction($user, $payment_method_id, $session_id, $session_title, $is_credits_payment, $is_hybrid_payment, 'Insufficient credit balance.');
+
                 if ($is_hybrid_payment) {
                     $cancel_result = $this->stripeService->cancelPaymentIntent($payment_method_id);
                     if ($cancel_result['success']) {
@@ -343,6 +346,8 @@ class CartController extends Controller
                     'error'   => 'insufficient_credits',
                 ], 422);
             }
+
+            $this->recordFailedTransaction($user, $payment_method_id, $session_id, $session_title, $is_credits_payment, $is_hybrid_payment, $e->getMessage());
 
             Log::error('Unexpected domain error during cart checkout.', [
                 'user_id'           => $user->id,
@@ -436,6 +441,8 @@ class CartController extends Controller
                 }
             }
 
+            $this->recordFailedTransaction($user, $payment_method_id, $session_id, $session_title, $is_credits_payment, $is_hybrid_payment, $e->getMessage());
+
             return response()->json([
                 'message' => 'An error occurred while creating your orders.' . $refund_note . ' Please contact support if you need assistance.',
                 'error'   => 'order_creation_failed',
@@ -514,10 +521,63 @@ class CartController extends Controller
             'total_amount' => $entry['total_amount'],
         ], $created_orders);
 
+        // Record successful transaction
+        $tx_total          = round(array_sum(array_column($created_orders, 'total_amount')), 2);
+        $first_order_id    = $created_orders[0]['order_id'] ?? null;
+        $tx_payment_method = $is_credits_payment ? 'account_credits' : ($is_hybrid_payment ? 'hybrid' : 'credit_card');
+        $tx_type           = $is_credits_payment ? 'credit_payment' : ($is_hybrid_payment ? 'hybrid_payment' : 'purchase');
+        $tx_pi_id          = $is_credits_payment ? null : $payment_method_id;
+
+        Transaction::create([
+            'user_id'           => $user->id,
+            'type'              => $tx_type,
+            'status'            => 'success',
+            'amount'            => $tx_total,
+            'payment_method'    => $tx_payment_method,
+            'payment_intent_id' => $tx_pi_id,
+            'session_id'        => $session_id,
+            'session_title'     => $session_title,
+            'order_id'          => $first_order_id,
+            'description'       => 'Checkout completed successfully for session: ' . $session_id,
+        ]);
+
         return response()->json(['data' => [
             'session_id' => $session_id,
             'orders'     => $response_orders,
         ]]);
+    }
+
+    private function recordFailedTransaction(
+        User   $user,
+        string $payment_method_id,
+        ?string $session_id,
+        ?string $session_title,
+        bool   $is_credits_payment,
+        bool   $is_hybrid_payment,
+        string $error_message
+    ): void {
+        try {
+            $tx_payment_method = $is_credits_payment ? 'account_credits' : ($is_hybrid_payment ? 'hybrid' : 'credit_card');
+            $tx_pi_id          = $is_credits_payment ? null : $payment_method_id;
+
+            Transaction::create([
+                'user_id'           => $user->id,
+                'type'              => 'failed_purchase',
+                'status'            => 'failed',
+                'amount'            => 0,
+                'payment_method'    => $tx_payment_method,
+                'payment_intent_id' => $tx_pi_id,
+                'session_id'        => $session_id,
+                'session_title'     => $session_title,
+                'error_message'     => $error_message,
+                'description'       => 'Checkout failed for session: ' . $session_id,
+            ]);
+        } catch (Throwable $record_error) {
+            Log::error('Failed to record failed transaction.', [
+                'user_id' => $user->id,
+                'error'   => $record_error->getMessage(),
+            ]);
+        }
     }
 
     /**

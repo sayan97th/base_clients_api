@@ -6,6 +6,7 @@ use App\Events\PaymentCompleted;
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Models\Invoice;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\Mail;
 use Stripe\Exception\ApiErrorException;
@@ -106,7 +107,6 @@ class StripePublicPaymentService
             ];
         }
 
-        // All validations passed — mark invoice as paid then capture the Stripe authorization
         return $this->markInvoiceAsPaid($invoice, $payment_intent_id);
     }
 
@@ -130,6 +130,17 @@ class StripePublicPaymentService
                 'event'       => 'payment_confirmed',
                 'description' => "Payment confirmed via Stripe PaymentIntent: {$payment_intent_id}",
                 'actor_type'  => 'system',
+            ]);
+
+            Transaction::create([
+                'user_id'           => $invoice->user_id,
+                'type'              => 'purchase',
+                'status'            => 'success',
+                'amount'            => $invoice->total_amount,
+                'payment_method'    => 'credit_card',
+                'payment_intent_id' => $payment_intent_id,
+                'invoice_id'        => (string) $invoice->id,
+                'description'       => "Invoice {$invoice->invoice_number} paid via public share link.",
             ]);
         } catch (\Exception $e) {
             logger()->error("Failed to mark invoice {$invoice->unique_id} as paid — voiding Stripe authorization", [

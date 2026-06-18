@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceLineItem;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
 use App\Notifications\InvoiceReminderNotification;
@@ -426,6 +427,8 @@ class InvoiceController extends Controller
             'actor_initials' => $actor_initials,
             'actor_type'     => 'admin',
         ]);
+
+        $this->recordInvoiceTransaction($invoice);
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
@@ -884,5 +887,28 @@ class InvoiceController extends Controller
         }
 
         return strtoupper(mb_substr($name, 0, 2));
+    }
+
+    private function recordInvoiceTransaction(Invoice $invoice): void
+    {
+        $raw_method = strtolower((string) $invoice->payment_method);
+
+        if (str_contains($raw_method, 'credit card') || str_contains($raw_method, 'card')) {
+            $payment_method = 'credit_card';
+            $type           = 'purchase';
+        } else {
+            $payment_method = 'account_credits';
+            $type           = 'credit_payment';
+        }
+
+        Transaction::create([
+            'user_id'        => $invoice->user_id,
+            'type'           => $type,
+            'status'         => 'success',
+            'amount'         => $invoice->total_amount,
+            'payment_method' => $payment_method,
+            'invoice_id'     => (string) $invoice->id,
+            'description'    => "Payment recorded for invoice {$invoice->invoice_number}.",
+        ]);
     }
 }

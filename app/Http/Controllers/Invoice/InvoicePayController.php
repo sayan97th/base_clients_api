@@ -12,6 +12,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceHistory;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
@@ -174,6 +175,16 @@ class InvoicePayController extends Controller
                     'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
                     'actor_type'     => 'client',
                 ]);
+
+                Transaction::create([
+                    'user_id'        => $user->id,
+                    'type'           => 'credit_payment',
+                    'status'         => 'success',
+                    'amount'         => $invoice->total_amount,
+                    'payment_method' => 'account_credits',
+                    'invoice_id'     => (string) $invoice->id,
+                    'description'    => "Invoice {$invoice->invoice_number} paid via Account Balance.",
+                ]);
             });
         } catch (\Exception $e) {
             logger()->error("Account balance payment failed for invoice {$invoice->unique_id}", [
@@ -225,6 +236,17 @@ class InvoicePayController extends Controller
                     'actor_name'     => $user->full_name ?? $user->email,
                     'actor_initials' => $this->buildInitials($user->full_name ?? $user->email),
                     'actor_type'     => 'client',
+                ]);
+
+                Transaction::create([
+                    'user_id'           => $user->id,
+                    'type'              => 'purchase',
+                    'status'            => 'success',
+                    'amount'            => $invoice->total_amount,
+                    'payment_method'    => 'credit_card',
+                    'payment_intent_id' => $payment_intent_id,
+                    'invoice_id'        => (string) $invoice->id,
+                    'description'       => "Invoice {$invoice->invoice_number} paid via Credit Card.",
                 ]);
             });
         } catch (\Exception $e) {

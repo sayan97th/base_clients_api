@@ -54,7 +54,10 @@ class UserController extends Controller
         }
 
         $query = User::with(['roles:id,name,display_name', 'organization'])
-            ->select('users.*');
+            ->select('users.*')
+            ->orderByRaw(
+                "CASE WHEN (COALESCE(TRIM(users.first_name), '') = '' AND COALESCE(TRIM(users.last_name), '') = '') THEN 1 ELSE 0 END ASC"
+            );
 
         if ($sort_field === 'organization') {
             $query->leftJoin('organizations', 'users.organization_id', '=', 'organizations.id')

@@ -56,30 +56,51 @@ class CreditPurchaseController extends Controller
         $user     = auth()->user();
         $purchase = null;
 
-        DB::transaction(function () use ($user, $request, $package, &$purchase) {
-            User::where('id', $user->id)->lockForUpdate()->first();
-            $user->refresh();
+        try {
+            DB::transaction(function () use ($user, $request, $package, &$purchase) {
+                User::where('id', $user->id)->lockForUpdate()->first();
+                $user->refresh();
 
-            $purchase = CreditPurchase::create([
+                $purchase = CreditPurchase::create([
+                    'user_id'           => $user->id,
+                    'package_id'        => $package->id,
+                    'package_name'      => $package->name,
+                    'credits_amount'    => $request->credits_amount,
+                    'amount_paid'       => $request->amount_paid,
+                    'payment_intent_id' => $request->payment_intent_id,
+                    'status'            => 'completed',
+                ]);
+
+                $user->increment('credit_balance', $request->credits_amount);
+
+                CreditTransaction::create([
+                    'user_id'     => $user->id,
+                    'amount'      => $request->credits_amount,
+                    'type'        => 'credit',
+                    'description' => "Credit purchase — {$package->name}",
+                    'created_by'  => null,
+                ]);
+            });
+        } catch (\Throwable $e) {
+            // DB transaction failed — void the Stripe authorization so the customer is not charged
+            $this->stripe->cancelPaymentIntent($request->payment_intent_id);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Your purchase could not be completed. Your payment authorization has been voided — you will not be charged. Please try again or contact support.',
+            ], 500);
+        }
+
+        // DB committed — now capture the authorized payment
+        $capture_result = $this->stripe->capturePaymentIntent($request->payment_intent_id);
+
+        if (! $capture_result['success']) {
+            \Illuminate\Support\Facades\Log::critical('Stripe capture FAILED after credit purchase DB commit — credits added but payment not collected.', [
                 'user_id'           => $user->id,
-                'package_id'        => $package->id,
-                'package_name'      => $package->name,
-                'credits_amount'    => $request->credits_amount,
-                'amount_paid'       => $request->amount_paid,
                 'payment_intent_id' => $request->payment_intent_id,
-                'status'            => 'completed',
+                'capture_error'     => $capture_result['message'] ?? 'Unknown error',
             ]);
-
-            $user->increment('credit_balance', $request->credits_amount);
-
-            CreditTransaction::create([
-                'user_id'     => $user->id,
-                'amount'      => $request->credits_amount,
-                'type'        => 'credit',
-                'description' => "Credit purchase — {$package->name}",
-                'created_by'  => null,
-            ]);
-        });
+        }
 
         $user->refresh();
         $new_balance = (int) $user->credit_balance;

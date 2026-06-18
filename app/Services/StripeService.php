@@ -250,7 +250,85 @@ class StripeService
     }
 
     /**
+     * Capture a PaymentIntent that is in requires_capture state.
+     * If the intent is already succeeded (automatic capture), this is a no-op.
+     *
+     * Returns ['success' => true] or ['success' => false, 'message' => '...']
+     */
+    public function capturePaymentIntent(string $payment_intent_id): array
+    {
+        try {
+            $intent = $this->client->paymentIntents->retrieve($payment_intent_id);
+
+            // Already captured — nothing to do (backward compat with automatic-capture PIs)
+            if ($intent->status === 'succeeded') {
+                return ['success' => true];
+            }
+
+            if ($intent->status !== 'requires_capture') {
+                return [
+                    'success' => false,
+                    'message' => "Cannot capture PaymentIntent in status: {$intent->status}",
+                ];
+            }
+
+            $this->client->paymentIntents->capture($payment_intent_id);
+
+            return ['success' => true];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Cancel a PaymentIntent that has been authorized but not yet captured.
+     * If the intent is already succeeded (captured), falls back to a full refund
+     * for backward compatibility with automatic-capture payment intents.
+     *
+     * Returns ['success' => true, 'voided' => true]
+     *      or ['success' => true, 'voided' => false, 'refund_id' => '...'] (refund path)
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function cancelPaymentIntent(string $payment_intent_id): array
+    {
+        try {
+            $intent = $this->client->paymentIntents->retrieve($payment_intent_id);
+
+            // Already captured — we must refund instead of cancel
+            if ($intent->status === 'succeeded') {
+                $refund = $this->client->refunds->create(['payment_intent' => $payment_intent_id, 'reason' => 'other']);
+                return ['success' => true, 'voided' => false, 'refund_id' => $refund->id];
+            }
+
+            $cancelable = ['requires_payment_method', 'requires_capture', 'requires_confirmation', 'requires_action', 'processing'];
+
+            if (! in_array($intent->status, $cancelable, true)) {
+                return [
+                    'success' => false,
+                    'message' => "Cannot cancel PaymentIntent in status: {$intent->status}",
+                ];
+            }
+
+            $this->client->paymentIntents->cancel($payment_intent_id);
+
+            return ['success' => true, 'voided' => true];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Create a Stripe PaymentIntent and return the client_secret and payment_intent_id.
+     *
+     * Uses capture_method: manual so the card is only authorized (not charged) until
+     * capturePaymentIntent() is explicitly called after a successful order creation.
+     * This ensures the customer is never charged if order processing fails.
      *
      * If stripe_payment_method_id is provided, it will be attached to the intent (saved card flow).
      * If stripe_customer_id is provided, it will be attached so saved cards can be charged.
@@ -268,7 +346,7 @@ class StripeService
             $params = [
                 'amount'         => $amount_cents,
                 'currency'       => 'usd',
-                'capture_method' => 'automatic',
+                'capture_method' => 'manual',
             ];
 
             if (!empty($metadata)) {

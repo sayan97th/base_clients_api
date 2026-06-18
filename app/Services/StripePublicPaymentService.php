@@ -77,8 +77,8 @@ class StripePublicPaymentService
             ];
         }
 
-        // Verify payment status
-        if ($payment_intent->status !== 'succeeded') {
+        // Verify payment status — accepts both requires_capture (manual) and succeeded (automatic/backward compat)
+        if (! in_array($payment_intent->status, ['requires_capture', 'succeeded'], true)) {
             return [
                 'success'     => false,
                 'error'       => 'Payment verification failed. The payment was not completed successfully.',
@@ -106,14 +106,15 @@ class StripePublicPaymentService
             ];
         }
 
-        // All validations passed, mark invoice as paid
+        // All validations passed — mark invoice as paid then capture the Stripe authorization
         return $this->markInvoiceAsPaid($invoice, $payment_intent_id);
     }
 
     /**
-     * Mark an invoice as paid and record the payment event.
-     * Core DB operations are isolated from notification side-effects so a broken
-     * email/notification service never rolls back a genuine payment.
+     * Mark an invoice as paid and capture the Stripe authorization.
+     * DB operations run first — if they fail the Stripe authorization is voided so
+     * the customer is never charged. Capture happens only after a successful DB commit.
+     * Notification side-effects are isolated so a broken email never rolls back a payment.
      */
     private function markInvoiceAsPaid(Invoice $invoice, string $payment_intent_id): array
     {
@@ -131,16 +132,29 @@ class StripePublicPaymentService
                 'actor_type'  => 'system',
             ]);
         } catch (\Exception $e) {
-            logger()->error("Failed to mark invoice {$invoice->unique_id} as paid", [
+            logger()->error("Failed to mark invoice {$invoice->unique_id} as paid — voiding Stripe authorization", [
                 'payment_intent_id' => $payment_intent_id,
                 'error'             => $e->getMessage(),
             ]);
 
+            // Void the Stripe authorization so customer is not charged
+            $this->stripe_service->cancelPaymentIntent($payment_intent_id);
+
             return [
                 'success'     => false,
-                'error'       => 'An error occurred while processing your payment. Please contact support.',
+                'error'       => 'An error occurred while processing your payment. Your authorization has been voided — you will not be charged. Please try again or contact support.',
                 'status_code' => 500,
             ];
+        }
+
+        // DB committed — capture the Stripe authorization (no-op if already succeeded)
+        $capture_result = $this->stripe_service->capturePaymentIntent($payment_intent_id);
+
+        if (! $capture_result['success']) {
+            logger()->critical("Stripe capture FAILED after public invoice DB commit — invoice marked paid but payment not collected for {$invoice->unique_id}", [
+                'payment_intent_id' => $payment_intent_id,
+                'capture_error'     => $capture_result['message'] ?? 'Unknown error',
+            ]);
         }
 
         // Non-critical: send notifications. Failures are logged but do not affect payment status.

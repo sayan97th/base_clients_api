@@ -192,8 +192,10 @@ class InvoicePayController extends Controller
     }
 
     /**
-     * Verify the Stripe PaymentIntent and mark the invoice as paid.
-     * Wrapped in a DB transaction: if the history record fails, the status update is rolled back.
+     * Verify the Stripe PaymentIntent (authorized but not yet captured) and mark
+     * the invoice as paid. Captures the Stripe authorization only after the DB
+     * transaction commits — if the transaction fails the authorization is voided
+     * so the customer is never charged without a recorded payment.
      */
     private function payViaCreditCard(Invoice $invoice, User $user, string $payment_intent_id): array
     {
@@ -226,17 +228,31 @@ class InvoicePayController extends Controller
                 ]);
             });
         } catch (\Exception $e) {
-            logger()->error("Credit card payment record failed for invoice {$invoice->unique_id}", [
+            logger()->error("Invoice payment DB record failed — voiding Stripe authorization for invoice {$invoice->unique_id}", [
                 'payment_intent_id' => $payment_intent_id,
                 'user_id'           => $user->id,
                 'error'             => $e->getMessage(),
             ]);
 
+            // DB transaction failed — void the Stripe authorization so customer is not charged
+            $this->stripe_service->cancelPaymentIntent($payment_intent_id);
+
             return [
                 'success'     => false,
-                'message'     => 'Payment was charged but could not be recorded. Please contact support with reference: ' . $payment_intent_id,
+                'message'     => 'Payment could not be recorded. Your authorization has been voided — you will not be charged. Please try again or contact support.',
                 'status_code' => 500,
             ];
+        }
+
+        // DB committed — now capture the authorized payment
+        $capture_result = $this->stripe_service->capturePaymentIntent($payment_intent_id);
+
+        if (! $capture_result['success']) {
+            logger()->critical("Stripe capture FAILED after invoice DB commit — invoice paid but payment not collected for {$invoice->unique_id}", [
+                'payment_intent_id' => $payment_intent_id,
+                'user_id'           => $user->id,
+                'capture_error'     => $capture_result['message'] ?? 'Unknown error',
+            ]);
         }
 
         return ['success' => true];

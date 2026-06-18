@@ -155,26 +155,27 @@ class CartController extends Controller
             }
 
             // For hybrid payments, do a quick pre-check of the credit balance.
-            // If it fails the Stripe charge was already made — issue a full refund.
+            // With manual capture, the card has only been authorized (not yet charged),
+            // so we cancel the authorization instead of issuing a refund.
             if ($is_hybrid_payment) {
                 $fresh_balance = User::where('id', $user->id)->value('credit_balance');
                 if ($hybrid_credits_amount > $fresh_balance) {
-                    $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
+                    $cancel_result = $this->stripeService->cancelPaymentIntent($payment_method_id);
 
-                    if (! $refund_result['success']) {
-                        Log::critical('Stripe refund FAILED after hybrid credit pre-check failed — manual action required.', [
+                    if (! $cancel_result['success']) {
+                        Log::critical('Stripe authorization void FAILED after hybrid credit pre-check failed — manual action required.', [
                             'user_id'           => $user->id,
                             'payment_method_id' => $payment_method_id,
-                            'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                            'cancel_error'      => $cancel_result['message'] ?? 'Unknown error',
                         ]);
                         return response()->json([
-                            'message' => 'Insufficient credit balance. We were unable to process an automatic refund — please contact support immediately with reference: ' . $payment_method_id,
+                            'message' => 'Insufficient credit balance. We were unable to void the payment authorization — please contact support immediately with reference: ' . $payment_method_id,
                             'error'   => 'insufficient_credits',
                         ], 422);
                     }
 
                     return response()->json([
-                        'message' => 'Insufficient credit balance. Your card charge has been automatically refunded.',
+                        'message' => 'Insufficient credit balance. Your card authorization has been automatically voided — you will not be charged.',
                         'error'   => 'insufficient_credits',
                     ], 422);
                 }
@@ -250,7 +251,8 @@ class CartController extends Controller
 
                 // For hybrid payments (Stripe card + credits), atomically deduct the
                 // credit portion here so it rolls back with the orders if anything fails.
-                // The card was already charged before entering this transaction.
+                // The card is only authorized at this point — capture happens after the
+                // transaction commits successfully.
                 if ($is_hybrid_payment) {
                     $fresh_user = User::where('id', $user->id)->lockForUpdate()->first();
 
@@ -309,30 +311,29 @@ class CartController extends Controller
             });
         } catch (\DomainException $e) {
             // Insufficient balance: the DB transaction rolled back automatically so
-            // no credits or orders were written. For hybrid payments the Stripe charge
-            // already happened — issue a full refund immediately.
+            // no credits or orders were written. For hybrid payments the card was
+            // authorized (not yet captured) — void the authorization immediately.
             if ($e->getMessage() === 'insufficient_balance') {
                 if ($is_hybrid_payment) {
-                    $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
-                    if ($refund_result['success']) {
-                        Log::info('Stripe refund issued after hybrid payment credit balance insufficient.', [
+                    $cancel_result = $this->stripeService->cancelPaymentIntent($payment_method_id);
+                    if ($cancel_result['success']) {
+                        Log::info('Stripe authorization voided after hybrid payment credit balance insufficient.', [
                             'user_id'           => $user->id,
                             'payment_method_id' => $payment_method_id,
-                            'refund_id'         => $refund_result['refund_id'],
                         ]);
                         return response()->json([
-                            'message' => 'Insufficient credit balance. Your card charge has been automatically refunded.',
+                            'message' => 'Insufficient credit balance. Your card authorization has been automatically voided — you will not be charged.',
                             'error'   => 'insufficient_credits',
                         ], 422);
                     }
 
-                    Log::critical('Stripe refund FAILED after hybrid payment credit balance insufficient — manual action required.', [
+                    Log::critical('Stripe authorization void FAILED after hybrid payment credit balance insufficient — manual action required.', [
                         'user_id'           => $user->id,
                         'payment_method_id' => $payment_method_id,
-                        'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                        'cancel_error'      => $cancel_result['message'] ?? 'Unknown error',
                     ]);
                     return response()->json([
-                        'message' => 'Insufficient credit balance. We were unable to process an automatic refund — please contact support immediately with reference: ' . $payment_method_id,
+                        'message' => 'Insufficient credit balance. We were unable to void the payment authorization — please contact support immediately with reference: ' . $payment_method_id,
                         'error'   => 'insufficient_credits',
                     ], 422);
                 }
@@ -354,7 +355,7 @@ class CartController extends Controller
                 'error'   => 'order_creation_failed',
             ], 500);
         } catch (Throwable $e) {
-            Log::error('Unified cart checkout failed after payment was charged.', [
+            Log::error('Unified cart checkout failed — DB transaction rolled back, voiding Stripe authorization.', [
                 'user_id'           => $user->id,
                 'payment_method_id' => $payment_method_id,
                 'error'             => $e->getMessage(),
@@ -364,27 +365,36 @@ class CartController extends Controller
             $refund_note = '';
 
             if (! $is_credits_payment) {
-                // If the payment was already charged via Stripe and the DB transaction
-                // failed, automatically issue a full refund so the customer is never
-                // billed without receiving an order. For hybrid payments the DB
-                // transaction rolled back both orders and the credit deduction atomically,
-                // so only the Stripe charge needs to be refunded here.
-                $refund_result = $this->stripeService->refundPaymentIntent($payment_method_id);
+                // The DB transaction failed and rolled back — no orders were created.
+                // The card was only authorized (capture_method: manual), never charged.
+                // Cancel the authorization so the customer is never billed.
+                // For hybrid payments the DB transaction also rolled back the credit
+                // deduction atomically, so only the Stripe authorization needs voiding.
+                $cancel_result = $this->stripeService->cancelPaymentIntent($payment_method_id);
 
-                if ($refund_result['success']) {
-                    Log::info('Automatic refund issued after failed checkout.', [
-                        'user_id'           => $user->id,
-                        'payment_method_id' => $payment_method_id,
-                        'refund_id'         => $refund_result['refund_id'],
-                    ]);
-                    $refund_note = ' Your payment has been automatically refunded. Funds typically appear within 5–10 business days.';
+                if ($cancel_result['success']) {
+                    $was_refunded = isset($cancel_result['voided']) && ! $cancel_result['voided'];
+                    if ($was_refunded) {
+                        Log::info('Automatic refund issued after failed checkout (payment was already captured).', [
+                            'user_id'           => $user->id,
+                            'payment_method_id' => $payment_method_id,
+                            'refund_id'         => $cancel_result['refund_id'] ?? null,
+                        ]);
+                        $refund_note = ' Your payment has been automatically refunded. Funds typically appear within 5–10 business days.';
+                    } else {
+                        Log::info('Stripe authorization voided after failed checkout — customer was not charged.', [
+                            'user_id'           => $user->id,
+                            'payment_method_id' => $payment_method_id,
+                        ]);
+                        $refund_note = ' Your payment authorization has been automatically voided — you will not be charged.';
+                    }
                 } else {
-                    Log::critical('Automatic refund FAILED after failed checkout — manual action required.', [
+                    Log::critical('Stripe authorization void FAILED after failed checkout — manual action required.', [
                         'user_id'           => $user->id,
                         'payment_method_id' => $payment_method_id,
-                        'refund_error'      => $refund_result['message'] ?? 'Unknown error',
+                        'cancel_error'      => $cancel_result['message'] ?? 'Unknown error',
                     ]);
-                    $refund_note = ' We were unable to process an automatic refund. Please contact support immediately with your payment reference: ' . $payment_method_id;
+                    $refund_note = ' We were unable to automatically void the payment authorization. Please contact support immediately with your payment reference: ' . $payment_method_id;
                 }
             } elseif (! $is_atomic_credits) {
                 // Legacy credits flow: credits were pre-deducted before checkout was
@@ -430,6 +440,23 @@ class CartController extends Controller
                 'message' => 'An error occurred while creating your orders.' . $refund_note . ' Please contact support if you need assistance.',
                 'error'   => 'order_creation_failed',
             ], 500);
+        }
+
+        // Capture the Stripe authorization now that the DB transaction has committed
+        // and all orders exist. With capture_method: manual the card hold is converted
+        // to an actual charge here — if this fails the orders are already created and
+        // support must follow up with the customer to collect payment.
+        if (! $is_credits_payment) {
+            $capture_result = $this->stripeService->capturePaymentIntent($payment_method_id);
+
+            if (! $capture_result['success']) {
+                Log::critical('Stripe capture FAILED after successful order creation — orders exist but payment not collected, manual action required.', [
+                    'user_id'           => $user->id,
+                    'payment_method_id' => $payment_method_id,
+                    'capture_error'     => $capture_result['message'] ?? 'Unknown error',
+                    'order_ids'         => array_column($created_orders, 'order_id'),
+                ]);
+            }
         }
 
         // Increment coupon usage counts after the transaction commits

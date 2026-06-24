@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers\Client\Cart;
 
+use App\Events\PayLaterOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Cart\DeferredCheckoutCartRequest;
+use App\Jobs\SendAdminPayLaterOrderNotificationJob;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
+use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
+use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -176,6 +180,11 @@ class DeferredCartController extends Controller
             };
         }
 
+        // Dispatch admin notifications — non-critical, errors are logged but never fail the response
+        if ($invoice) {
+            $this->dispatchDeferredCheckoutNotifications($invoice, $user);
+        }
+
         $response_orders = array_map(fn ($entry) => [
             'order_id'     => $entry['order_id'],
             'product_type' => $entry['product_type'],
@@ -187,6 +196,49 @@ class DeferredCartController extends Controller
             'orders'            => $response_orders,
             'invoice_unique_id' => $invoice?->unique_id,
         ]]);
+    }
+
+    /**
+     * Dispatch all post-deferred-checkout admin notifications.
+     * Non-critical: failures are logged but never fail the response.
+     */
+    private function dispatchDeferredCheckoutNotifications(Invoice $invoice, User $user): void
+    {
+        // Admin email notifications to all recipients in Email Notification Settings
+        try {
+            SendAdminPayLaterOrderNotificationJob::dispatch($invoice->id);
+        } catch (Throwable $e) {
+            Log::warning('Failed to dispatch admin pay-later order notification job after deferred checkout.', [
+                'invoice_id' => $invoice->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+
+        // Admin in-app notifications to all configured admin recipients
+        try {
+            $payer_name  = $user->full_name ?? $user->email;
+            $admin_link  = '/admin/invoices/' . $invoice->id;
+            $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
+            $admin_users = User::whereIn('email', array_column($recipients, 'email'))
+                ->where('is_active', true)
+                ->get();
+
+            foreach ($admin_users as $admin) {
+                event(new PayLaterOrderPlaced(
+                    user:           $admin,
+                    client_name:    $payer_name,
+                    amount:         (float) $invoice->total_amount,
+                    invoice_number: $invoice->invoice_number,
+                    link:           $admin_link,
+                    invoice:        $invoice,
+                ));
+            }
+        } catch (Throwable $e) {
+            Log::warning('Failed to dispatch admin in-app pay-later order notifications after deferred checkout.', [
+                'invoice_id' => $invoice->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     private function createLinkBuildingOrder(

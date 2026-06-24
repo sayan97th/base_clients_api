@@ -648,8 +648,9 @@ class CartController extends Controller
                 }
             }
 
-            // Only one discount type applies — whichever saves more
-            $effective_discount = ($potential_coupon > 0 && $potential_coupon >= $potential_bulk)
+            // When a coupon is submitted it always overrides the bulk discount
+            // regardless of savings amount (admin override intent).
+            $effective_discount = $potential_coupon > 0
                 ? $potential_coupon
                 : $potential_bulk;
 
@@ -765,8 +766,9 @@ class CartController extends Controller
             }
         }
 
-        // Coupon wins when it saves more than the bulk discount
-        if ($potential_coupon_amount > 0 && $potential_coupon_amount >= $potential_bulk) {
+        // When a coupon is explicitly submitted it always overrides the bulk discount
+        // (admin override intent) — only one discount type applies per order.
+        if ($potential_coupon_amount > 0) {
             $bulk_discount   = 0.0;
             $applied_coupons = $potential_coupons;
         } else {

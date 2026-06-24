@@ -208,25 +208,37 @@ class DeferredCartController extends Controller
 
         $subtotal = round($subtotal, 2);
 
-        $bulk_discount     = $total_links >= self::BULK_DISCOUNT_THRESHOLD
+        // Only one discount type applies — whichever saves more.
+        $potential_bulk = $total_links >= self::BULK_DISCOUNT_THRESHOLD
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
-        $amount_after_bulk = round($subtotal - $bulk_discount, 2);
 
-        $applied_coupons = [];
-        $current_amount  = $amount_after_bulk;
+        // Calculate coupon discount on the full subtotal (not post-bulk)
+        $potential_coupons       = [];
+        $potential_coupon_amount = 0.0;
+        $temp_amount             = $subtotal;
 
         foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate($coupon, $current_amount, $user->id);
+            $result = $this->couponService->validateAndCalculate($coupon, $temp_amount, $user->id);
 
             if ($result['valid']) {
-                $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
-                $current_amount    = round($current_amount - $result['discount_amount'], 2);
+                $potential_coupons[]     = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
+                $potential_coupon_amount += $result['discount_amount'];
+                $temp_amount             = round($temp_amount - $result['discount_amount'], 2);
             }
         }
 
-        $total_coupon_discount = array_sum(array_column($applied_coupons, 'discount_amount'));
-        $order_total           = round($amount_after_bulk - $total_coupon_discount, 2);
+        // Coupon wins when it saves more than the bulk discount
+        if ($potential_coupon_amount > 0 && $potential_coupon_amount >= $potential_bulk) {
+            $bulk_discount   = 0.0;
+            $applied_coupons = $potential_coupons;
+        } else {
+            $bulk_discount   = $potential_bulk;
+            $applied_coupons = [];
+        }
+
+        $total_discount = $bulk_discount + array_sum(array_column($applied_coupons, 'discount_amount'));
+        $order_total    = max(0.0, round($subtotal - $total_discount, 2));
 
         $order = LinkBuildingOrder::create([
             'user_id'                  => $user->id,

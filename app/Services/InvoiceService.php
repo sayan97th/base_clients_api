@@ -38,7 +38,10 @@ class InvoiceService
         $subtotal_amount = (float) $order->items->sum('subtotal');
 
         $resolved_total_links = $total_links ?? (int) $order->items->sum('quantity');
-        $bulk_discount_amount = $resolved_total_links >= self::BULK_DISCOUNT_THRESHOLD
+
+        // Bulk discount only applies when no coupon won — only one discount type is applied per order.
+        $has_coupon_applied   = $order->orderCoupons->isNotEmpty();
+        $bulk_discount_amount = (! $has_coupon_applied && $resolved_total_links >= self::BULK_DISCOUNT_THRESHOLD)
             ? round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 
@@ -371,7 +374,9 @@ class InvoiceService
                 $order_subtotal = (float) $order->items->sum('subtotal');
                 $subtotal_amount += $order_subtotal;
 
-                if ($total_links >= self::BULK_DISCOUNT_THRESHOLD) {
+                // Bulk discount only applies when no coupon won — only one discount type per order.
+                $has_coupon_applied = $order->orderCoupons->isNotEmpty();
+                if (! $has_coupon_applied && $total_links >= self::BULK_DISCOUNT_THRESHOLD) {
                     $discount_amount += round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2);
                 }
 

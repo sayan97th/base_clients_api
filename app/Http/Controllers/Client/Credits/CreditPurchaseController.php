@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Client\Credits;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendAdminCreditPurchaseNotificationJob;
 use App\Mail\CreditPurchaseConfirmationMail;
 use App\Models\CreditPackage;
 use App\Models\CreditPurchase;
@@ -125,6 +126,8 @@ class CreditPurchaseController extends Controller
             new_balance: $new_balance,
             purchase_date: now(),
         ));
+
+        SendAdminCreditPurchaseNotificationJob::dispatch($purchase->id);
 
         return response()->json([
             'success'     => true,

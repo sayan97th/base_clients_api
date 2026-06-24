@@ -15,13 +15,19 @@ return new class extends Migration
         });
 
         // Expand status enum to include 'unpaid'
-        DB::statement("ALTER TABLE invoices MODIFY COLUMN status ENUM('unpaid', 'paid', 'void') NOT NULL DEFAULT 'unpaid'");
+        // MySQL uses MODIFY COLUMN; SQLite (used in tests) skips this DDL since
+        // SQLite does not enforce ENUMs — the constraint is handled at the application layer.
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE invoices MODIFY COLUMN status ENUM('unpaid', 'paid', 'void') NOT NULL DEFAULT 'unpaid'");
+        }
     }
 
     public function down(): void
     {
         // Revert status enum (rows with 'unpaid' must be handled before rollback)
-        DB::statement("ALTER TABLE invoices MODIFY COLUMN status ENUM('paid', 'void') NOT NULL DEFAULT 'paid'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE invoices MODIFY COLUMN status ENUM('paid', 'void') NOT NULL DEFAULT 'paid'");
+        }
 
         Schema::table('invoices', function (Blueprint $table) {
             $table->dropColumn('discount_type');

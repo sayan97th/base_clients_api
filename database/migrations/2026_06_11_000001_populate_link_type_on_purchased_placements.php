@@ -16,24 +16,30 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("
-            UPDATE link_building_order_placements lbop
-            JOIN link_building_order_items lboi ON lboi.id = lbop.order_item_id
-            JOIN dr_tiers dt ON dt.id = lboi.dr_tier_id
-            SET lbop.link_type = CONCAT(dt.label, ' External')
-            WHERE lbop.order_item_id IS NOT NULL
-            AND (lbop.link_type IS NULL OR lbop.link_type = '')
-        ");
+        // MySQL JOIN-UPDATE with table alias and CONCAT is not supported by SQLite.
+        // The backfill only matters for existing production data; in tests the table is empty.
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("
+                UPDATE link_building_order_placements lbop
+                JOIN link_building_order_items lboi ON lboi.id = lbop.order_item_id
+                JOIN dr_tiers dt ON dt.id = lboi.dr_tier_id
+                SET lbop.link_type = CONCAT(dt.label, ' External')
+                WHERE lbop.order_item_id IS NOT NULL
+                AND (lbop.link_type IS NULL OR lbop.link_type = '')
+            ");
+        }
     }
 
     public function down(): void
     {
-        DB::statement("
-            UPDATE link_building_order_placements lbop
-            JOIN link_building_order_items lboi ON lboi.id = lbop.order_item_id
-            SET lbop.link_type = NULL
-            WHERE lbop.order_item_id IS NOT NULL
-            AND lbop.link_type REGEXP ' External\$'
-        ");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("
+                UPDATE link_building_order_placements lbop
+                JOIN link_building_order_items lboi ON lboi.id = lbop.order_item_id
+                SET lbop.link_type = NULL
+                WHERE lbop.order_item_id IS NOT NULL
+                AND lbop.link_type REGEXP ' External\$'
+            ");
+        }
     }
 };

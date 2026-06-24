@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('invoice_number')->unique();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
             $table->uuid('order_id')->nullable();
-            $table->enum('status', ['paid', 'void'])->default('paid');
+            $table->enum('status', ['unpaid', 'paid', 'overdue', 'refund', 'void'])->default('unpaid');
             $table->string('payment_method')->default('Account Balance');
             $table->enum('currency_type', ['usd', 'credits'])->default('usd');
             $table->decimal('subtotal_amount', 10, 2)->default(0);

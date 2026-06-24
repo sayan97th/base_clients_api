@@ -228,7 +228,7 @@ class AuthenticatedInvoicePayTest extends TestCase
                 'payment_method' => 'account_balance',
             ])->assertStatus(200);
 
-        $this->assertDatabaseHas('invoice_histories', [
+        $this->assertDatabaseHas('invoice_history', [
             'invoice_id' => $invoice->id,
             'event'      => 'invoice_paid',
             'actor_type' => 'client',
@@ -349,7 +349,7 @@ class AuthenticatedInvoicePayTest extends TestCase
                 'payment_intent_id' => 'pi_test_valid_123',
             ])->assertStatus(200);
 
-        $this->assertDatabaseHas('invoice_histories', [
+        $this->assertDatabaseHas('invoice_history', [
             'invoice_id' => $invoice->id,
             'event'      => 'invoice_paid',
         ]);

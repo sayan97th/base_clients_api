@@ -16,6 +16,7 @@ use App\Notifications\InvoiceCreatedNotification;
 use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\NotificationService;
+use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -32,7 +33,8 @@ class InvoiceController extends Controller
     ];
 
     public function __construct(
-        protected NotificationService $notificationService
+        protected NotificationService $notificationService,
+        protected StripeService $stripeService
     ) {}
 
     /**
@@ -537,21 +539,62 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Invoice is already marked as refunded.'], 422);
         }
 
+        if ($invoice->status !== 'paid') {
+            return response()->json([
+                'message' => 'Only paid invoices can be refunded. The customer must complete payment first.',
+            ], 422);
+        }
+
+        // Process Stripe refund when the invoice was paid via Stripe
+        $stripe_refund_id = null;
+        if ($invoice->payment_intent_id) {
+            $result = $this->stripeService->refundPaymentIntent(
+                $invoice->payment_intent_id,
+                'requested_by_customer'
+            );
+
+            if (! $result['success']) {
+                return response()->json([
+                    'message' => 'Stripe refund failed: ' . ($result['message'] ?? 'Unknown error.'),
+                ], 422);
+            }
+
+            $stripe_refund_id = $result['refund_id'];
+        }
+
         $admin          = Auth::user();
         $actor_name     = $admin->full_name ?? $admin->email;
         $actor_initials = $this->buildInitials($actor_name);
+        $formatted_total = number_format((float) $invoice->total_amount, 2);
 
-        $invoice->status = 'refund';
+        $invoice->status        = 'refund';
+        $invoice->refund_amount = $invoice->total_amount;
+        $invoice->refunded_at   = now();
         $invoice->save();
+
+        $via = $stripe_refund_id
+            ? "Full refund of \${$formatted_total} processed via Stripe (refund ID: {$stripe_refund_id})."
+            : "Full refund of \${$formatted_total} recorded manually by admin (no Stripe payment on file).";
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
             'event'          => 'invoice refunded',
-            'description'    => 'Invoice marked as refunded by admin.',
+            'description'    => $via,
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
             'actor_initials' => $actor_initials,
             'actor_type'     => 'admin',
+        ]);
+
+        Transaction::create([
+            'user_id'           => $invoice->user_id,
+            'type'              => 'refund',
+            'status'            => 'success',
+            'amount'            => $invoice->total_amount,
+            'payment_method'    => 'credit_card',
+            'payment_intent_id' => $invoice->payment_intent_id,
+            'invoice_id'        => (string) $invoice->id,
+            'description'       => "Full refund of \${$formatted_total} issued for invoice {$invoice->invoice_number}.",
         ]);
 
         return response()->json($this->formatInvoice(
@@ -572,7 +615,9 @@ class InvoiceController extends Controller
         }
 
         if (! in_array($invoice->status, ['paid', 'refund'])) {
-            return response()->json(['message' => 'Only paid invoices can be partially refunded.'], 422);
+            return response()->json([
+                'message' => 'Only paid invoices can be partially refunded. The customer must complete payment first.',
+            ], 422);
         }
 
         $refund_amount = (float) $request->input('refund_amount', 0);
@@ -581,14 +626,33 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Refund amount must be greater than zero.'], 422);
         }
 
-        $already_refunded   = (float) ($invoice->refund_amount ?? 0);
-        $total_refunded     = round($already_refunded + $refund_amount, 2);
+        $already_refunded = (float) ($invoice->refund_amount ?? 0);
+        $total_refunded   = round($already_refunded + $refund_amount, 2);
 
         if ($total_refunded > $invoice->total_amount) {
             $remaining = round($invoice->total_amount - $already_refunded, 2);
             return response()->json([
                 'message' => "Refund amount exceeds the remaining refundable balance of \${$remaining}.",
             ], 422);
+        }
+
+        // Process Stripe partial refund when the invoice was paid via Stripe
+        $stripe_refund_id = null;
+        if ($invoice->payment_intent_id) {
+            $amount_cents = (int) round($refund_amount * 100);
+            $result = $this->stripeService->refundPaymentIntent(
+                $invoice->payment_intent_id,
+                'requested_by_customer',
+                $amount_cents
+            );
+
+            if (! $result['success']) {
+                return response()->json([
+                    'message' => 'Stripe refund failed: ' . ($result['message'] ?? 'Unknown error.'),
+                ], 422);
+            }
+
+            $stripe_refund_id = $result['refund_id'];
         }
 
         $admin          = Auth::user();
@@ -598,7 +662,6 @@ class InvoiceController extends Controller
         $invoice->refund_amount = $total_refunded;
         $invoice->refunded_at   = now();
 
-        // If fully refunded, mark the invoice status as refund
         if ($total_refunded >= $invoice->total_amount) {
             $invoice->status = 'refund';
         }
@@ -606,11 +669,14 @@ class InvoiceController extends Controller
         $invoice->save();
 
         $formatted_amount = number_format($refund_amount, 2);
+        $via = $stripe_refund_id
+            ? " via Stripe (refund ID: {$stripe_refund_id})"
+            : ' (manual — no Stripe payment on file)';
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
             'event'          => 'partial refund issued',
-            'description'    => "Admin issued a partial refund of \${$formatted_amount}. Total refunded: \${$total_refunded}.",
+            'description'    => "Admin issued a partial refund of \${$formatted_amount}{$via}. Total refunded: \${$total_refunded}.",
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
             'actor_initials' => $actor_initials,
@@ -618,13 +684,14 @@ class InvoiceController extends Controller
         ]);
 
         Transaction::create([
-            'user_id'        => $invoice->user_id,
-            'type'           => 'refund',
-            'status'         => 'success',
-            'amount'         => $refund_amount,
-            'payment_method' => 'credit_card',
-            'invoice_id'     => (string) $invoice->id,
-            'description'    => "Partial refund of \${$formatted_amount} issued for invoice {$invoice->invoice_number}.",
+            'user_id'           => $invoice->user_id,
+            'type'              => 'refund',
+            'status'            => 'success',
+            'amount'            => $refund_amount,
+            'payment_method'    => 'credit_card',
+            'payment_intent_id' => $invoice->payment_intent_id,
+            'invoice_id'        => (string) $invoice->id,
+            'description'       => "Partial refund of \${$formatted_amount} issued for invoice {$invoice->invoice_number}.",
         ]);
 
         return response()->json($this->formatInvoice(
@@ -837,16 +904,18 @@ class InvoiceController extends Controller
         $product_data  = $this->buildProductData($invoice, $include_item_details);
 
         return [
-            'id'              => $invoice->id,
-            'unique_id'       => $invoice->unique_id,
-            'invoice_number'  => $invoice->invoice_number,
-            'user_id'         => $invoice->user_id,
-            'order_id'        => $invoice->order_id,
-            'session_id'      => $invoice->session_id,
-            'session_title'   => $invoice->session_title,
-            'status'          => $invoice->status,
-            'payment_method'  => $invoice->payment_method,
-            'currency_type'   => $invoice->currency_type,
+            'id'                 => $invoice->id,
+            'unique_id'          => $invoice->unique_id,
+            'invoice_number'     => $invoice->invoice_number,
+            'user_id'            => $invoice->user_id,
+            'order_id'           => $invoice->order_id,
+            'session_id'         => $invoice->session_id,
+            'session_title'      => $invoice->session_title,
+            'status'             => $invoice->status,
+            'payment_method'     => $invoice->payment_method,
+            'payment_intent_id'  => $invoice->payment_intent_id,
+            'has_stripe_payment' => ! empty($invoice->payment_intent_id),
+            'currency_type'      => $invoice->currency_type,
             'subtotal_amount' => $invoice->subtotal_amount,
             'discount_amount' => $invoice->discount_amount,
             'discount_type'   => $invoice->discount_type,

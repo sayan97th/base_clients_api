@@ -12,6 +12,7 @@ class Transaction extends Model
         'credit_payment',
         'hybrid_payment',
         'failed_purchase',
+        'refund',
     ];
 
     public const STATUSES = ['success', 'failed'];

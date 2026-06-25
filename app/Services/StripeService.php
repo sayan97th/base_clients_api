@@ -125,20 +125,30 @@ class StripeService
     }
 
     /**
-     * Refund a PaymentIntent in full. Used as a safety net when a charge succeeds
-     * but the subsequent order creation fails — ensures the customer is not billed
-     * without receiving an order.
+     * Refund a PaymentIntent — full or partial.
+     *
+     * When $amount_cents is null the entire remaining charge is refunded (full refund).
+     * When $amount_cents is provided only that amount is refunded (partial refund).
      *
      * Returns ['success' => true, 'refund_id' => '...']
      *      or ['success' => false, 'message' => '...']
      */
-    public function refundPaymentIntent(string $payment_intent_id, string $reason = 'other'): array
-    {
+    public function refundPaymentIntent(
+        string $payment_intent_id,
+        string $reason = 'requested_by_customer',
+        ?int $amount_cents = null
+    ): array {
         try {
-            $refund = $this->client->refunds->create([
+            $params = [
                 'payment_intent' => $payment_intent_id,
                 'reason'         => $reason,
-            ]);
+            ];
+
+            if ($amount_cents !== null) {
+                $params['amount'] = $amount_cents;
+            }
+
+            $refund = $this->client->refunds->create($params);
 
             return [
                 'success'   => true,

@@ -901,9 +901,9 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (! $applied) {
-            // Default: most recent request_date first. STR_TO_DATE is required because
-            // dates are stored as MM/DD/YYYY strings, not native DATE columns.
-            $query->orderByRaw("STR_TO_DATE(NULLIF(`request_date`, ''), '%m/%d/%Y') DESC, `created_at` DESC");
+            // Default: newest order_id first. Numeric extraction ensures BL-25009 outranks
+            // BL-9999 in descending order instead of doing a plain string comparison.
+            $query->orderByRaw("CAST(REGEXP_SUBSTR(`order_id`, '[0-9]+\$') AS UNSIGNED) DESC, `order_id` DESC");
         }
     }
 }

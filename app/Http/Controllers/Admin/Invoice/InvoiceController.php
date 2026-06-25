@@ -545,15 +545,30 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        // Process Stripe refund when the invoice was paid via Stripe
+        // Determine credit vs card breakdown
+        $credit_portion = (float) ($invoice->credit_amount ?? 0);
+        $card_portion   = max(0, round($invoice->total_amount - $credit_portion, 2));
+
+        // Restore account credits to the client's balance
+        if ($credit_portion > 0) {
+            $invoice->user->increment('credit_balance', $credit_portion);
+        }
+
+        // Process Stripe refund only for the card portion
         $stripe_refund_id = null;
-        if ($invoice->payment_intent_id) {
+        if ($card_portion > 0 && $invoice->payment_intent_id) {
+            $amount_cents = (int) round($card_portion * 100);
             $result = $this->stripeService->refundPaymentIntent(
                 $invoice->payment_intent_id,
-                'requested_by_customer'
+                'requested_by_customer',
+                $amount_cents
             );
 
             if (! $result['success']) {
+                // Roll back the credit restoration on Stripe failure
+                if ($credit_portion > 0) {
+                    $invoice->user->decrement('credit_balance', $credit_portion);
+                }
                 return response()->json([
                     'message' => 'Stripe refund failed: ' . ($result['message'] ?? 'Unknown error.'),
                 ], 422);
@@ -562,9 +577,9 @@ class InvoiceController extends Controller
             $stripe_refund_id = $result['refund_id'];
         }
 
-        $admin          = Auth::user();
-        $actor_name     = $admin->full_name ?? $admin->email;
-        $actor_initials = $this->buildInitials($actor_name);
+        $admin           = Auth::user();
+        $actor_name      = $admin->full_name ?? $admin->email;
+        $actor_initials  = $this->buildInitials($actor_name);
         $formatted_total = number_format((float) $invoice->total_amount, 2);
 
         $invoice->status        = 'refund';
@@ -572,30 +587,55 @@ class InvoiceController extends Controller
         $invoice->refunded_at   = now();
         $invoice->save();
 
-        $via = $stripe_refund_id
-            ? "Full refund of \${$formatted_total} processed via Stripe (refund ID: {$stripe_refund_id})."
-            : "Full refund of \${$formatted_total} recorded manually by admin (no Stripe payment on file).";
+        // Build audit description based on payment breakdown
+        $parts = [];
+        if ($credit_portion > 0) {
+            $parts[] = '$' . number_format($credit_portion, 2) . ' returned to client account balance';
+        }
+        if ($card_portion > 0) {
+            $card_via = $stripe_refund_id
+                ? '$' . number_format($card_portion, 2) . " refunded via Stripe (refund ID: {$stripe_refund_id})"
+                : '$' . number_format($card_portion, 2) . ' recorded manually (no Stripe payment on file)';
+            $parts[] = $card_via;
+        }
+        $description = 'Full refund of $' . $formatted_total . ' processed: ' . implode('; ', $parts) . '.';
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
             'event'          => 'invoice refunded',
-            'description'    => $via,
+            'description'    => $description,
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
             'actor_initials' => $actor_initials,
             'actor_type'     => 'admin',
         ]);
 
-        Transaction::create([
-            'user_id'           => $invoice->user_id,
-            'type'              => 'refund',
-            'status'            => 'success',
-            'amount'            => $invoice->total_amount,
-            'payment_method'    => 'credit_card',
-            'payment_intent_id' => $invoice->payment_intent_id,
-            'invoice_id'        => (string) $invoice->id,
-            'description'       => "Full refund of \${$formatted_total} issued for invoice {$invoice->invoice_number}.",
-        ]);
+        // Record credit refund transaction
+        if ($credit_portion > 0) {
+            Transaction::create([
+                'user_id'    => $invoice->user_id,
+                'type'       => 'refund',
+                'status'     => 'success',
+                'amount'     => $credit_portion,
+                'payment_method' => 'account_credits',
+                'invoice_id' => (string) $invoice->id,
+                'description' => 'Credit refund of $' . number_format($credit_portion, 2) . " returned to account balance for invoice {$invoice->invoice_number}.",
+            ]);
+        }
+
+        // Record card refund transaction
+        if ($card_portion > 0) {
+            Transaction::create([
+                'user_id'           => $invoice->user_id,
+                'type'              => 'refund',
+                'status'            => 'success',
+                'amount'            => $card_portion,
+                'payment_method'    => 'credit_card',
+                'payment_intent_id' => $invoice->payment_intent_id,
+                'invoice_id'        => (string) $invoice->id,
+                'description'       => 'Card refund of $' . number_format($card_portion, 2) . " issued for invoice {$invoice->invoice_number}." . ($stripe_refund_id ? " Stripe: {$stripe_refund_id}." : ' Manual — no Stripe payment on file.'),
+            ]);
+        }
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
@@ -636,10 +676,31 @@ class InvoiceController extends Controller
             ], 422);
         }
 
-        // Process Stripe partial refund when the invoice was paid via Stripe
+        // Determine how much of the original payment was made with account credits vs card
+        $credit_portion_total = (float) ($invoice->credit_amount ?? 0);
+
+        // Compute how many credits have already been refunded for this invoice
+        $already_credit_refunded = (float) Transaction::where('invoice_id', $invoice->id)
+            ->where('payment_method', 'account_credits')
+            ->whereIn('type', ['refund', 'partial_refund'])
+            ->where('status', 'success')
+            ->sum('amount');
+
+        $available_credit_refund = max(0, round($credit_portion_total - $already_credit_refunded, 2));
+
+        // Apply credits first, then card for the remainder
+        $credit_refund = round(min($refund_amount, $available_credit_refund), 2);
+        $card_refund   = round($refund_amount - $credit_refund, 2);
+
+        // Restore account credits to the client's balance
+        if ($credit_refund > 0) {
+            $invoice->user->increment('credit_balance', $credit_refund);
+        }
+
+        // Process Stripe partial refund for the card portion
         $stripe_refund_id = null;
-        if ($invoice->payment_intent_id) {
-            $amount_cents = (int) round($refund_amount * 100);
+        if ($card_refund > 0 && $invoice->payment_intent_id) {
+            $amount_cents = (int) round($card_refund * 100);
             $result = $this->stripeService->refundPaymentIntent(
                 $invoice->payment_intent_id,
                 'requested_by_customer',
@@ -647,6 +708,10 @@ class InvoiceController extends Controller
             );
 
             if (! $result['success']) {
+                // Roll back the credit restoration on Stripe failure
+                if ($credit_refund > 0) {
+                    $invoice->user->decrement('credit_balance', $credit_refund);
+                }
                 return response()->json([
                     'message' => 'Stripe refund failed: ' . ($result['message'] ?? 'Unknown error.'),
                 ], 422);
@@ -668,31 +733,58 @@ class InvoiceController extends Controller
 
         $invoice->save();
 
-        $formatted_amount = number_format($refund_amount, 2);
-        $via = $stripe_refund_id
-            ? " via Stripe (refund ID: {$stripe_refund_id})"
-            : ' (manual — no Stripe payment on file)';
+        // Build audit description based on payment breakdown
+        $parts = [];
+        if ($credit_refund > 0) {
+            $parts[] = '$' . number_format($credit_refund, 2) . ' returned to client account balance';
+        }
+        if ($card_refund > 0) {
+            $card_via = $stripe_refund_id
+                ? '$' . number_format($card_refund, 2) . " refunded via Stripe (refund ID: {$stripe_refund_id})"
+                : '$' . number_format($card_refund, 2) . ' recorded manually (no Stripe payment on file)';
+            $parts[] = $card_via;
+        }
+
+        $description = 'Admin issued a partial refund of $' . number_format($refund_amount, 2)
+            . ': ' . implode('; ', $parts)
+            . '. Total refunded: $' . number_format($total_refunded, 2) . '.';
 
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
             'event'          => 'partial refund issued',
-            'description'    => "Admin issued a partial refund of \${$formatted_amount}{$via}. Total refunded: \${$total_refunded}.",
+            'description'    => $description,
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,
             'actor_initials' => $actor_initials,
             'actor_type'     => 'admin',
         ]);
 
-        Transaction::create([
-            'user_id'           => $invoice->user_id,
-            'type'              => 'refund',
-            'status'            => 'success',
-            'amount'            => $refund_amount,
-            'payment_method'    => 'credit_card',
-            'payment_intent_id' => $invoice->payment_intent_id,
-            'invoice_id'        => (string) $invoice->id,
-            'description'       => "Partial refund of \${$formatted_amount} issued for invoice {$invoice->invoice_number}.",
-        ]);
+        // Record credit refund transaction
+        if ($credit_refund > 0) {
+            Transaction::create([
+                'user_id'    => $invoice->user_id,
+                'type'       => 'partial_refund',
+                'status'     => 'success',
+                'amount'     => $credit_refund,
+                'payment_method' => 'account_credits',
+                'invoice_id' => (string) $invoice->id,
+                'description' => 'Partial credit refund of $' . number_format($credit_refund, 2) . " returned to account balance for invoice {$invoice->invoice_number}.",
+            ]);
+        }
+
+        // Record card refund transaction
+        if ($card_refund > 0) {
+            Transaction::create([
+                'user_id'           => $invoice->user_id,
+                'type'              => 'partial_refund',
+                'status'            => 'success',
+                'amount'            => $card_refund,
+                'payment_method'    => 'credit_card',
+                'payment_intent_id' => $invoice->payment_intent_id,
+                'invoice_id'        => (string) $invoice->id,
+                'description'       => 'Partial card refund of $' . number_format($card_refund, 2) . " issued for invoice {$invoice->invoice_number}." . ($stripe_refund_id ? " Stripe: {$stripe_refund_id}." : ' Manual — no Stripe payment on file.'),
+            ]);
+        }
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])

@@ -488,36 +488,63 @@ class CartController extends Controller
         }
 
         // Determine invoice payment fields based on payment method used
-        $invoice_payment_method = $is_credits_payment ? 'Account Balance' : 'Credit Card';
-        $invoice_currency_type  = $is_credits_payment ? 'credits' : 'usd';
-        $total_credits_used     = $is_credits_payment
+        $invoice_payment_method   = $is_credits_payment ? 'Account Balance' : 'Credit Card';
+        $invoice_currency_type    = $is_credits_payment ? 'credits' : 'usd';
+        $total_credits_used       = $is_credits_payment
             ? round(array_sum(array_column($created_orders, 'total_amount')), 2)
             : 0.0;
+        $invoice_payment_intent_id = $is_credits_payment ? null : $payment_method_id;
 
         // Create invoice(s): one combined invoice for multi-product, one per order for single-product
         $checkout_invoice = null;
 
         if ($session_id && count($created_orders) > 1) {
             $checkout_invoice = $this->invoiceService->createForMultiProductSession(
-                $user, $session_id, $session_title, $created_orders,
-                $invoice_payment_method, $invoice_currency_type, $total_credits_used
+                user:              $user,
+                session_id:        $session_id,
+                session_title:     $session_title,
+                product_entries:   $created_orders,
+                payment_method:    $invoice_payment_method,
+                currency_type:     $invoice_currency_type,
+                credit_amount:     $total_credits_used,
+                payment_intent_id: $invoice_payment_intent_id,
             );
         } else {
             $entry        = $created_orders[0];
             $order_credit = $is_credits_payment ? $entry['total_amount'] : 0.0;
             $checkout_invoice = match ($entry['product_type']) {
                 'link_building' => $this->invoiceService->createForLinkBuildingOrder(
-                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type,
-                    $order_credit, $entry['total_links']
+                    user:              $user,
+                    order:             $entry['model'],
+                    payment_method:    $invoice_payment_method,
+                    currency_type:     $invoice_currency_type,
+                    credit_amount:     $order_credit,
+                    total_links:       $entry['total_links'],
+                    payment_intent_id: $invoice_payment_intent_id,
                 ),
                 'new_content' => $this->invoiceService->createForNewContentOrder(
-                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
+                    user:              $user,
+                    order:             $entry['model'],
+                    payment_method:    $invoice_payment_method,
+                    currency_type:     $invoice_currency_type,
+                    credit_amount:     $order_credit,
+                    payment_intent_id: $invoice_payment_intent_id,
                 ),
                 'content_optimization' => $this->invoiceService->createForContentOptimizationOrder(
-                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
+                    user:              $user,
+                    order:             $entry['model'],
+                    payment_method:    $invoice_payment_method,
+                    currency_type:     $invoice_currency_type,
+                    credit_amount:     $order_credit,
+                    payment_intent_id: $invoice_payment_intent_id,
                 ),
                 'content_brief' => $this->invoiceService->createForContentBriefOrder(
-                    $user, $entry['model'], $invoice_payment_method, $invoice_currency_type, $order_credit
+                    user:              $user,
+                    order:             $entry['model'],
+                    payment_method:    $invoice_payment_method,
+                    currency_type:     $invoice_currency_type,
+                    credit_amount:     $order_credit,
+                    payment_intent_id: $invoice_payment_intent_id,
                 ),
                 default => null,
             };

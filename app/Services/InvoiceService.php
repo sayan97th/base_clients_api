@@ -31,7 +31,8 @@ class InvoiceService
         float $credit_amount = 0.0,
         ?int $total_links = null,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         $order->loadMissing(['items.drTier', 'billing', 'orderCoupons.coupon']);
 
@@ -66,20 +67,21 @@ class InvoiceService
         ];
 
         $invoice = $this->buildInvoice(
-            user:            $user,
-            order_id:        $order->id,
-            payment_method:  $payment_method,
-            currency_type:   $currency_type,
-            subtotal_amount: $subtotal_amount,
-            discount_amount: $bulk_discount_amount,
-            discount_type:   $bulk_discount_amount > 0 ? 'bulk_10' : null,
-            total_amount:    $order->total_amount,
-            credit_amount:   $credit_amount,
-            line_items:      $line_items_data,
-            billing_data:    $billing_data,
-            order_coupons:   $order->orderCoupons,
-            invoice_status:  $invoice_status,
-            due_days:        $due_days,
+            user:               $user,
+            order_id:           $order->id,
+            payment_method:     $payment_method,
+            currency_type:      $currency_type,
+            subtotal_amount:    $subtotal_amount,
+            discount_amount:    $bulk_discount_amount,
+            discount_type:      $bulk_discount_amount > 0 ? 'bulk_10' : null,
+            total_amount:       $order->total_amount,
+            credit_amount:      $credit_amount,
+            line_items:         $line_items_data,
+            billing_data:       $billing_data,
+            order_coupons:      $order->orderCoupons,
+            invoice_status:     $invoice_status,
+            due_days:           $due_days,
+            payment_intent_id:  $payment_intent_id,
         );
 
         if ($invoice_status === 'paid') {
@@ -108,7 +110,8 @@ class InvoiceService
         string $currency_type = 'usd',
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -135,20 +138,21 @@ class InvoiceService
         ];
 
         $invoice = $this->buildInvoice(
-            user:            $user,
-            order_id:        $order->id,
-            payment_method:  $payment_method,
-            currency_type:   $currency_type,
-            subtotal_amount: $subtotal_amount,
-            discount_amount: 0.0,
-            discount_type:   null,
-            total_amount:    $order->total_amount,
-            credit_amount:   $credit_amount,
-            line_items:      $line_items_data,
-            billing_data:    $billing_data,
-            order_coupons:   $order->orderCoupons,
-            invoice_status:  $invoice_status,
-            due_days:        $due_days,
+            user:              $user,
+            order_id:          $order->id,
+            payment_method:    $payment_method,
+            currency_type:     $currency_type,
+            subtotal_amount:   $subtotal_amount,
+            discount_amount:   0.0,
+            discount_type:     null,
+            total_amount:      $order->total_amount,
+            credit_amount:     $credit_amount,
+            line_items:        $line_items_data,
+            billing_data:      $billing_data,
+            order_coupons:     $order->orderCoupons,
+            invoice_status:    $invoice_status,
+            due_days:          $due_days,
+            payment_intent_id: $payment_intent_id,
         );
 
         if ($invoice_status === 'paid') {
@@ -177,7 +181,8 @@ class InvoiceService
         string $currency_type = 'usd',
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -204,20 +209,21 @@ class InvoiceService
         ];
 
         $invoice = $this->buildInvoice(
-            user:            $user,
-            order_id:        $order->id,
-            payment_method:  $payment_method,
-            currency_type:   $currency_type,
-            subtotal_amount: $subtotal_amount,
-            discount_amount: 0.0,
-            discount_type:   null,
-            total_amount:    $order->total_amount,
-            credit_amount:   $credit_amount,
-            line_items:      $line_items_data,
-            billing_data:    $billing_data,
-            order_coupons:   $order->orderCoupons,
-            invoice_status:  $invoice_status,
-            due_days:        $due_days,
+            user:              $user,
+            order_id:          $order->id,
+            payment_method:    $payment_method,
+            currency_type:     $currency_type,
+            subtotal_amount:   $subtotal_amount,
+            discount_amount:   0.0,
+            discount_type:     null,
+            total_amount:      $order->total_amount,
+            credit_amount:     $credit_amount,
+            line_items:        $line_items_data,
+            billing_data:      $billing_data,
+            order_coupons:     $order->orderCoupons,
+            invoice_status:    $invoice_status,
+            due_days:          $due_days,
+            payment_intent_id: $payment_intent_id,
         );
 
         if ($invoice_status === 'paid') {
@@ -246,7 +252,8 @@ class InvoiceService
         string $currency_type = 'usd',
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -273,20 +280,21 @@ class InvoiceService
         ];
 
         $invoice = $this->buildInvoice(
-            user:            $user,
-            order_id:        $order->id,
-            payment_method:  $payment_method,
-            currency_type:   $currency_type,
-            subtotal_amount: $subtotal_amount,
-            discount_amount: 0.0,
-            discount_type:   null,
-            total_amount:    $order->total_amount,
-            credit_amount:   $credit_amount,
-            line_items:      $line_items_data,
-            billing_data:    $billing_data,
-            order_coupons:   $order->orderCoupons,
-            invoice_status:  $invoice_status,
-            due_days:        $due_days,
+            user:              $user,
+            order_id:          $order->id,
+            payment_method:    $payment_method,
+            currency_type:     $currency_type,
+            subtotal_amount:   $subtotal_amount,
+            discount_amount:   0.0,
+            discount_type:     null,
+            total_amount:      $order->total_amount,
+            credit_amount:     $credit_amount,
+            line_items:        $line_items_data,
+            billing_data:      $billing_data,
+            order_coupons:     $order->orderCoupons,
+            invoice_status:    $invoice_status,
+            due_days:          $due_days,
+            payment_intent_id: $payment_intent_id,
         );
 
         if ($invoice_status === 'paid') {
@@ -322,7 +330,8 @@ class InvoiceService
         string $currency_type = 'usd',
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         $all_line_items    = [];
         $subtotal_amount   = 0.0;
@@ -422,15 +431,16 @@ class InvoiceService
             payment_method:  $payment_method,
             currency_type:   $currency_type,
             subtotal_amount: $subtotal_amount,
-            discount_amount: $discount_amount,
-            discount_type:   $discount_amount > 0 ? 'bulk' : null,
-            total_amount:    $total_amount,
-            credit_amount:   $credit_amount,
-            line_items:      $all_line_items,
-            billing_data:    $billing_data ?? [],
-            order_coupons:   $all_order_coupons,
-            invoice_status:  $invoice_status,
-            due_days:        $due_days,
+            discount_amount:   $discount_amount,
+            discount_type:     $discount_amount > 0 ? 'bulk' : null,
+            total_amount:      $total_amount,
+            credit_amount:     $credit_amount,
+            line_items:        $all_line_items,
+            billing_data:      $billing_data ?? [],
+            order_coupons:     $all_order_coupons,
+            invoice_status:    $invoice_status,
+            due_days:          $due_days,
+            payment_intent_id: $payment_intent_id,
         );
 
         if ($invoice_status === 'paid') {
@@ -468,7 +478,8 @@ class InvoiceService
         ?string $session_id = null,
         ?string $session_title = null,
         string $invoice_status = 'paid',
-        int $due_days = 30
+        int $due_days = 30,
+        ?string $payment_intent_id = null
     ): Invoice {
         return DB::transaction(function () use (
             $user, $order_id, $session_id, $session_title,
@@ -476,29 +487,30 @@ class InvoiceService
             $subtotal_amount, $discount_amount, $discount_type,
             $total_amount, $credit_amount, $line_items,
             $billing_data, $order_coupons,
-            $invoice_status, $due_days
+            $invoice_status, $due_days, $payment_intent_id
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
 
             $invoice = Invoice::create([
-                'unique_id'       => $unique_id,
-                'invoice_number'  => $invoice_number,
-                'user_id'         => $user->id,
-                'order_id'        => $order_id,
-                'session_id'      => $session_id,
-                'session_title'   => $session_title,
-                'status'          => $invoice_status,
-                'payment_method'  => $invoice_status === 'paid' ? $payment_method : 'Pending',
-                'currency_type'   => $currency_type,
-                'subtotal_amount' => $subtotal_amount,
-                'discount_amount' => $discount_amount,
-                'discount_type'   => $discount_type,
-                'total_amount'    => $total_amount,
-                'credit_amount'   => $credit_amount,
-                'date_issued'     => now(),
-                'date_due'        => now()->addDays($due_days),
-                'date_paid'       => $invoice_status === 'paid' ? now() : null,
+                'unique_id'          => $unique_id,
+                'invoice_number'     => $invoice_number,
+                'user_id'            => $user->id,
+                'order_id'           => $order_id,
+                'session_id'         => $session_id,
+                'session_title'      => $session_title,
+                'status'             => $invoice_status,
+                'payment_method'     => $invoice_status === 'paid' ? $payment_method : 'Pending',
+                'currency_type'      => $currency_type,
+                'subtotal_amount'    => $subtotal_amount,
+                'discount_amount'    => $discount_amount,
+                'discount_type'      => $discount_type,
+                'total_amount'       => $total_amount,
+                'credit_amount'      => $credit_amount,
+                'payment_intent_id'  => $payment_intent_id,
+                'date_issued'        => now(),
+                'date_due'           => now()->addDays($due_days),
+                'date_paid'          => $invoice_status === 'paid' ? now() : null,
             ]);
 
             foreach ($line_items as $item) {

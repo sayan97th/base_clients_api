@@ -242,7 +242,15 @@ class OrderController extends Controller
             $entry['coupon']->increment('times_used');
         }
 
-        $this->invoiceService->createForLinkBuildingOrder($user, $order, 'Credit Card', 'usd', 0.0, $total_links);
+        $this->invoiceService->createForLinkBuildingOrder(
+            user:              $user,
+            order:             $order,
+            payment_method:    'Credit Card',
+            currency_type:     'usd',
+            credit_amount:     0.0,
+            total_links:       $total_links,
+            payment_intent_id: $payment_intent_id,
+        );
 
         event(new LinkBuildingOrderPlaced($user, $order, $total_links));
 

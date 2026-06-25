@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->string('type');           // purchase, credit_payment, hybrid_payment, failed_purchase
+            $table->string('type');           // purchase, credit_payment, hybrid_payment, failed_purchase, refund, partial_refund, dispute
             $table->string('status');         // success, failed
             $table->decimal('amount', 10, 2)->default(0);
             $table->string('payment_method'); // credit_card, account_credits, hybrid

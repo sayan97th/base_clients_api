@@ -48,7 +48,7 @@ class AdminTransactionController extends Controller
             $query->where('status', $status);
         }
 
-        if ($type) {
+        if ($type && in_array($type, Transaction::TYPES)) {
             $query->where('type', $type);
         }
 

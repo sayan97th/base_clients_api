@@ -134,16 +134,17 @@ class LinkBuildingOrderPlacement extends Model
         // Uses placement UUID to guarantee uniqueness. Saved permanently on first admin edit.
         $order_id = $this->order_id ?? $this->derivedOrderId();
 
-        // Derive client name from linked purchase order user when not set directly.
+        // Derive company name from linked purchase order user when not set directly.
+        // Company is the primary identifier; falls back to empty string if unset.
         $client = $this->client ?? '';
         if ($client === '' && $this->relationLoaded('orderItem')) {
             $purchase_user = $this->orderItem?->order?->user;
             if ($purchase_user) {
-                $client = trim(($purchase_user->first_name ?? '') . ' ' . ($purchase_user->last_name ?? ''));
+                $client = trim($purchase_user->company ?? '');
             }
         }
         if ($client === '' && $this->relationLoaded('user') && $this->user) {
-            $client = trim(($this->user->first_name ?? '') . ' ' . ($this->user->last_name ?? ''));
+            $client = trim($this->user->company ?? '');
         }
 
         return [

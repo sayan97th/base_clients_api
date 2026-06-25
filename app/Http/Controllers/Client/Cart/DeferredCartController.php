@@ -9,6 +9,7 @@ use App\Jobs\SendAdminPayLaterOrderNotificationJob;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
+use App\Models\DrTier;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderPlacement;
@@ -330,7 +331,9 @@ class DeferredCartController extends Controller
                 'subtotal'   => $item_subtotal,
             ]);
 
-            $client_name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+            $client_company = trim($user->company ?? '');
+            $dr_tier        = DrTier::find($item_data['dr_tier_id']);
+            $link_type      = $dr_tier ? $dr_tier->label . ' External' : null;
 
             foreach ($item_data['placements'] as $placement_data) {
                 $item->placements()->create([
@@ -339,7 +342,8 @@ class DeferredCartController extends Controller
                     'keyword'      => $placement_data['keyword'] ?: null,
                     'landing_page' => $placement_data['landing_page'] ?: null,
                     'exact_match'  => $placement_data['exact_match'],
-                    'client'       => $client_name ?: null,
+                    'client'       => $client_company ?: null,
+                    'link_type'    => $link_type,
                     'status'       => 'New Request',
                     'request_date' => now()->format('m/d/Y'),
                     'user_id'      => $user->id,

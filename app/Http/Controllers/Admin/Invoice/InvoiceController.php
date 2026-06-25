@@ -526,7 +526,7 @@ class InvoiceController extends Controller
     /**
      * POST /api/admin/invoices/{invoice_id}/refund
      */
-    public function refundInvoice(string $invoice_id): JsonResponse
+    public function refundInvoice(Request $request, string $invoice_id): JsonResponse
     {
         $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
@@ -543,6 +543,13 @@ class InvoiceController extends Controller
             return response()->json([
                 'message' => 'Only paid invoices can be refunded. The customer must complete payment first.',
             ], 422);
+        }
+
+        // Allow admin to supply a payment_intent_id for older invoices that lack one
+        $request_pi = trim((string) $request->input('payment_intent_id', ''));
+        if ($request_pi && ! $invoice->payment_intent_id) {
+            $invoice->payment_intent_id = $request_pi;
+            $invoice->save();
         }
 
         // Determine credit vs card breakdown
@@ -676,6 +683,13 @@ class InvoiceController extends Controller
             ], 422);
         }
 
+        // Allow admin to supply a payment_intent_id for older invoices that lack one
+        $request_pi = trim((string) $request->input('payment_intent_id', ''));
+        if ($request_pi && ! $invoice->payment_intent_id) {
+            $invoice->payment_intent_id = $request_pi;
+            $invoice->save();
+        }
+
         // Determine how much of the original payment was made with account credits vs card
         $credit_portion_total = (float) ($invoice->credit_amount ?? 0);
 
@@ -785,6 +799,51 @@ class InvoiceController extends Controller
                 'description'       => 'Partial card refund of $' . number_format($card_refund, 2) . " issued for invoice {$invoice->invoice_number}." . ($stripe_refund_id ? " Stripe: {$stripe_refund_id}." : ' Manual — no Stripe payment on file.'),
             ]);
         }
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
+        ));
+    }
+
+    /**
+     * PATCH /api/admin/invoices/{invoice_id}/payment-intent
+     */
+    public function setPaymentIntent(Request $request, string $invoice_id): JsonResponse
+    {
+        $request->validate([
+            'payment_intent_id' => ['required', 'string', 'max:255'],
+        ]);
+
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
+            ->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $payment_intent_id = trim($request->input('payment_intent_id'));
+        $old_pi            = $invoice->payment_intent_id;
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->payment_intent_id = $payment_intent_id;
+        $invoice->save();
+
+        $description = $old_pi
+            ? "Stripe PaymentIntent ID updated from {$old_pi} to {$payment_intent_id}."
+            : "Stripe PaymentIntent ID set to {$payment_intent_id}.";
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'stripe id updated',
+            'description'    => $description,
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])

@@ -17,6 +17,7 @@ use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -559,6 +560,79 @@ class InvoiceController extends Controller
     }
 
     /**
+     * POST /api/admin/invoices/{invoice_id}/partial-refund
+     */
+    public function partialRefundInvoice(Request $request, string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
+            ->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if (! in_array($invoice->status, ['paid', 'refund'])) {
+            return response()->json(['message' => 'Only paid invoices can be partially refunded.'], 422);
+        }
+
+        $refund_amount = (float) $request->input('refund_amount', 0);
+
+        if ($refund_amount <= 0) {
+            return response()->json(['message' => 'Refund amount must be greater than zero.'], 422);
+        }
+
+        $already_refunded   = (float) ($invoice->refund_amount ?? 0);
+        $total_refunded     = round($already_refunded + $refund_amount, 2);
+
+        if ($total_refunded > $invoice->total_amount) {
+            $remaining = round($invoice->total_amount - $already_refunded, 2);
+            return response()->json([
+                'message' => "Refund amount exceeds the remaining refundable balance of \${$remaining}.",
+            ], 422);
+        }
+
+        $admin          = Auth::user();
+        $actor_name     = $admin->full_name ?? $admin->email;
+        $actor_initials = $this->buildInitials($actor_name);
+
+        $invoice->refund_amount = $total_refunded;
+        $invoice->refunded_at   = now();
+
+        // If fully refunded, mark the invoice status as refund
+        if ($total_refunded >= $invoice->total_amount) {
+            $invoice->status = 'refund';
+        }
+
+        $invoice->save();
+
+        $formatted_amount = number_format($refund_amount, 2);
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'partial refund issued',
+            'description'    => "Admin issued a partial refund of \${$formatted_amount}. Total refunded: \${$total_refunded}.",
+            'actor_id'       => $admin->id,
+            'actor_name'     => $actor_name,
+            'actor_initials' => $actor_initials,
+            'actor_type'     => 'admin',
+        ]);
+
+        Transaction::create([
+            'user_id'        => $invoice->user_id,
+            'type'           => 'refund',
+            'status'         => 'success',
+            'amount'         => $refund_amount,
+            'payment_method' => 'credit_card',
+            'invoice_id'     => (string) $invoice->id,
+            'description'    => "Partial refund of \${$formatted_amount} issued for invoice {$invoice->invoice_number}.",
+        ]);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
+        ));
+    }
+
+    /**
      * POST /api/admin/invoices/{invoice_id}/void
      */
     public function voidInvoice(string $invoice_id): JsonResponse
@@ -778,10 +852,12 @@ class InvoiceController extends Controller
             'discount_type'   => $invoice->discount_type,
             'total_amount'    => $invoice->total_amount,
             'credit_amount'   => $invoice->credit_amount,
+            'refund_amount'   => $invoice->refund_amount,
             'notes'           => $invoice->notes,
             'date_issued'     => $invoice->date_issued?->toIso8601String(),
             'date_due'        => $invoice->date_due?->toIso8601String(),
             'date_paid'       => $invoice->date_paid?->toIso8601String(),
+            'refunded_at'     => $invoice->refunded_at?->toIso8601String(),
             'created_at'      => $invoice->created_at?->toIso8601String(),
             'updated_at'      => $invoice->updated_at?->toIso8601String(),
             'user' => [

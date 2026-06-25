@@ -33,12 +33,14 @@ class Invoice extends Model
         'discount_type',
         'total_amount',
         'credit_amount',
+        'refund_amount',
         'notes',
         'share_key',
         'sharing_enabled',
         'date_issued',
         'date_due',
         'date_paid',
+        'refunded_at',
     ];
 
     protected function casts(): array
@@ -48,10 +50,12 @@ class Invoice extends Model
             'discount_amount'  => 'float',
             'total_amount'     => 'float',
             'credit_amount'    => 'float',
+            'refund_amount'    => 'float',
             'sharing_enabled'  => 'boolean',
             'date_issued'      => 'datetime',
             'date_due'         => 'datetime',
             'date_paid'        => 'datetime',
+            'refunded_at'      => 'datetime',
         ];
     }
 

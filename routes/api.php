@@ -606,6 +606,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('invoices/{invoice_id}/mark-unpaid', [AdminInvoiceController::class, 'markUnpaid']);
             Route::post('invoices/{invoice_id}/mark-overdue', [AdminInvoiceController::class, 'markOverdue']);
             Route::post('invoices/{invoice_id}/refund', [AdminInvoiceController::class, 'refundInvoice']);
+            Route::post('invoices/{invoice_id}/partial-refund', [AdminInvoiceController::class, 'partialRefundInvoice']);
             Route::post('invoices/{invoice_id}/void', [AdminInvoiceController::class, 'voidInvoice']);
             Route::post('invoices/{invoice_id}/duplicate', [AdminInvoiceController::class, 'duplicate']);
             Route::post('invoices/{invoice_id}/send-reminder', [AdminInvoiceController::class, 'sendReminder']);

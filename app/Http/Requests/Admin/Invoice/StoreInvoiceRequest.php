@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Admin\Invoice;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 class StoreInvoiceRequest extends FormRequest
@@ -10,6 +11,24 @@ class StoreInvoiceRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    /**
+     * Normalize the incoming due date to the Y-m-d format the validator
+     * expects, accepting ISO 8601 strings and other parseable date inputs.
+     */
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('date_due')) {
+            try {
+                $this->merge([
+                    'date_due' => Carbon::parse($this->input('date_due'))->format('Y-m-d'),
+                ]);
+            } catch (\Throwable $e) {
+                // Leave the original value untouched so the validator can
+                // report a clear "invalid format" message.
+            }
+        }
     }
 
     public function rules(): array

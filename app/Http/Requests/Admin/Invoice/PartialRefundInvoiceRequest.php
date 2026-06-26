@@ -23,9 +23,10 @@ class PartialRefundInvoiceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'refund_amount'     => ['required', 'numeric', 'gt:0'],
-            'confirmation'      => ['required', 'accepted'],
-            'payment_intent_id' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'refund_amount'            => ['required', 'numeric', 'gt:0'],
+            'confirmation'             => ['required', 'accepted'],
+            'payment_intent_id'        => ['sometimes', 'nullable', 'string', 'max:255'],
+            'send_client_notification' => ['sometimes', 'boolean'],
         ];
     }
 

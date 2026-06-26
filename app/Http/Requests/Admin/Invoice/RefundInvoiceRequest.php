@@ -22,8 +22,9 @@ class RefundInvoiceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'confirmation'      => ['required', 'accepted'],
-            'payment_intent_id' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'confirmation'             => ['required', 'accepted'],
+            'payment_intent_id'        => ['sometimes', 'nullable', 'string', 'max:255'],
+            'send_client_notification' => ['sometimes', 'boolean'],
         ];
     }
 

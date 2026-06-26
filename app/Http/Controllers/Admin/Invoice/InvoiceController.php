@@ -9,6 +9,8 @@ use App\Http\Requests\Admin\Invoice\RefundInvoiceRequest;
 use App\Http\Requests\Admin\Invoice\StoreInvoiceRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceBillingRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
+use App\Jobs\SendAdminInvoiceRefundedNotificationJob;
+use App\Jobs\SendClientInvoiceRefundedNotificationJob;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceLineItem;
@@ -646,6 +648,18 @@ class InvoiceController extends Controller
             ]);
         }
 
+        $this->dispatchRefundNotifications(
+            invoice: $invoice,
+            refund_amount: (float) $invoice->total_amount,
+            total_refunded: (float) $invoice->refund_amount,
+            credit_refund: $credit_portion,
+            card_refund: $card_portion,
+            is_full_refund: true,
+            stripe_refund_id: $stripe_refund_id,
+            actor_name: $actor_name,
+            send_client_notification: $request->boolean('send_client_notification', true),
+        );
+
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
@@ -819,6 +833,18 @@ class InvoiceController extends Controller
                 'description'       => 'Partial card refund of $' . number_format($card_refund, 2) . " issued for invoice {$invoice->invoice_number}." . ($stripe_refund_id ? " Stripe: {$stripe_refund_id}." : ' Manual — no Stripe payment on file.'),
             ]);
         }
+
+        $this->dispatchRefundNotifications(
+            invoice: $invoice,
+            refund_amount: $refund_amount,
+            total_refunded: $total_refunded,
+            credit_refund: $credit_refund,
+            card_refund: $card_refund,
+            is_full_refund: $is_now_fully_refunded,
+            stripe_refund_id: $stripe_refund_id,
+            actor_name: $actor_name,
+            send_client_notification: $request->boolean('send_client_notification', true),
+        );
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
@@ -1211,6 +1237,63 @@ class InvoiceController extends Controller
         }
 
         return strtoupper(mb_substr($name, 0, 2));
+    }
+
+    /**
+     * Queues the refund notification emails after a refund / partial refund.
+     *
+     * The admin alert is dispatched on every refund so the team configured in
+     * the Email Notification Settings is always kept in the loop. The
+     * client-facing email is only queued when the admin left the "Notify client"
+     * checkbox enabled. Both are delivered through queued Laravel jobs so the
+     * HTTP response is never blocked on mail delivery.
+     */
+    private function dispatchRefundNotifications(
+        Invoice $invoice,
+        float $refund_amount,
+        float $total_refunded,
+        float $credit_refund,
+        float $card_refund,
+        bool $is_full_refund,
+        ?string $stripe_refund_id,
+        string $actor_name,
+        bool $send_client_notification,
+    ): void {
+        // Always keep the admin team informed of money leaving the platform.
+        SendAdminInvoiceRefundedNotificationJob::dispatch(
+            invoice_id: (string) $invoice->id,
+            refund_amount: $refund_amount,
+            total_refunded: $total_refunded,
+            credit_refund: $credit_refund,
+            card_refund: $card_refund,
+            is_full_refund: $is_full_refund,
+            stripe_refund_id: $stripe_refund_id,
+            actor_name: $actor_name,
+        );
+
+        if (! $send_client_notification) {
+            return;
+        }
+
+        SendClientInvoiceRefundedNotificationJob::dispatch(
+            invoice_id: (string) $invoice->id,
+            refund_amount: $refund_amount,
+            total_refunded: $total_refunded,
+            credit_refund: $credit_refund,
+            card_refund: $card_refund,
+            is_full_refund: $is_full_refund,
+        );
+
+        InvoiceHistory::create([
+            'invoice_id'     => $invoice->id,
+            'event'          => 'refund notification sent to client',
+            'description'    => ($is_full_refund ? 'Refund' : 'Partial refund')
+                . ' confirmation email queued for the client ($' . number_format($refund_amount, 2) . ').',
+            'actor_id'       => null,
+            'actor_name'     => 'System',
+            'actor_initials' => 'SY',
+            'actor_type'     => 'system',
+        ]);
     }
 
     private function recordInvoiceTransaction(Invoice $invoice): void

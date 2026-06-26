@@ -661,7 +661,7 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
 
-        if (! in_array($invoice->status, ['paid', 'refund'])) {
+        if (! in_array($invoice->status, ['paid', 'partial_refund', 'refund'])) {
             return response()->json([
                 'message' => 'Only paid invoices can be partially refunded. The customer must complete payment first.',
             ], 422);
@@ -741,9 +741,11 @@ class InvoiceController extends Controller
         $invoice->refund_amount = $total_refunded;
         $invoice->refunded_at   = now();
 
-        if ($total_refunded >= $invoice->total_amount) {
-            $invoice->status = 'refund';
-        }
+        // Fully refunded invoices become 'refund'; anything less is a 'partial_refund'
+        // so the status mirrors the Stripe-aligned transaction type in the table.
+        $invoice->status = $total_refunded >= $invoice->total_amount
+            ? 'refund'
+            : 'partial_refund';
 
         $invoice->save();
 

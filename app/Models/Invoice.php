@@ -13,7 +13,7 @@ class Invoice extends Model
 {
     use HasUuids;
 
-    public const STATUSES        = ['unpaid', 'paid', 'overdue', 'refund', 'void'];
+    public const STATUSES        = ['unpaid', 'paid', 'overdue', 'refund', 'partial_refund', 'dispute', 'void'];
     public const CURRENCY_TYPES  = ['usd', 'credits'];
     public const PAYMENT_METHODS = ['Account Balance', 'Credit Card'];
 

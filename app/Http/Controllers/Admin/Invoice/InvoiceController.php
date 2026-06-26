@@ -661,10 +661,15 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
 
-        if (! in_array($invoice->status, ['paid', 'partial_refund', 'refund'])) {
-            return response()->json([
-                'message' => 'Only paid invoices can be partially refunded. The customer must complete payment first.',
-            ], 422);
+        // Partial refunds may be issued while the invoice is "paid" or already
+        // "partial_refund". A "refund" status means the total has been fully
+        // refunded, so it is intentionally excluded here.
+        if (! in_array($invoice->status, ['paid', 'partial_refund'])) {
+            $message = $invoice->status === 'refund'
+                ? 'This invoice has already been fully refunded.'
+                : 'Only paid or partially refunded invoices can be partially refunded. The customer must complete payment first.';
+
+            return response()->json(['message' => $message], 422);
         }
 
         $refund_amount = (float) $request->input('refund_amount', 0);
@@ -673,13 +678,19 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Refund amount must be greater than zero.'], 422);
         }
 
-        $already_refunded = (float) ($invoice->refund_amount ?? 0);
-        $total_refunded   = round($already_refunded + $refund_amount, 2);
+        $already_refunded   = (float) ($invoice->refund_amount ?? 0);
+        $remaining_balance  = round($invoice->total_amount - $already_refunded, 2);
+        $total_refunded     = round($already_refunded + $refund_amount, 2);
+
+        if ($remaining_balance <= 0) {
+            return response()->json([
+                'message' => 'This invoice has already been fully refunded. No remaining balance to refund.',
+            ], 422);
+        }
 
         if ($total_refunded > $invoice->total_amount) {
-            $remaining = round($invoice->total_amount - $already_refunded, 2);
             return response()->json([
-                'message' => "Refund amount exceeds the remaining refundable balance of \${$remaining}.",
+                'message' => "Refund amount exceeds the remaining refundable balance of \${$remaining_balance}.",
             ], 422);
         }
 
@@ -743,9 +754,10 @@ class InvoiceController extends Controller
 
         // Fully refunded invoices become 'refund'; anything less is a 'partial_refund'
         // so the status mirrors the Stripe-aligned transaction type in the table.
-        $invoice->status = $total_refunded >= $invoice->total_amount
-            ? 'refund'
-            : 'partial_refund';
+        // When the cumulative refund reaches the invoice total the status flips
+        // to 'refund' automatically, which disables any further partial refunds.
+        $is_now_fully_refunded = $total_refunded >= $invoice->total_amount;
+        $invoice->status       = $is_now_fully_refunded ? 'refund' : 'partial_refund';
 
         $invoice->save();
 
@@ -765,9 +777,13 @@ class InvoiceController extends Controller
             . ': ' . implode('; ', $parts)
             . '. Total refunded: $' . number_format($total_refunded, 2) . '.';
 
+        if ($is_now_fully_refunded) {
+            $description .= ' The invoice is now fully refunded and its status has been updated to Refund.';
+        }
+
         InvoiceHistory::create([
             'invoice_id'     => $invoice->id,
-            'event'          => 'partial refund issued',
+            'event'          => $is_now_fully_refunded ? 'invoice fully refunded' : 'partial refund issued',
             'description'    => $description,
             'actor_id'       => $admin->id,
             'actor_name'     => $actor_name,

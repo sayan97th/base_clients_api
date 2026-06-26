@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin\Invoice;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Invoice\ListInvoicesRequest;
+use App\Http\Requests\Admin\Invoice\PartialRefundInvoiceRequest;
+use App\Http\Requests\Admin\Invoice\RefundInvoiceRequest;
 use App\Http\Requests\Admin\Invoice\StoreInvoiceRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceBillingRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
@@ -526,7 +528,7 @@ class InvoiceController extends Controller
     /**
      * POST /api/admin/invoices/{invoice_id}/refund
      */
-    public function refundInvoice(Request $request, string $invoice_id): JsonResponse
+    public function refundInvoice(RefundInvoiceRequest $request, string $invoice_id): JsonResponse
     {
         $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);
@@ -652,7 +654,7 @@ class InvoiceController extends Controller
     /**
      * POST /api/admin/invoices/{invoice_id}/partial-refund
      */
-    public function partialRefundInvoice(Request $request, string $invoice_id): JsonResponse
+    public function partialRefundInvoice(PartialRefundInvoiceRequest $request, string $invoice_id): JsonResponse
     {
         $invoice = Invoice::with(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
             ->find($invoice_id);

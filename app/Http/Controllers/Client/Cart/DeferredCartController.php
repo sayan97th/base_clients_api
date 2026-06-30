@@ -261,7 +261,8 @@ class DeferredCartController extends Controller
 
         $subtotal = round($subtotal, 2);
 
-        // Only one discount type applies — whichever saves more.
+        // Only one discount type applies per order: an explicitly submitted coupon always wins;
+        // bulk discount is only used as a fallback when no coupon was provided.
         $potential_bulk = $total_links >= self::BULK_DISCOUNT_THRESHOLD
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
@@ -281,8 +282,9 @@ class DeferredCartController extends Controller
             }
         }
 
-        // Coupon wins when it saves more than the bulk discount
-        if ($potential_coupon_amount > 0 && $potential_coupon_amount >= $potential_bulk) {
+        // When a coupon is explicitly submitted it always overrides the bulk discount
+        // so only one discount type applies per order — matching CartController behaviour.
+        if ($potential_coupon_amount > 0) {
             $bulk_discount   = 0.0;
             $applied_coupons = $potential_coupons;
         } else {

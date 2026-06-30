@@ -251,12 +251,21 @@ class DeferredCartController extends Controller
         ?string $session_id,
         ?string $session_title
     ): array {
-        $total_links = 0;
-        $subtotal    = 0.0;
+        $total_links     = 0;
+        $subtotal        = 0.0;
+        $dr_tier_ids     = [];
+        $dr_tier_amounts = [];
 
         foreach ($items as $item) {
-            $total_links += (int) $item['quantity'];
-            $subtotal    += (float) $item['unit_price'] * (int) $item['quantity'];
+            $total_links  += (int) $item['quantity'];
+            $item_total    = (float) $item['unit_price'] * (int) $item['quantity'];
+            $subtotal     += $item_total;
+
+            $tier_id = (string) $item['dr_tier_id'];
+            if (! in_array($tier_id, $dr_tier_ids, true)) {
+                $dr_tier_ids[] = $tier_id;
+            }
+            $dr_tier_amounts[$tier_id] = ($dr_tier_amounts[$tier_id] ?? 0.0) + $item_total;
         }
 
         $subtotal = round($subtotal, 2);
@@ -273,7 +282,15 @@ class DeferredCartController extends Controller
         $temp_amount             = $subtotal;
 
         foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate($coupon, $temp_amount, $user->id);
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $temp_amount,
+                $user->id,
+                $dr_tier_ids,
+                $dr_tier_amounts,
+                ['link_building'],
+                ['link_building' => $subtotal]
+            );
 
             if ($result['valid']) {
                 $potential_coupons[]     = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
@@ -383,7 +400,15 @@ class DeferredCartController extends Controller
         $current_amount  = $subtotal;
 
         foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate($coupon, $current_amount, $user->id);
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id,
+                [],
+                [],
+                ['content_optimization'],
+                ['content_optimization' => $subtotal]
+            );
 
             if ($result['valid']) {
                 $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
@@ -463,7 +488,15 @@ class DeferredCartController extends Controller
         $current_amount  = $subtotal;
 
         foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate($coupon, $current_amount, $user->id);
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id,
+                [],
+                [],
+                ['new_content'],
+                ['new_content' => $subtotal]
+            );
 
             if ($result['valid']) {
                 $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];
@@ -544,7 +577,15 @@ class DeferredCartController extends Controller
         $current_amount  = $subtotal;
 
         foreach ($coupon_models as $coupon) {
-            $result = $this->couponService->validateAndCalculate($coupon, $current_amount, $user->id);
+            $result = $this->couponService->validateAndCalculate(
+                $coupon,
+                $current_amount,
+                $user->id,
+                [],
+                [],
+                ['content_brief'],
+                ['content_brief' => $subtotal]
+            );
 
             if ($result['valid']) {
                 $applied_coupons[] = ['coupon' => $coupon, 'discount_amount' => $result['discount_amount']];

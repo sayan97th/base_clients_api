@@ -2,8 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\ContentBriefOrderCoupon;
+use App\Models\ContentOptimizationOrderCoupon;
 use App\Models\Coupon;
 use App\Models\LinkBuildingOrderCoupon;
+use App\Models\NewContentOrderCoupon;
 use Illuminate\Support\Carbon;
 
 class CouponService
@@ -43,9 +46,19 @@ class CouponService
         }
 
         if ($coupon->usage_per_user !== null) {
-            $user_usage = LinkBuildingOrderCoupon::where('coupon_id', $coupon->id)
-                ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
-                ->count();
+            $user_usage =
+                LinkBuildingOrderCoupon::where('coupon_id', $coupon->id)
+                    ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
+                    ->count()
+                + ContentOptimizationOrderCoupon::where('coupon_id', $coupon->id)
+                    ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
+                    ->count()
+                + NewContentOrderCoupon::where('coupon_id', $coupon->id)
+                    ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
+                    ->count()
+                + ContentBriefOrderCoupon::where('coupon_id', $coupon->id)
+                    ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
+                    ->count();
 
             if ($user_usage >= $coupon->usage_per_user) {
                 return ['valid' => false, 'message' => 'You have already used this coupon the maximum number of times.'];

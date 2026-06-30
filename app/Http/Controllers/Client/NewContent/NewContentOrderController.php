@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Client\NewContent;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\NewContent\StoreNewContentOrderRequest;
 use App\Http\Resources\NewContentOrderResource;
+use App\Http\Traits\BuildsAppliedDiscounts;
 use App\Models\Coupon;
 use App\Models\NewContentOrder;
 use App\Models\NewContentTier;
@@ -17,6 +18,8 @@ use Illuminate\Support\Str;
 
 class NewContentOrderController extends Controller
 {
+    use BuildsAppliedDiscounts;
+
     public function __construct(
         protected StripeService $stripeService,
         protected CouponService $couponService,
@@ -113,6 +116,13 @@ class NewContentOrderController extends Controller
                     'discount_amount' => round((float) $oc->discount_amount, 2),
                 ])->values()
                 : [],
+            'discounts' => $this->buildAppliedDiscounts(
+                subtotal_before_discount: round($subtotal_before_discount, 2),
+                total_amount:             (float) $order->total_amount,
+                coupon_savings:           $order->relationLoaded('orderCoupons')
+                    ? round($order->orderCoupons->sum('discount_amount'), 2)
+                    : 0.0,
+            ),
         ];
     }
 

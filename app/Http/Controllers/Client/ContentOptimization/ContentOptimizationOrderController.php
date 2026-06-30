@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Client\ContentOptimization;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ContentOptimization\StoreContentOptimizationOrderRequest;
+use App\Http\Traits\BuildsAppliedDiscounts;
 use App\Models\Coupon;
 use App\Models\ContentOptimizationOrder;
 use App\Models\ContentOptimizationTier;
@@ -16,6 +17,8 @@ use Illuminate\Support\Str;
 
 class ContentOptimizationOrderController extends Controller
 {
+    use BuildsAppliedDiscounts;
+
     public function __construct(
         protected StripeService $stripeService,
         protected CouponService $couponService,
@@ -119,6 +122,13 @@ class ContentOptimizationOrderController extends Controller
                     'discount_amount' => round((float) $oc->discount_amount, 2),
                 ])->values()
                 : [],
+            'discounts' => $this->buildAppliedDiscounts(
+                subtotal_before_discount: round($subtotal_before_discount, 2),
+                total_amount:             (float) $order->total_amount,
+                coupon_savings:           $order->relationLoaded('orderCoupons')
+                    ? round($order->orderCoupons->sum('discount_amount'), 2)
+                    : 0.0,
+            ),
         ];
     }
 

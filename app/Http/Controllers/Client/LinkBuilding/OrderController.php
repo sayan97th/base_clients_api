@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Client\LinkBuilding;
 use App\Events\LinkBuildingOrderPlaced;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LinkBuilding\StoreLinkBuildingOrderRequest;
+use App\Http\Traits\BuildsAppliedDiscounts;
 use App\Models\Coupon;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
@@ -19,6 +20,7 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
+    use BuildsAppliedDiscounts;
     private const BULK_DISCOUNT_THRESHOLD = 10;
     private const BULK_DISCOUNT_RATE      = 0.10;
 
@@ -351,6 +353,11 @@ class OrderController extends Controller
                 'discount_value'  => $oc->coupon?->discount_value ?? 0,
                 'discount_amount' => round((float) $oc->discount_amount, 2),
             ])->values(),
+            'discounts' => $this->buildAppliedDiscounts(
+                subtotal_before_discount: round((float) $subtotal_before_discount, 2),
+                total_amount:             (float) $order->total_amount,
+                coupon_savings:           round($order->orderCoupons->sum('discount_amount'), 2),
+            ),
             'credit_amount'  => (float) ($order->invoice?->credit_amount ?? 0),
             'payment_method' => $order->invoice?->payment_method ?? 'Credit Card',
         ];

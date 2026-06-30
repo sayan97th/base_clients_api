@@ -62,14 +62,18 @@ class Invoice extends Model
     /**
      * Whether this invoice was settled using the customer's account credits.
      *
-     * Coupons and discounts can never be applied to credit payments, so this
-     * is the single source of truth used across the admin responses to decide
+     * The credits checkout flow is the only path that sets currency_type to
+     * "credits" (see CartController), so it is the single reliable signal — the
+     * "Account Balance" payment_method alone is not, since manually created USD
+     * invoices also default to it.
+     *
+     * Coupons and discounts can never be applied to credit payments, so this is
+     * the single source of truth used across the admin responses to decide
      * whether discount / coupon data should be suppressed.
      */
     public function isPaidWithCredits(): bool
     {
-        return $this->currency_type === 'credits'
-            || $this->payment_method === 'Account Balance';
+        return $this->currency_type === 'credits';
     }
 
     public function user(): BelongsTo

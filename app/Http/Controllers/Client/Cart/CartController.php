@@ -104,6 +104,22 @@ class CartController extends Controller
         $hybrid_credits_amount = (float) ($request->input('credits_amount', 0));
         $is_hybrid_payment     = ! $is_credits_payment && $hybrid_credits_amount > 0;
 
+        // Whether any portion of this order is paid with account credits — either a
+        // pure credits payment or a hybrid (card + partial credits) payment. Credits
+        // already represent a discounted value, so when any credits are involved no
+        // bulk discounts or coupon codes may be applied on top of them. This flag is
+        // the single source of truth that keeps the server in sync with the frontend
+        // Order Summary, which disables coupons/discounts as soon as credits are applied.
+        $any_credits_applied = $is_credits_payment || $is_hybrid_payment;
+        $skip_discounts      = $any_credits_applied;
+
+        // Reject coupon codes for any credits-backed payment (pure or hybrid).
+        if ($any_credits_applied && ! empty($request->input('coupon_ids', []))) {
+            return response()->json([
+                'message' => 'Coupon codes cannot be applied when paying with account credits.',
+            ], 422);
+        }
+
         // Calculate the expected order total server-side so it can be verified
         // against the Stripe PaymentIntent amount before any data is written.
         $expected_total = $this->calculateExpectedTotal($request);
@@ -134,14 +150,6 @@ class CartController extends Controller
                         'error'   => 'The provided credit transaction is not valid for this payment.',
                     ], 422);
                 }
-            }
-
-            // Credits already represent a discounted value — no additional
-            // discounts or coupon codes may be applied on top of them.
-            if (! empty($request->input('coupon_ids', []))) {
-                return response()->json([
-                    'message' => 'Coupon codes cannot be applied when paying with account credits.',
-                ], 422);
             }
         } else {
             // Verify the Stripe PaymentIntent before writing anything to the database.
@@ -225,7 +233,7 @@ class CartController extends Controller
                 $user, $billing, $order_title, $order_notes,
                 $coupon_models, $session_id, $session_title, $is_credits_payment,
                 $is_atomic_credits, $credits_amount,
-                $is_hybrid_payment, $hybrid_credits_amount,
+                $is_hybrid_payment, $hybrid_credits_amount, $skip_discounts,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
                 &$effective_payment_method_id,
@@ -283,7 +291,7 @@ class CartController extends Controller
                         $user, $link_building_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $is_credits_payment
+                        $skip_discounts
                     );
                 }
 
@@ -292,7 +300,7 @@ class CartController extends Controller
                         $user, $content_optimization_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $is_credits_payment
+                        $skip_discounts
                     );
                 }
 
@@ -301,7 +309,7 @@ class CartController extends Controller
                         $user, $new_content_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $is_credits_payment
+                        $skip_discounts
                     );
                 }
 
@@ -310,7 +318,7 @@ class CartController extends Controller
                         $user, $content_brief_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $is_credits_payment
+                        $skip_discounts
                     );
                 }
 
@@ -473,8 +481,8 @@ class CartController extends Controller
         }
 
         // Increment coupon usage counts after the transaction commits
-        // (skipped for credits payments since no coupons are permitted)
-        if (! $is_credits_payment) {
+        // (skipped for any credits-backed payment since no coupons are permitted)
+        if (! $any_credits_applied) {
             foreach ($coupon_models as $coupon) {
                 $coupon->increment('times_used');
             }
@@ -636,6 +644,10 @@ class CartController extends Controller
         $content_brief_items        = $request->input('content_brief_items', []);
         $coupon_ids                 = $request->input('coupon_ids', []);
         $is_credits_payment         = str_starts_with($request->input('payment_method_id', ''), 'credits_');
+        // Hybrid payments (card + partial credits) carry a positive credits_amount.
+        // Any credits-backed payment skips bulk discounts and coupons so the expected
+        // total matches the order totals created with $skip_discounts below.
+        $is_credits_payment         = $is_credits_payment || (float) $request->input('credits_amount', 0) > 0;
 
         // Pre-load coupon models so we can apply them below
         $coupon_models = [];

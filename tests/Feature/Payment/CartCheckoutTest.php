@@ -277,6 +277,49 @@ class CartCheckoutTest extends TestCase
         ]);
     }
 
+    public function test_hybrid_checkout_skips_bulk_discount(): void
+    {
+        // 10 links would normally trigger the 10% bulk discount ($1000 → $900),
+        // but because credits are applied to the order no discount may be granted.
+        $this->client->update(['credit_balance' => 100.0]);
+        $this->mockStripe();
+
+        $payload = $this->baseCheckoutPayload([
+            'payment_method_id'   => 'pi_hybrid_test',
+            'credits_amount'      => 50.0,
+            'total_amount'        => 1000.0,
+            'link_building_items' => [$this->linkBuildingItem(10, 100.0)],
+        ]);
+
+        $response = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload);
+
+        $response->assertStatus(200);
+
+        // Order total stays at the full subtotal — the bulk discount is suppressed
+        // because the order is partially paid with credits.
+        $this->assertEquals(1000.0, (float) $response->json('data.orders.0.total_amount'));
+    }
+
+    public function test_hybrid_checkout_rejects_coupon_codes(): void
+    {
+        $this->client->update(['credit_balance' => 100.0]);
+        $this->mockStripe();
+
+        $payload = $this->baseCheckoutPayload([
+            'payment_method_id'   => 'pi_hybrid_test',
+            'credits_amount'      => 50.0,
+            'coupon_ids'          => [(string) \Illuminate\Support\Str::uuid()],
+            'link_building_items' => [$this->linkBuildingItem(1, 100.0)],
+        ]);
+
+        $response = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Coupon codes cannot be applied when paying with account credits.');
+    }
+
     public function test_hybrid_checkout_voids_stripe_when_credits_are_insufficient(): void
     {
         $this->client->update(['credit_balance' => 10.0]);

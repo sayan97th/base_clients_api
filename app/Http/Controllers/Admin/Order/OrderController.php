@@ -343,6 +343,10 @@ class OrderController extends Controller
         $billing = $order->billing;
         $invoice = $order->invoice;
 
+        // Credit payments can never carry coupons or discounts; suppress any
+        // legacy coupon data so the admin order view stays consistent.
+        $paid_with_credits = $invoice && $invoice->isPaidWithCredits();
+
         return [
             'id'                       => $order->id,
             'user_id'                  => $order->user_id,
@@ -374,7 +378,7 @@ class OrderController extends Controller
                 'postal_code' => $billing->postal_code,
             ] : null,
             'invoice' => $invoice ? $this->formatInvoice($invoice, $order) : null,
-            'coupons' => $this->buildCoupons($order),
+            'coupons' => $paid_with_credits ? [] : $this->buildCoupons($order),
         ];
     }
 
@@ -463,6 +467,9 @@ class OrderController extends Controller
         $billed_to = $invoice->billedTo;
         $inv_user  = $invoice->user;
 
+        // Discounts and coupons do not apply to credit payments.
+        $paid_with_credits = $invoice->isPaidWithCredits();
+
         return [
             'id'               => $invoice->id,
             'unique_id'        => $invoice->unique_id,
@@ -473,8 +480,8 @@ class OrderController extends Controller
             'payment_method'   => $invoice->payment_method,
             'currency_type'    => $invoice->currency_type,
             'subtotal_amount'  => $invoice->subtotal_amount,
-            'discount_amount'  => $invoice->discount_amount,
-            'discount_type'    => $invoice->discount_type ?? null,
+            'discount_amount'  => $paid_with_credits ? 0.0 : $invoice->discount_amount,
+            'discount_type'    => $paid_with_credits ? null : ($invoice->discount_type ?? null),
             'total_amount'     => $invoice->total_amount,
             'credit_amount'    => $invoice->credit_amount,
             'date_issued'      => $invoice->date_issued?->toDateString(),
@@ -503,7 +510,7 @@ class OrderController extends Controller
                 'state'               => $billed_to->state,
                 'country'             => $billed_to->country,
             ] : null,
-            'coupon_discounts' => $this->buildCouponsForInvoice($order),
+            'coupon_discounts' => $paid_with_credits ? [] : $this->buildCouponsForInvoice($order),
         ];
     }
 

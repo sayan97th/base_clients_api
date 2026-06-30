@@ -59,6 +59,19 @@ class Invoice extends Model
         ];
     }
 
+    /**
+     * Whether this invoice was settled using the customer's account credits.
+     *
+     * Coupons and discounts can never be applied to credit payments, so this
+     * is the single source of truth used across the admin responses to decide
+     * whether discount / coupon data should be suppressed.
+     */
+    public function isPaidWithCredits(): bool
+    {
+        return $this->currency_type === 'credits'
+            || $this->payment_method === 'Account Balance';
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

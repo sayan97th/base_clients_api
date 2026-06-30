@@ -1100,6 +1100,11 @@ class InvoiceController extends Controller
         $billed_to     = $invoice->billedTo;
         $product_data  = $this->buildProductData($invoice, $include_item_details);
 
+        // Coupons and discounts are never valid for credit payments, so any
+        // legacy discount / coupon data stored on a credit invoice must not be
+        // surfaced to the admin views or the generated PDF.
+        $paid_with_credits = $invoice->isPaidWithCredits();
+
         return [
             'id'                 => $invoice->id,
             'unique_id'          => $invoice->unique_id,
@@ -1114,8 +1119,8 @@ class InvoiceController extends Controller
             'has_stripe_payment' => ! empty($invoice->payment_intent_id),
             'currency_type'      => $invoice->currency_type,
             'subtotal_amount' => $invoice->subtotal_amount,
-            'discount_amount' => $invoice->discount_amount,
-            'discount_type'   => $invoice->discount_type,
+            'discount_amount' => $paid_with_credits ? 0.0 : $invoice->discount_amount,
+            'discount_type'   => $paid_with_credits ? null : $invoice->discount_type,
             'total_amount'    => $invoice->total_amount,
             'credit_amount'   => $invoice->credit_amount,
             'refund_amount'   => $invoice->refund_amount,
@@ -1151,7 +1156,7 @@ class InvoiceController extends Controller
             ])->values(),
             'product_type'     => $product_data['product_type'],
             'invoice_products' => $product_data['invoice_products'],
-            'coupon_discounts' => $this->buildCouponDiscounts($invoice),
+            'coupon_discounts' => $paid_with_credits ? [] : $this->buildCouponDiscounts($invoice),
         ];
     }
 

@@ -9,6 +9,7 @@ use App\Models\LinkBuildingOrderPlacement;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class LinkBuildingOrdersDashboardControllerTest extends TestCase
@@ -355,6 +356,142 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ->assertStatus(404);
     }
 
+    // ─── Update — order_id (BL-XXXXX) editing ──────────────────────────────────
+
+    public function test_update_can_change_order_id_to_new_unique_value(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-600']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'order_id'     => 'BL-25143',
+                'client'       => $placement->client,
+                'keyword'      => $placement->keyword,
+                'landing_page' => $placement->landing_page,
+                'link_type'    => $placement->link_type,
+                'status'       => $placement->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.order_id', 'BL-25143');
+
+        $this->assertSame('BL-25143', $placement->fresh()->order_id);
+    }
+
+    public function test_update_normalizes_order_id_casing_to_uppercase(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-601']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'order_id'     => 'bl-25144',
+                'client'       => $placement->client,
+                'keyword'      => $placement->keyword,
+                'landing_page' => $placement->landing_page,
+                'link_type'    => $placement->link_type,
+                'status'       => $placement->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.order_id', 'BL-25144');
+    }
+
+    public function test_update_rejects_order_id_already_used_by_another_placement(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-602']);
+        $placement_to_update = $this->adminPlacement(['order_id' => 'BL-603']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement_to_update->id}", [
+                'order_id'     => 'BL-602',
+                'client'       => $placement_to_update->client,
+                'keyword'      => $placement_to_update->keyword,
+                'landing_page' => $placement_to_update->landing_page,
+                'link_type'    => $placement_to_update->link_type,
+                'status'       => $placement_to_update->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('order_id');
+
+        $this->assertSame('BL-603', $placement_to_update->fresh()->order_id);
+    }
+
+    public function test_update_allows_setting_order_id_to_the_same_value_it_already_has(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-604']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'order_id'     => 'BL-604',
+                'client'       => $placement->client,
+                'keyword'      => $placement->keyword,
+                'landing_page' => $placement->landing_page,
+                'link_type'    => $placement->link_type,
+                'status'       => $placement->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.order_id', 'BL-604');
+    }
+
+    #[DataProvider('malformedOrderIdProvider')]
+    public function test_update_rejects_malformed_order_id_format(string $malformed_order_id): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-605']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'order_id'     => $malformed_order_id,
+                'client'       => $placement->client,
+                'keyword'      => $placement->keyword,
+                'landing_page' => $placement->landing_page,
+                'link_type'    => $placement->link_type,
+                'status'       => $placement->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('order_id');
+
+        $this->assertSame('BL-605', $placement->fresh()->order_id, 'Malformed order_id must not be persisted');
+    }
+
+    public static function malformedOrderIdProvider(): array
+    {
+        return [
+            'wrong prefix'      => ['ORD-25143'],
+            'letters in suffix' => ['BL-ABC12'],
+            'missing dash'      => ['BL25143'],
+            'no digits'         => ['BL-'],
+            'trailing text'     => ['BL-25143x'],
+        ];
+    }
+
+    public function test_update_allows_clearing_order_id_to_null(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-606']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'order_id'     => '',
+                'client'       => $placement->client,
+                'keyword'      => $placement->keyword,
+                'landing_page' => $placement->landing_page,
+                'link_type'    => $placement->link_type,
+                'status'       => $placement->status,
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(200);
+
+        $this->assertNull($placement->fresh()->order_id);
+    }
+
     // ─── Destroy ──────────────────────────────────────────────────────────────
 
     public function test_destroy_deletes_placement_and_returns_success_message(): void
@@ -516,6 +653,20 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
 
         // All updates were stripped — nothing to update
         $response->assertStatus(422);
+    }
+
+    public function test_batch_update_ignores_order_id_field(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-530']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update', [
+                'row_ids' => [$placement->id],
+                'updates' => ['order_id' => 'BL-999999'],
+            ])
+            ->assertStatus(422);
+
+        $this->assertSame('BL-530', $placement->fresh()->order_id, 'order_id must not be bulk-editable');
     }
 
     public function test_batch_update_can_assign_client_user_to_rows(): void

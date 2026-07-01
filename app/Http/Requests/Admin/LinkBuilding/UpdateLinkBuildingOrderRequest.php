@@ -37,9 +37,23 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             $normalized['exact_match'] = $this->input('exact_match') === 'Yes';
         }
 
+        // Normalize order_id casing so "bl-25143" and "BL-25143" are treated as the
+        // same value before uniqueness/format validation and storage.
+        if ($this->has('order_id')) {
+            $order_id             = trim((string) $this->input('order_id'));
+            $normalized['order_id'] = $order_id === '' ? null : strtoupper($order_id);
+        }
+
         if (! empty($normalized)) {
             $this->merge($normalized);
         }
+    }
+
+    public function messages(): array
+    {
+        return [
+            'order_id.regex' => 'The order id must follow the format BL-<number> (e.g. BL-25143).',
+        ];
     }
 
     public function rules(): array
@@ -48,8 +62,14 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
 
         return [
             // order_id is nullable on update — client-purchased rows receive a derived
-            // display ID on the first save which gets stored automatically.
-            'order_id'                  => "nullable|string|max:50|unique:link_building_order_placements,order_id,{$id}",
+            // display ID on the first save which gets stored automatically. When set,
+            // it must follow the admin-facing BL-<number> format used to match the
+            // external BLS spreadsheet, and stay unique across all placements.
+            'order_id' => [
+                'nullable', 'string', 'max:50',
+                'regex:/^BL-[0-9]+$/',
+                "unique:link_building_order_placements,order_id,{$id}",
+            ],
             'team_specific_link_id'     => 'nullable|string|max:50',
             // link_type, client, keyword, landing_page are nullable on update so that
             // admins can edit individual fields on client-purchased rows without being

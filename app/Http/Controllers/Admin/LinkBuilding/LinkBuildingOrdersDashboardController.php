@@ -193,6 +193,9 @@ class LinkBuildingOrdersDashboardController extends Controller
         $row_ids = (array) ($request->input('row_ids') ?? []);
         $updates = (array) ($request->input('updates') ?? []);
 
+        // NOTE: order_id is intentionally excluded — it must stay unique per row, so
+        // bulk-assigning the same value across multiple selected rows is not safe.
+        // Admins edit order_id individually via the single-row update endpoint.
         $allowed_fields = [
             'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
             'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',

@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
 use App\Jobs\ProcessLinkBuildingImportJob;
+use App\Jobs\ProcessLinkBuildingMetricsImportJob;
 use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
@@ -18,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LinkBuildingOrdersDashboardController extends Controller
@@ -410,6 +412,70 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         return response()->json($progress);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/metrics-import
+     *
+     * Bulk-updates a caller-selected subset of metric columns (Current Traffic, DR Formula,
+     * Current POC, Current Price, etc.) on existing rows, matched by Order ID against a
+     * reference CSV (same shape as the full order export). Unlike /import, this endpoint
+     * never creates new rows and never writes to any column outside target_columns — it
+     * exists so the client's metrics owner can refresh just the metric fields on a monthly
+     * cadence without re-uploading the full order dataset.
+     *
+     * Request body:
+     *   file            (file, required)      — CSV/TXT, same header shape as the full import
+     *   target_columns  (string[], required)  — subset of ProcessLinkBuildingMetricsImportJob::TARGET_COLUMNS
+     *   date_from       (string MM/DD/YYYY)    — lower bound for request_date, defaults to one year ago
+     *   date_to         (string MM/DD/YYYY)    — upper bound for request_date, no default
+     */
+    public function metricsImport(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file'               => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'target_columns'     => ['required', 'array', 'min:1'],
+            'target_columns.*'   => ['string', Rule::in(ProcessLinkBuildingMetricsImportJob::TARGET_COLUMNS)],
+            'date_from'          => ['sometimes', 'nullable', 'string'],
+            'date_to'            => ['sometimes', 'nullable', 'string'],
+        ]);
+
+        $file           = $request->file('file');
+        $import_id      = Str::uuid()->toString();
+        $target_columns = array_values(array_unique($request->input('target_columns')));
+
+        $date_from = filled($request->input('date_from'))
+            ? $request->input('date_from')
+            : Carbon::now()->subYear()->format('m/d/Y');
+
+        $date_to = filled($request->input('date_to'))
+            ? $request->input('date_to')
+            : null;
+
+        $stored_path = $file->storeAs(
+            'imports/link-building',
+            $import_id . '_metrics_' . preg_replace('/[^a-zA-Z0-9._-]/', '_', $file->getClientOriginalName())
+        );
+
+        $total_rows = max(0, $this->countCsvRows(storage_path('app/' . $stored_path)) - 1);
+
+        Cache::put("lbo_import_{$import_id}", [
+            'status'    => 'queued',
+            'total'     => $total_rows,
+            'processed' => 0,
+            'created'   => 0,
+            'updated'   => 0,
+            'skipped'   => 0,
+            'errors'    => [],
+        ], now()->addHours(2));
+
+        ProcessLinkBuildingMetricsImportJob::dispatch($import_id, $stored_path, $total_rows, $target_columns, $date_from, $date_to);
+
+        return response()->json([
+            'message'   => 'Metrics update queued successfully.',
+            'import_id' => $import_id,
+            'total'     => $total_rows,
+        ], 202);
     }
 
     /**

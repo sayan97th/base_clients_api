@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Concerns\ParsesLinkBuildingCsvDates;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -17,7 +18,7 @@ use Illuminate\Support\Str;
 
 class ProcessLinkBuildingImportJob implements ShouldQueue
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, ParsesLinkBuildingCsvDates;
 
     public int $timeout = 900;
     public int $tries   = 1;
@@ -237,14 +238,6 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         }
 
         return $map;
-    }
-
-    private function normalizeHeader(string $header): string
-    {
-        $clean = preg_replace('/[^a-zA-Z0-9\s]/', ' ', $header);
-        $clean = preg_replace('/\s+/', ' ', $clean);
-
-        return strtolower(trim($clean));
     }
 
     private function mapRow(array $raw_row, array $header_map): array
@@ -673,125 +666,6 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         }
 
         return true;
-    }
-
-    private function passesDateFilter(string $date_str): bool
-    {
-        if ($this->date_from === null && $this->date_to === null) {
-            return true;
-        }
-
-        // Records without a request_date are not excluded by the date range filter.
-        // The filter restricts records whose date falls outside the range, not records
-        // that simply lack a date value.
-        if ($date_str === '') {
-            return true;
-        }
-
-        $date = $this->parseDateFlexible($date_str);
-
-        if ($date === null) {
-            return false;
-        }
-
-        if ($this->date_from !== null) {
-            try {
-                $from = Carbon::createFromFormat('m/d/Y', $this->date_from)->startOfDay();
-                if ($date->lt($from)) {
-                    return false;
-                }
-            } catch (\Exception) {
-                // Invalid date_from bound — skip this check
-            }
-        }
-
-        if ($this->date_to !== null) {
-            try {
-                $to = Carbon::createFromFormat('m/d/Y', $this->date_to)->endOfDay();
-                if ($date->gt($to)) {
-                    return false;
-                }
-            } catch (\Exception) {
-                // Invalid date_to bound — skip this check
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Parses a date string from the variety of US-formatted (month/day/year) values
-     * that appear in imported CSV files:
-     *
-     *   04/15/2026          → 4-digit year
-     *   4/15/2026           → no leading zero on month/day, 4-digit year
-     *   04/15/26            → 2-digit year
-     *   4/15/26             → no leading zero on month/day, 2-digit year
-     *   04/15/26 12:38 PM   → date extracted, time discarded (Google Sheets datetime export)
-     *   05/28/26 7:29 PM    → single-digit hour, date extracted, time discarded
-     *   4/15/2026 12:38 PM  → date extracted, time discarded
-     *
-     * Strategy: extract the month/day/year components directly with a regex and build
-     * the date numerically, rather than looping through Carbon::createFromFormat()
-     * attempts. That loop-based approach previously had a critical bug: PHP's
-     * DateTime::createFromFormat() is lenient about digit count, so a 4-digit-year
-     * format like "m/d/Y" silently "succeeds" against a 2-digit year (e.g. "04/15/26"
-     * is parsed as year 26 AD instead of failing over to the "m/d/y" format). Since no
-     * exception was thrown, the bogus year-26 date was accepted as the parse result —
-     * which then always fails the "last year" import date filter and the row is
-     * silently skipped. Parsing the year digit count explicitly avoids this ambiguity.
-     *
-     * All two-digit years are assumed to be in the 2000s (US date convention for this
-     * import), since the source data only contains recent/near-future order dates.
-     *
-     * Returns a Carbon instance (normalized to start-of-day) or null if the value
-     * cannot be parsed.
-     */
-    private function parseDateFlexible(string $raw): ?Carbon
-    {
-        $value = trim($raw);
-
-        if ($value === '') {
-            return null;
-        }
-
-        // Normalize whitespace (collapses the gap before any trailing time suffix).
-        $value = preg_replace('/\s+/', ' ', $value);
-
-        // Extract the leading m/d/y(y) portion and ignore any trailing time suffix
-        // such as " 12:38 PM" or " 7:29 PM" — since we always normalize to
-        // start-of-day, the time portion is never needed.
-        if (! preg_match('#^(\d{1,2})/(\d{1,2})/(\d{2,4})#', $value, $date_match)) {
-            // Last resort: let Carbon attempt a generic parse for anything that
-            // doesn't match the expected m/d/y(y) shape.
-            try {
-                return Carbon::parse($value)->startOfDay();
-            } catch (\Exception) {
-                return null;
-            }
-        }
-
-        $month     = (int) $date_match[1];
-        $day       = (int) $date_match[2];
-        $year_part = $date_match[3];
-
-        $year = match (strlen($year_part)) {
-            2       => 2000 + (int) $year_part, // 2-digit year → assume 2000s
-            4       => (int) $year_part,
-            default => null, // unexpected digit count (e.g. 3 digits) — not a valid year
-        };
-
-        if ($year === null || $month < 1 || $month > 12 || $day < 1 || $day > 31) {
-            return null;
-        }
-
-        try {
-            $parsed = Carbon::createSafe($year, $month, $day);
-
-            return $parsed instanceof Carbon ? $parsed->startOfDay() : null;
-        } catch (\Exception) {
-            return null;
-        }
     }
 
     private function saveProgress(

@@ -30,7 +30,7 @@ class OrderPlacementsController extends Controller
             'dr_type'        => ['nullable', 'string', 'max:50'],
             'sort_by'        => ['nullable', 'string', Rule::in([
                 'display_order_id', 'request_date', 'dr_type', 'keyword',
-                'landing_page', 'status', 'live_link', 'completed_date', 'dr',
+                'landing_page', 'status', 'live_link', 'completed_date', 'dr_lbs',
             ])],
             'sort_direction' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
         ]);
@@ -66,7 +66,10 @@ class OrderPlacementsController extends Controller
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
                 'p.completed_date',
-                'p.dr',
+                // The internal ops-entered DR value from the admin Link Building Orders
+                // dashboard (LinkBuildingOrdersTable.tsx "DR" column), surfaced to the
+                // client once the placement's live link has been set.
+                'p.dr_lbs',
                 'p.request_date',
                 DB::raw("'purchased' as source"),
                 // Human-readable BL-format ID: use the placement's own order_id when present,
@@ -89,7 +92,7 @@ class OrderPlacementsController extends Controller
                 'p.status',
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
-                DB::raw('NULL as dr'),
+                'p.dr_lbs',
                 'p.request_date',
                 DB::raw("'admin_assigned' as source"),
                 // Human-readable BL-format ID: use the stored order_id (always BL-XXXXX for admin-created)
@@ -204,7 +207,7 @@ class OrderPlacementsController extends Controller
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
                 'p.completed_date',
-                'p.dr',
+                'p.dr_lbs',
                 'p.request_date',
             ]);
 
@@ -222,7 +225,7 @@ class OrderPlacementsController extends Controller
                 'p.status',
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
-                DB::raw('NULL as dr'),
+                'p.dr_lbs',
                 'p.request_date',
             ]);
 
@@ -293,7 +296,7 @@ class OrderPlacementsController extends Controller
                     $row['status']            ?? '',
                     $row['live_link']         ?? '',
                     $row['completed_date']    ?? '',
-                    $row['dr']               ?? '',
+                    $row['dr_lbs']           ?? '',
                 ]);
             }
 
@@ -336,7 +339,7 @@ class OrderPlacementsController extends Controller
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
                 'p.completed_date',
-                'p.dr',
+                'p.dr_lbs',
             ]);
 
         $assigned = DB::table('link_building_order_placements as p')
@@ -352,7 +355,7 @@ class OrderPlacementsController extends Controller
                 'p.status',
                 'p.live_link',
                 DB::raw('NULL as completed_date'),
-                DB::raw('NULL as dr'),
+                'p.dr_lbs',
             ]);
 
         $query = $purchased->unionAll($assigned)->orderBy('start_date', 'desc');
@@ -399,7 +402,7 @@ class OrderPlacementsController extends Controller
                     $row['status']            ?? '',
                     $row['live_link']         ?? '',
                     $row['completed_date']    ?? '',
-                    $row['dr']               ?? '',
+                    $row['dr_lbs']           ?? '',
                 ]);
             }
 

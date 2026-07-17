@@ -148,6 +148,39 @@ class DeferredIntakeCheckoutTest extends TestCase
         $this->assertTrue($placements->every(fn ($p) => $p->status === 'Pending Details'));
     }
 
+    public function test_skip_for_now_forces_pending_details_even_when_data_is_complete(): void
+    {
+        // "Skip for now" (defer_details=true): the client filled every field but
+        // wants to review later, so the order must still land in pending_details
+        // with the turnaround clock NOT started.
+        $this->mockStripe();
+
+        $payload = $this->basePayload([
+            'defer_details'       => true,
+            'link_building_items' => [$this->completeLinkBuildingItem(1)],
+        ]);
+
+        $order_id = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload)
+            ->assertStatus(200)
+            ->json('data.orders.0.order_id');
+
+        $this->assertDatabaseHas('link_building_orders', [
+            'id'     => $order_id,
+            'status' => 'pending_details',
+        ]);
+
+        $placement = LinkBuildingOrderPlacement::whereHas(
+            'orderItem.order',
+            fn ($q) => $q->where('id', $order_id)
+        )->first();
+
+        // Data is preserved, but no clock and the placement is parked as Pending Details.
+        $this->assertEquals('keyword 0', $placement->keyword);
+        $this->assertEmpty($placement->estimated_delivery_date);
+        $this->assertEquals('Pending Details', $placement->status);
+    }
+
     public function test_complete_link_building_checkout_starts_clock(): void
     {
         $this->mockStripe();

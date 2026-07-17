@@ -23,6 +23,10 @@ class DeferredCheckoutCartRequest extends FormRequest
             'order_title'         => ['nullable', 'string', 'max:500'],
             'order_notes'         => ['nullable', 'string', 'max:5000'],
 
+            // When true, the client chose "Skip for now": intake details are parked
+            // as pending regardless of what was entered.
+            'defer_details'       => ['nullable', 'boolean'],
+
             'link_building_items'                               => ['nullable', 'array'],
             'link_building_items.*.dr_tier_id'                  => ['required_with:link_building_items', 'string', 'exists:dr_tiers,id'],
             'link_building_items.*.quantity'                    => ['required_with:link_building_items', 'integer', 'min:1'],

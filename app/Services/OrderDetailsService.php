@@ -124,17 +124,22 @@ class OrderDetailsService
      * Persist the paid working status on the order and, for a complete Link
      * Building order, start the turnaround clock. Safe to call inside the
      * checkout transaction or after a deferred invoice is paid.
+     *
+     * When $force_pending is true (the client chose "Skip for now" at checkout),
+     * the order is parked in `pending_details` regardless of how much intake data
+     * was entered, and the turnaround clock is NOT started — the client wants to
+     * review/complete the details later. Any data they did enter is still saved.
      */
-    public function applyPaidStatus(Model $order): void
+    public function applyPaidStatus(Model $order, bool $force_pending = false): void
     {
-        $status = $this->resolvePaidStatus($order);
+        $status = $force_pending ? 'pending_details' : $this->resolvePaidStatus($order);
 
         if ($order->status !== $status) {
             $order->status = $status;
             $order->save();
         }
 
-        if ($order instanceof LinkBuildingOrder && $status === 'new_request') {
+        if (! $force_pending && $order instanceof LinkBuildingOrder && $status === 'new_request') {
             $this->startLinkBuildingClock($order);
         }
     }

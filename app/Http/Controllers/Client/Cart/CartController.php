@@ -226,6 +226,10 @@ class CartController extends Controller
         $session_id    = $request->input('session_id') ?? (string) Str::uuid();
         $session_title = $order_title;
 
+        // "Skip for now": park every created order in pending_details regardless of
+        // how much intake data was entered, so the client can review/complete later.
+        $defer_details = $request->boolean('defer_details');
+
         // $effective_payment_method_id starts as the raw payment_method_id but is
         // replaced with credits_<tx_id> inside the transaction for atomic credits.
         $effective_payment_method_id = $payment_method_id;
@@ -237,7 +241,7 @@ class CartController extends Controller
                 $is_atomic_credits, $credits_amount,
                 $is_hybrid_payment, $hybrid_credits_amount, $skip_discounts,
                 $link_building_items, $content_optimization_items,
-                $new_content_items, $content_brief_items,
+                $new_content_items, $content_brief_items, $defer_details,
                 &$effective_payment_method_id,
                 &$created_orders
             ) {
@@ -293,7 +297,7 @@ class CartController extends Controller
                         $user, $link_building_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_discounts
+                        $skip_discounts, $defer_details
                     );
                 }
 
@@ -302,7 +306,7 @@ class CartController extends Controller
                         $user, $content_optimization_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_discounts
+                        $skip_discounts, $defer_details
                     );
                 }
 
@@ -311,7 +315,7 @@ class CartController extends Controller
                         $user, $new_content_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_discounts
+                        $skip_discounts, $defer_details
                     );
                 }
 
@@ -320,7 +324,7 @@ class CartController extends Controller
                         $user, $content_brief_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_discounts
+                        $skip_discounts, $defer_details
                     );
                 }
 
@@ -794,7 +798,8 @@ class CartController extends Controller
         ?string $order_notes,
         ?string $session_id,
         ?string $session_title,
-        bool $skip_discounts = false
+        bool $skip_discounts = false,
+        bool $defer_details = false
     ): array {
         $total_links     = 0;
         $subtotal        = 0.0;
@@ -912,7 +917,9 @@ class CartController extends Controller
                 $placement_data = $placements_input[$i] ?? [];
                 $keyword        = ($placement_data['keyword'] ?? null) ?: null;
                 $landing_page   = ($placement_data['landing_page'] ?? null) ?: null;
-                $has_details    = filled($keyword) && filled($landing_page);
+                // On "Skip for now" every placement is parked as Pending Details even
+                // when both fields were filled — the client wants to review later.
+                $has_details    = ! $defer_details && filled($keyword) && filled($landing_page);
 
                 $item->placements()->create([
                     'order_id'     => 'BL-' . $next_bl_num++,
@@ -940,7 +947,7 @@ class CartController extends Controller
 
         // Park the order in `pending_details` when keywords/target URLs are
         // missing; a complete order becomes `new_request` and starts its clock.
-        $this->orderDetailsService->applyPaidStatus($order);
+        $this->orderDetailsService->applyPaidStatus($order, $defer_details);
 
         return [
             'product_type' => 'link_building',
@@ -961,7 +968,8 @@ class CartController extends Controller
         ?string $order_notes,
         ?string $session_id,
         ?string $session_title,
-        bool $skip_discounts = false
+        bool $skip_discounts = false,
+        bool $defer_details = false
     ): array {
         $subtotal = 0.0;
 
@@ -1045,7 +1053,7 @@ class CartController extends Controller
             ]);
         }
 
-        $this->orderDetailsService->applyPaidStatus($order);
+        $this->orderDetailsService->applyPaidStatus($order, $defer_details);
 
         return [
             'product_type' => 'content_optimization',
@@ -1065,7 +1073,8 @@ class CartController extends Controller
         ?string $order_notes,
         ?string $session_id,
         ?string $session_title,
-        bool $skip_discounts = false
+        bool $skip_discounts = false,
+        bool $defer_details = false
     ): array {
         $subtotal = 0.0;
 
@@ -1150,7 +1159,7 @@ class CartController extends Controller
             ]);
         }
 
-        $this->orderDetailsService->applyPaidStatus($order);
+        $this->orderDetailsService->applyPaidStatus($order, $defer_details);
 
         return [
             'product_type' => 'new_content',
@@ -1224,7 +1233,8 @@ class CartController extends Controller
         ?string $order_notes,
         ?string $session_id,
         ?string $session_title,
-        bool $skip_discounts = false
+        bool $skip_discounts = false,
+        bool $defer_details = false
     ): array {
         $subtotal = 0.0;
 
@@ -1308,7 +1318,7 @@ class CartController extends Controller
             ]);
         }
 
-        $this->orderDetailsService->applyPaidStatus($order);
+        $this->orderDetailsService->applyPaidStatus($order, $defer_details);
 
         return [
             'product_type' => 'content_brief',

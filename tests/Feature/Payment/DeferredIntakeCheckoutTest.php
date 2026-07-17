@@ -285,4 +285,56 @@ class DeferredIntakeCheckoutTest extends TestCase
             'status' => 'pending_details',
         ]);
     }
+
+    public function test_checkout_accepts_partial_new_content_and_content_brief_rows(): void
+    {
+        // Regression: skipping to checkout with partially-filled rows (a New Content
+        // row missing type_of_content, and a Content Brief row with a bare-domain
+        // URL) must NOT be rejected — intake fields are optional at checkout.
+        $this->mockStripe();
+
+        $nc_tier = \App\Models\NewContentTier::create([
+            'id' => 'nc-basic', 'label' => 'Basic Article',
+            'turnaround_time' => '6 Business Days', 'price' => 100.0, 'is_active' => true,
+        ]);
+        $cb_tier = \App\Models\ContentBriefTier::create([
+            'id' => 'cb-basic', 'label' => 'Basic Brief',
+            'turnaround_days' => 5, 'price' => 100.0, 'is_active' => true,
+        ]);
+
+        $payload = $this->basePayload([
+            'total_amount'        => 200.0,
+            'link_building_items' => null,
+            'new_content_items'   => [[
+                'tier_id' => $nc_tier->id, 'quantity' => 1, 'unit_price' => 100.0,
+                'intake_rows' => [
+                    // keyword present, type_of_content missing → previously rejected
+                    ['keyword_phrase' => 'seo tips', 'secondary_keywords' => null, 'type_of_content' => null, 'notes' => null],
+                ],
+            ]],
+            'content_brief_items' => [[
+                'tier_id' => $cb_tier->id, 'quantity' => 1, 'unit_price' => 100.0,
+                'intake_rows' => [
+                    // bare-domain URL (not a valid URL per the old `url` rule)
+                    ['primary_keyword' => 'widgets', 'secondary_keywords' => null, 'content_page_url' => 'example.com/widgets', 'notes' => null],
+                ],
+            ]],
+        ]);
+
+        $response = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload);
+
+        $response->assertStatus(200);
+
+        // Both orders are created and parked in pending_details (details incomplete).
+        $nc_order_id = collect($response->json('data.orders'))
+            ->firstWhere('product_type', 'new_content')['order_id'];
+        $cb_order_id = collect($response->json('data.orders'))
+            ->firstWhere('product_type', 'content_brief')['order_id'];
+
+        // New Content is missing type_of_content → incomplete → pending_details.
+        $this->assertDatabaseHas('new_content_orders', ['id' => $nc_order_id, 'status' => 'pending_details']);
+        // Content Brief has both fields (bare-domain URL is accepted) → complete → new_request.
+        $this->assertDatabaseHas('content_brief_orders', ['id' => $cb_order_id, 'status' => 'new_request']);
+    }
 }

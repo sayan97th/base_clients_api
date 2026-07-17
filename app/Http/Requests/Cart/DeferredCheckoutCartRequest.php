@@ -38,9 +38,9 @@ class DeferredCheckoutCartRequest extends FormRequest
             'content_optimization_items.*.quantity'                               => ['required_with:content_optimization_items', 'integer', 'min:1'],
             'content_optimization_items.*.unit_price'                             => ['required_with:content_optimization_items', 'numeric', 'min:0'],
             'content_optimization_items.*.intake_rows'                            => ['nullable', 'array'],
-            'content_optimization_items.*.intake_rows.*.primary_keyword'          => ['required_with:content_optimization_items.*.intake_rows', 'string', 'max:500'],
+            'content_optimization_items.*.intake_rows.*.primary_keyword'          => ['nullable', 'string', 'max:500'],
             'content_optimization_items.*.intake_rows.*.secondary_keywords'       => ['nullable', 'string', 'max:500'],
-            'content_optimization_items.*.intake_rows.*.content_page_url'         => ['required_with:content_optimization_items.*.intake_rows', 'string', 'max:2000'],
+            'content_optimization_items.*.intake_rows.*.content_page_url'         => ['nullable', 'string', 'max:2000'],
             'content_optimization_items.*.intake_rows.*.notes'                    => ['nullable', 'string', 'max:5000'],
 
             'new_content_items'                                       => ['nullable', 'array'],
@@ -48,9 +48,9 @@ class DeferredCheckoutCartRequest extends FormRequest
             'new_content_items.*.quantity'                            => ['required_with:new_content_items', 'integer', 'min:1'],
             'new_content_items.*.unit_price'                          => ['required_with:new_content_items', 'numeric', 'min:0'],
             'new_content_items.*.intake_rows'                         => ['nullable', 'array'],
-            'new_content_items.*.intake_rows.*.keyword_phrase'        => ['required_with:new_content_items.*.intake_rows', 'string', 'max:500'],
+            'new_content_items.*.intake_rows.*.keyword_phrase'        => ['nullable', 'string', 'max:500'],
             'new_content_items.*.intake_rows.*.secondary_keywords'    => ['nullable', 'string', 'max:500'],
-            'new_content_items.*.intake_rows.*.type_of_content'       => ['required_with:new_content_items.*.intake_rows', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
+            'new_content_items.*.intake_rows.*.type_of_content'       => ['nullable', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
             'new_content_items.*.intake_rows.*.notes'                 => ['nullable', 'string', 'max:5000'],
 
             'content_brief_items'                                          => ['nullable', 'array'],
@@ -58,9 +58,9 @@ class DeferredCheckoutCartRequest extends FormRequest
             'content_brief_items.*.quantity'                               => ['required_with:content_brief_items', 'integer', 'min:1'],
             'content_brief_items.*.unit_price'                             => ['required_with:content_brief_items', 'numeric', 'min:0'],
             'content_brief_items.*.intake_rows'                            => ['nullable', 'array'],
-            'content_brief_items.*.intake_rows.*.primary_keyword'          => ['required_with:content_brief_items.*.intake_rows', 'string', 'max:255'],
+            'content_brief_items.*.intake_rows.*.primary_keyword'          => ['nullable', 'string', 'max:255'],
             'content_brief_items.*.intake_rows.*.secondary_keywords'       => ['nullable', 'string', 'max:500'],
-            'content_brief_items.*.intake_rows.*.content_page_url'         => ['required_with:content_brief_items.*.intake_rows', 'url', 'max:2048'],
+            'content_brief_items.*.intake_rows.*.content_page_url'         => ['nullable', 'string', 'max:2048'],
             'content_brief_items.*.intake_rows.*.notes'                    => ['nullable', 'string', 'max:10000'],
         ];
     }

@@ -354,16 +354,27 @@ class DeferredCartController extends Controller
             $dr_tier        = DrTier::find($item_data['dr_tier_id']);
             $link_type      = $dr_tier ? $dr_tier->label . ' External' : null;
 
-            foreach ($item_data['placements'] as $placement_data) {
+            // One placement per purchased link, padded to quantity so a
+            // details-deferred order exposes the correct number of rows to fill
+            // in later regardless of how many placeholders the client submitted.
+            $placements_input = $item_data['placements'] ?? [];
+            $slot_count       = max((int) $item_data['quantity'], count($placements_input));
+
+            for ($i = 0; $i < $slot_count; $i++) {
+                $placement_data = $placements_input[$i] ?? [];
+                $keyword        = ($placement_data['keyword'] ?? null) ?: null;
+                $landing_page   = ($placement_data['landing_page'] ?? null) ?: null;
+                $has_details    = filled($keyword) && filled($landing_page);
+
                 $item->placements()->create([
                     'order_id'     => 'BL-' . $next_bl_num++,
-                    'row_index'    => $placement_data['row_index'],
-                    'keyword'      => $placement_data['keyword'] ?: null,
-                    'landing_page' => $placement_data['landing_page'] ?: null,
-                    'exact_match'  => $placement_data['exact_match'],
+                    'row_index'    => $placement_data['row_index'] ?? $i,
+                    'keyword'      => $keyword,
+                    'landing_page' => $landing_page,
+                    'exact_match'  => $placement_data['exact_match'] ?? false,
                     'client'       => $client_company ?: null,
                     'link_type'    => $link_type,
-                    'status'       => 'New Request',
+                    'status'       => $has_details ? 'New Request' : 'Pending Details',
                     'request_date' => now()->format('m/d/Y'),
                     'user_id'      => $user->id,
                 ]);

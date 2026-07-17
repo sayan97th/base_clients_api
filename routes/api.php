@@ -108,6 +108,8 @@ use App\Http\Controllers\Client\SeoPackages\SeoPackageAppointmentController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
 use App\Http\Controllers\Client\OrderComment\ClientOrderBasedCommentController;
+use App\Http\Controllers\Client\Order\OrderDetailsController as ClientOrderDetailsController;
+use App\Http\Controllers\Admin\Order\OrderDetailsController as AdminOrderDetailsController;
 use App\Http\Controllers\OrderSession\OrderCommentController;
 use App\Http\Controllers\OrderSession\OrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
@@ -625,6 +627,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             // Order status — direct update without creating a tracking entry
             Route::patch('orders/{order}/status', [AdminOrderController::class, 'updateStatus']);
 
+            // Deferred intake details — admin fills keyword/target/content details
+            // on the client's behalf, transitioning the order out of pending_details.
+            Route::put('orders/{order_id}/link-building-details',        [AdminOrderDetailsController::class, 'linkBuilding']);
+            Route::put('orders/{order_id}/new-content-details',          [AdminOrderDetailsController::class, 'newContent']);
+            Route::put('orders/{order_id}/content-optimization-details', [AdminOrderDetailsController::class, 'contentOptimization']);
+            Route::put('orders/{order_id}/content-brief-details',        [AdminOrderDetailsController::class, 'contentBrief']);
+
             // Order reports
             Route::get('orders/{order}/report',          [AdminOrderReportController::class, 'show']);
             Route::post('orders/{order}/report/send',    [AdminOrderReportController::class, 'send']);
@@ -786,6 +795,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{order_id}',         [NewContentOrderController::class,       'show']);
         Route::get('/orders/{order_id}/updates', [NewContentOrderUpdateController::class, 'index']);
         Route::get('/orders/{order_id}/report',  [NewContentOrderReportController::class, 'show']);
+        Route::put('/orders/{order_id}/details', [ClientOrderDetailsController::class,     'newContent']);
     });
 
     // Content Brief Tiers catalog
@@ -798,6 +808,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{order_id}',         [ContentBriefOrderController::class,       'show']);
         Route::get('/orders/{order_id}/updates', [ContentBriefOrderUpdateController::class, 'index']);
         Route::get('/orders/{order_id}/report',  [ContentBriefOrderReportController::class, 'show']);
+        Route::put('/orders/{order_id}/details', [ClientOrderDetailsController::class,       'contentBrief']);
     });
 
     // Content Optimization Tiers catalog
@@ -810,6 +821,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{order_id}',         [ContentOptimizationOrderController::class,       'show']);
         Route::get('/orders/{order_id}/updates', [ContentOptimizationOrderUpdateController::class, 'index']);
         Route::get('/orders/{order_id}/report',  [ContentOptimizationOrderReportController::class, 'show']);
+        Route::put('/orders/{order_id}/details', [ClientOrderDetailsController::class,              'contentOptimization']);
     });
 
     // Content Refresh Tiers catalog
@@ -838,6 +850,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::get('/orders/{id}', [LinkBuildingOrderController::class, 'show']);
         Route::get('/orders/{order_id}/updates', [ClientOrderUpdateController::class, 'index']);
         Route::get('/orders/{order_id}/report', [ClientOrderReportController::class, 'show']);
+        Route::put('/orders/{order_id}/details', [ClientOrderDetailsController::class, 'linkBuilding']);
         Route::get('/deliverables', [LinkBuildingDeliverableController::class, 'index']);
         Route::get('/order-placements', [LinkBuildingOrderPlacementsController::class, 'index']);
         Route::get('/order-placements/export', [LinkBuildingOrderPlacementsController::class, 'export']);

@@ -59,7 +59,7 @@ class CheckoutCartRequest extends FormRequest
             'new_content_items.*.intake_rows'                        => ['nullable', 'array'],
             'new_content_items.*.intake_rows.*.keyword_phrase'       => ['required_with:new_content_items.*.intake_rows', 'string', 'max:500'],
             'new_content_items.*.intake_rows.*.secondary_keywords'   => ['nullable', 'string', 'max:500'],
-            'new_content_items.*.intake_rows.*.type_of_content'      => ['required', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
+            'new_content_items.*.intake_rows.*.type_of_content'      => ['required_with:new_content_items.*.intake_rows', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
             'new_content_items.*.intake_rows.*.notes'                => ['nullable', 'string', 'max:5000'],
 
             'content_brief_items'                                         => ['nullable', 'array'],

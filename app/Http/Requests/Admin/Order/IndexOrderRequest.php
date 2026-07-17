@@ -17,7 +17,7 @@ class IndexOrderRequest extends FormRequest
             'page'           => 'nullable|integer|min:1',
             'per_page'       => 'nullable|integer|min:1|max:100',
             'search'         => 'nullable|string|max:255',
-            'status'         => 'nullable|string|in:pending,processing,completed,cancelled',
+            'status'         => 'nullable|string|in:pending,processing,completed,cancelled,pending_details',
             'sort_field'     => 'nullable|string|in:created_at,total_amount,status,order_title,customer',
             'sort_direction' => 'nullable|string|in:asc,desc',
             'date_from'      => 'nullable|date_format:Y-m-d|before_or_equal:date_to',

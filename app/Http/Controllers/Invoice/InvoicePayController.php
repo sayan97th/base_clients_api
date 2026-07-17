@@ -14,6 +14,7 @@ use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\OrderDetailsService;
 use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +37,7 @@ class InvoicePayController extends Controller
     public function __construct(
         protected StripeService $stripe_service,
         protected StripePublicPaymentService $public_payment_service,
+        protected OrderDetailsService $order_details_service,
     ) {}
 
     /**
@@ -323,30 +325,42 @@ class InvoicePayController extends Controller
 
     /**
      * After a deferred invoice is paid, transition all associated
-     * payment_pending orders to pending so work can begin.
+     * payment_pending orders so work can begin. An order whose intake details
+     * are still missing lands in `pending_details` (staying visible on the
+     * dashboards) instead of `new_request`; a complete Link Building order also
+     * has its turnaround clock started. Delegated to OrderDetailsService so the
+     * paid-order transition logic lives in exactly one place.
      */
     private function updatePaymentPendingOrders(Invoice $invoice, ?string $payment_intent_id): void
     {
-        $attributes = [
-            'status'            => 'new_request',
-            'payment_intent_id' => $payment_intent_id,
-        ];
-
-        if ($invoice->session_id) {
-            foreach (self::ORDER_MODELS as $model) {
-                $model::where('session_id', $invoice->session_id)
-                    ->where('status', 'payment_pending')
-                    ->update($attributes);
+        $query = function (string $model) use ($invoice) {
+            if ($invoice->session_id) {
+                return $model::where('session_id', $invoice->session_id)
+                    ->where('status', 'payment_pending');
             }
 
-            return;
-        }
+            if ($invoice->order_id) {
+                return $model::where('id', $invoice->order_id)
+                    ->where('status', 'payment_pending');
+            }
 
-        if ($invoice->order_id) {
-            foreach (self::ORDER_MODELS as $model) {
-                $model::where('id', $invoice->order_id)
-                    ->where('status', 'payment_pending')
-                    ->update($attributes);
+            return null;
+        };
+
+        foreach (self::ORDER_MODELS as $model) {
+            $builder = $query($model);
+
+            if ($builder === null) {
+                return;
+            }
+
+            foreach ($builder->get() as $order) {
+                $order->payment_intent_id = $payment_intent_id;
+                $order->save();
+
+                // Resolves to new_request (details complete) or pending_details,
+                // and starts the Link Building clock when the order is complete.
+                $this->order_details_service->applyPaidStatus($order);
             }
         }
     }

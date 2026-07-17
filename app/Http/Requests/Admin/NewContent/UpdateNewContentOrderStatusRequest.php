@@ -14,7 +14,7 @@ class UpdateNewContentOrderStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status'      => ['required', 'string', 'in:pending,processing,completed,cancelled'],
+            'status'      => ['required', 'string', 'in:pending,processing,completed,cancelled,pending_details'],
             'admin_notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }

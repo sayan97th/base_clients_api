@@ -24,6 +24,7 @@ use App\Models\User;
 use App\Services\CouponService;
 use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceService;
+use App\Services\OrderDetailsService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,6 +43,7 @@ class CartController extends Controller
         protected StripeService $stripeService,
         protected CouponService $couponService,
         protected InvoiceService $invoiceService,
+        protected OrderDetailsService $orderDetailsService,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -899,15 +901,27 @@ class CartController extends Controller
             $dr_tier        = DrTier::find($item_data['dr_tier_id']);
             $link_type      = $dr_tier ? $dr_tier->label . ' External' : null;
 
-            foreach ($item_data['placements'] as $placement_data) {
+            // Always create one placement per purchased link so a details-deferred
+            // order still exposes the correct number of rows to fill in later.
+            // The client may submit fewer placements than the quantity (e.g. a
+            // single null placeholder when skipping intake), so pad to quantity.
+            $placements_input = $item_data['placements'] ?? [];
+            $slot_count       = max((int) $item_data['quantity'], count($placements_input));
+
+            for ($i = 0; $i < $slot_count; $i++) {
+                $placement_data = $placements_input[$i] ?? [];
+                $keyword        = ($placement_data['keyword'] ?? null) ?: null;
+                $landing_page   = ($placement_data['landing_page'] ?? null) ?: null;
+                $has_details    = filled($keyword) && filled($landing_page);
+
                 $item->placements()->create([
                     'order_id'     => 'BL-' . $next_bl_num++,
-                    'row_index'    => $placement_data['row_index'],
-                    'keyword'      => $placement_data['keyword'] ?: null,
-                    'landing_page' => $placement_data['landing_page'] ?: null,
-                    'exact_match'  => $placement_data['exact_match'],
+                    'row_index'    => $placement_data['row_index'] ?? $i,
+                    'keyword'      => $keyword,
+                    'landing_page' => $landing_page,
+                    'exact_match'  => $placement_data['exact_match'] ?? false,
                     'client'       => $client_company ?: null,
-                    'status'       => 'New Request',
+                    'status'       => $has_details ? 'New Request' : 'Pending Details',
                     'request_date' => now()->format('m/d/Y'),
                     'user_id'      => $user->id,
                     'link_type'    => $link_type,
@@ -923,6 +937,10 @@ class CartController extends Controller
             'country'     => $billing['country'] ?: null,
             'postal_code' => $billing['postal_code'] ?: null,
         ]);
+
+        // Park the order in `pending_details` when keywords/target URLs are
+        // missing; a complete order becomes `new_request` and starts its clock.
+        $this->orderDetailsService->applyPaidStatus($order);
 
         return [
             'product_type' => 'link_building',
@@ -1027,6 +1045,8 @@ class CartController extends Controller
             ]);
         }
 
+        $this->orderDetailsService->applyPaidStatus($order);
+
         return [
             'product_type' => 'content_optimization',
             'order_id'     => $order->id,
@@ -1129,6 +1149,8 @@ class CartController extends Controller
                 'discount_amount' => $entry['discount_amount'],
             ]);
         }
+
+        $this->orderDetailsService->applyPaidStatus($order);
 
         return [
             'product_type' => 'new_content',
@@ -1285,6 +1307,8 @@ class CartController extends Controller
                 'discount_amount' => $entry['discount_amount'],
             ]);
         }
+
+        $this->orderDetailsService->applyPaidStatus($order);
 
         return [
             'product_type' => 'content_brief',

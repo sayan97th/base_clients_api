@@ -9,39 +9,59 @@ use Illuminate\Support\Facades\Cache;
 
 class ImpersonationController extends Controller
 {
+    private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+
     public function impersonate(int $user_id): JsonResponse
     {
         /** @var \App\Models\User $admin */
         $admin = auth()->user();
 
-        $client = User::find($user_id);
+        $target = User::with(['roles:id,name,display_name', 'organization'])->find($user_id);
 
-        if (! $client) {
-            return response()->json(['message' => 'Client not found.'], 404);
+        if (! $target) {
+            return response()->json(['message' => 'User not found.'], 404);
         }
 
-        if (! $client->hasRole('client')) {
+        if ($target->id === $admin->id) {
             return response()->json([
-                'message' => 'Only client accounts can be impersonated.',
-            ], 403);
+                'message' => 'You cannot impersonate your own account.',
+            ], 422);
         }
 
-        if (! $client->is_active) {
+        if (! $target->is_active) {
             return response()->json([
                 'message' => 'This account is currently disabled and cannot be impersonated.',
             ], 403);
         }
 
-        $client->load(['roles:id,name,display_name', 'organization']);
+        $target_roles = $target->roles->pluck('name');
+        $is_client    = $target_roles->contains('client')
+            && $target_roles->intersect(self::STAFF_ROLES)->isEmpty();
+
+        // Client accounts may be impersonated by super_admin and admin (route-gated).
+        // Admin-side (team) accounts may only be impersonated by super_admin.
+        if (! $is_client) {
+            if (! $admin->hasRole('super_admin')) {
+                return response()->json([
+                    'message' => 'Only super admins can impersonate admin-side users.',
+                ], 403);
+            }
+
+            if ($target_roles->contains('super_admin')) {
+                return response()->json([
+                    'message' => 'Super admin accounts cannot be impersonated.',
+                ], 403);
+            }
+        }
 
         /** @var string $token */
-        $token = auth()->login($client);
+        $token = auth()->login($target);
 
         Cache::put(
-            'impersonation:' . $admin->id . ':' . $client->id,
+            'impersonation:' . $admin->id . ':' . $target->id,
             [
                 'admin_id'   => $admin->id,
-                'client_id'  => $client->id,
+                'target_id'  => $target->id,
                 'started_at' => now()->toISOString(),
             ],
             now()->addHours(8)
@@ -51,7 +71,7 @@ class ImpersonationController extends Controller
             'impersonation_token' => $token,
             'token_type'          => 'bearer',
             'expires_in'          => auth()->factory()->getTTL() * 60,
-            'impersonated_user'   => $this->formatUser($client),
+            'impersonated_user'   => $this->formatUser($target),
             'admin_user'          => [
                 'id'         => $admin->id,
                 'first_name' => $admin->first_name,

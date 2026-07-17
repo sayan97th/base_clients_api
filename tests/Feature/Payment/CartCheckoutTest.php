@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Payment;
 
+use App\Models\ContentOptimizationIntakeRow;
+use App\Models\ContentOptimizationTier;
 use App\Models\DrTier;
+use App\Models\LinkBuildingOrderPlacement;
 use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
@@ -352,5 +355,107 @@ class CartCheckoutTest extends TestCase
 
         $this->postJson('/api/cart/checkout', $payload)
             ->assertStatus(401);
+    }
+
+    // ─── Bulk paste / import regression (portal "Weave 12+ links" scenario) ──
+    //
+    // The portal now lets clients paste or import an entire spreadsheet of
+    // keywords/pages into the intake tables. The frontend caps what it sends
+    // to exactly the quantity purchased (see pasted-grid.test.ts), so these
+    // tests confirm the backend accepts and persists that full, unmodified
+    // batch — every row, in order, with the right data — rather than silently
+    // truncating, reordering, or dropping any of it.
+
+    public function test_checkout_persists_every_placement_from_a_large_bulk_pasted_link_building_order(): void
+    {
+        $this->mockStripe();
+
+        // 12 fully-detailed placements, as produced by pasting 12 rows from a
+        // spreadsheet into the Link Building intake table (the exact "Weave"
+        // scenario the client described).
+        $payload = $this->baseCheckoutPayload([
+            'total_amount'        => 1080.0, // 12 * 100 - 10% bulk discount
+            'link_building_items' => [$this->linkBuildingItem(12, 100.0)],
+        ]);
+
+        $response = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload);
+
+        $response->assertStatus(200);
+        $order_id = $response->json('data.orders.0.order_id');
+
+        $this->assertDatabaseHas('link_building_orders', [
+            'id'     => $order_id,
+            'status' => 'new_request',
+        ]);
+
+        $placements = LinkBuildingOrderPlacement::whereHas(
+            'orderItem.order',
+            fn ($q) => $q->where('id', $order_id)
+        )->orderBy('row_index')->get();
+
+        // Never grows or shrinks the batch — exactly the 12 rows submitted.
+        $this->assertCount(12, $placements);
+
+        foreach ($placements as $i => $placement) {
+            $this->assertEquals('test keyword ' . ($i + 1), $placement->keyword);
+            $this->assertEquals('https://example.com/page-' . ($i + 1), $placement->landing_page);
+        }
+    }
+
+    public function test_checkout_persists_a_full_batch_of_bulk_imported_content_optimization_rows(): void
+    {
+        $this->mockStripe();
+
+        $tier = ContentOptimizationTier::create([
+            'id' => 'co-800', 'label' => '800-1,599 Words',
+            'word_count_range' => '800-1599', 'turnaround_days' => 5,
+            'price' => 100.0, 'is_active' => true,
+        ]);
+
+        // 7 fully-detailed rows, as produced by importing/pasting a 7-row
+        // spreadsheet into the Content Optimization intake table — matching
+        // the exact quantity purchased.
+        $intake_rows = array_map(fn ($i) => [
+            'primary_keyword'    => 'keyword ' . $i,
+            'secondary_keywords' => null,
+            'content_page_url'   => 'https://example.com/p' . $i,
+            'notes'              => null,
+        ], range(1, 7));
+
+        $payload = $this->baseCheckoutPayload([
+            'total_amount'                => 700.0,
+            'link_building_items'         => null,
+            'content_optimization_items'  => [[
+                'tier_id' => $tier->id, 'quantity' => 7, 'unit_price' => 100.0,
+                'intake_rows' => $intake_rows,
+            ]],
+        ]);
+
+        $response = $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $payload);
+
+        $response->assertStatus(200);
+        $order_id = $response->json('data.orders.0.order_id');
+
+        $this->assertDatabaseHas('content_optimization_orders', [
+            'id'     => $order_id,
+            'status' => 'new_request',
+        ]);
+
+        $rows = ContentOptimizationIntakeRow::whereHas(
+            'item',
+            fn ($q) => $q->where('order_id', $order_id)
+        )->orderBy('row_index')->get();
+
+        // Never grows or shrinks the batch — exactly the 7 rows submitted,
+        // matching the quantity purchased (this is the exact scenario the
+        // client hit when a bulk paste briefly over-filled this table).
+        $this->assertCount(7, $rows);
+
+        foreach ($rows as $i => $row) {
+            $this->assertEquals('keyword ' . ($i + 1), $row->primary_keyword);
+            $this->assertEquals('https://example.com/p' . ($i + 1), $row->content_page_url);
+        }
     }
 }

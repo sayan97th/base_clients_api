@@ -554,6 +554,99 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertSame('Stark Industries', $response->json('data.0.client'));
     }
 
+    public function test_search_filters_by_derived_company_name(): void
+    {
+        // Admin-assigned placement with an empty `client` column — the displayed Company
+        // is derived from the linked user's company ("Acme Corp"). The quick client filter
+        // must match on that derived value, not just the raw column.
+        LinkBuildingOrderPlacement::create([
+            'user_id'      => $this->client->id,
+            'keyword'      => 'derived company link',
+            'landing_page' => 'https://acme.com',
+            'status'       => 'New Request',
+        ]);
+        $this->adminPlacement(['order_id' => 'BL-322', 'client' => 'Unrelated Co']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', ['client' => 'Acme'])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('total'));
+        $this->assertSame('Acme Corp', $response->json('data.0.client'));
+    }
+
+    public function test_column_filter_matches_derived_company_name(): void
+    {
+        // Same scenario, but exercised through the Company column filter (column_filters)
+        // rather than the quick client filter. This is the filter the client reported broken.
+        LinkBuildingOrderPlacement::create([
+            'user_id'      => $this->client->id,
+            'keyword'      => 'column company link',
+            'landing_page' => 'https://acme.com',
+            'status'       => 'New Request',
+        ]);
+        $this->adminPlacement(['order_id' => 'BL-323', 'client' => 'Wayne Enterprises']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', [
+                'column_filters' => [
+                    ['key' => 'client', 'type' => 'text', 'value' => 'Acme'],
+                ],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('total'));
+        $this->assertSame('Acme Corp', $response->json('data.0.client'));
+    }
+
+    public function test_column_filter_matches_client_column_value(): void
+    {
+        // The Company column filter must still match the raw `client` column for
+        // admin-created rows that store the company directly.
+        $this->adminPlacement(['order_id' => 'BL-324', 'client' => 'Stark Industries']);
+        $this->adminPlacement(['order_id' => 'BL-325', 'client' => 'Wayne Enterprises']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', [
+                'column_filters' => [
+                    ['key' => 'client', 'type' => 'text', 'value' => 'Stark'],
+                ],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('total'));
+        $this->assertSame('Stark Industries', $response->json('data.0.client'));
+    }
+
+    public function test_column_filter_matches_exact_match_boolean(): void
+    {
+        // exact_match is stored as a boolean but the dashboard sends "Yes"/"No" labels.
+        $this->adminPlacement(['order_id' => 'BL-326', 'client' => 'Yes Co', 'exact_match' => true]);
+        $this->adminPlacement(['order_id' => 'BL-327', 'client' => 'No Co', 'exact_match' => false]);
+
+        $yes = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', [
+                'column_filters' => [
+                    ['key' => 'exact_match', 'type' => 'select', 'values' => ['Yes']],
+                ],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $yes->json('total'));
+        $this->assertSame('Yes', $yes->json('data.0.exact_match'));
+
+        $no = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', [
+                'column_filters' => [
+                    ['key' => 'exact_match', 'type' => 'select', 'values' => ['No']],
+                ],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $no->json('total'));
+        $this->assertSame('No', $no->json('data.0.exact_match'));
+    }
+
     public function test_search_filters_by_client_user_id(): void
     {
         // Placement linked to the client user

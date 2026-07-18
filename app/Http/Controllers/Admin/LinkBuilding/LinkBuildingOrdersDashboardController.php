@@ -722,13 +722,53 @@ class LinkBuildingOrdersDashboardController extends Controller
             return;
         }
 
-        $query->where(function ($q) use ($search) {
-            $q->where('order_id', 'like', '%' . $search . '%')
-                ->orWhere('client', 'like', '%' . $search . '%')
-                ->orWhere('keyword', 'like', '%' . $search . '%')
-                ->orWhere('link_builder', 'like', '%' . $search . '%')
-                ->orWhere('status', 'like', '%' . $search . '%')
-                ->orWhere('partnership', 'like', '%' . $search . '%');
+        $like = '%' . $search . '%';
+
+        $query->where(function ($q) use ($search, $like) {
+            $q->where('order_id', 'like', $like)
+                ->orWhere('client', 'like', $like)
+                ->orWhere('keyword', 'like', $like)
+                ->orWhere('link_builder', 'like', $like)
+                ->orWhere('status', 'like', $like)
+                ->orWhere('partnership', 'like', $like);
+
+            // Also match the derived Company name (see applyCompanyFilter) so the
+            // global search surfaces client-purchased / admin-assigned rows whose
+            // Company is taken from the linked user's company, not the `client` column.
+            $this->orWhereRelatedCompanyLike($q, $search);
+        });
+    }
+
+    /**
+     * Adds `orWhereHas` company matches for the two user relations that can supply a
+     * derived Company name on a placement: the purchase-order user (orderItem.order.user)
+     * and the directly-assigned client user (user).
+     *
+     * Mirrors the display fallback in LinkBuildingOrderPlacement::toApiArray() where the
+     * Company column shows the linked user's company whenever the raw `client` column is
+     * empty. Filtering only the `client` column silently ignored those rows, which is why
+     * the Company column filter appeared to do nothing for purchased / assigned orders.
+     */
+    private function orWhereRelatedCompanyLike($query, string $value): void
+    {
+        $like = '%' . $value . '%';
+
+        $query
+            ->orWhereHas('orderItem.order.user', fn ($u) => $u->where('company', 'like', $like))
+            ->orWhereHas('user', fn ($u) => $u->where('company', 'like', $like));
+    }
+
+    /**
+     * Applies a Company text match that mirrors the display logic in
+     * LinkBuildingOrderPlacement::toApiArray(): match the raw `client` column OR the
+     * linked user's company. Used by both the quick "Client" filter and the Company
+     * column filter so they behave consistently with what the dashboard renders.
+     */
+    private function applyCompanyFilter($query, string $value): void
+    {
+        $query->where(function ($q) use ($value) {
+            $q->where('client', 'like', '%' . $value . '%');
+            $this->orWhereRelatedCompanyLike($q, $value);
         });
     }
 
@@ -743,7 +783,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (filled($client)) {
-            $query->where('client', 'like', '%' . $client . '%');
+            $this->applyCompanyFilter($query, $client);
         }
 
         if (filled($link_builder)) {
@@ -782,17 +822,45 @@ class LinkBuildingOrdersDashboardController extends Controller
     private function applyTextFilter($query, string $key, array $filter): void
     {
         $value = $filter['value'] ?? '';
-        if (filled($value)) {
-            $query->where($key, 'like', '%' . $value . '%');
+
+        if (! filled($value)) {
+            return;
         }
+
+        // The Company column ("client") can be derived from a linked user's company,
+        // so it needs the relation-aware match instead of a plain column LIKE.
+        if ($key === 'client') {
+            $this->applyCompanyFilter($query, $value);
+
+            return;
+        }
+
+        $query->where($key, 'like', '%' . $value . '%');
     }
 
     private function applySelectFilter($query, string $key, array $filter): void
     {
         $values = $filter['values'] ?? [];
-        if (! empty($values)) {
-            $query->whereIn($key, $values);
+
+        if (empty($values)) {
+            return;
         }
+
+        // exact_match is stored as a boolean (0/1) but the dashboard sends the display
+        // labels "Yes"/"No". Map them back to booleans so the filter matches the stored
+        // values — a raw whereIn('exact_match', ['Yes']) matched nothing (or the wrong
+        // rows) because 'Yes'/'No' are cast to 0 by MySQL.
+        if ($key === 'exact_match') {
+            $booleans = array_values(array_unique(array_map(
+                fn ($v) => strtolower((string) $v) === 'yes' ? 1 : 0,
+                $values
+            )));
+            $query->whereIn($key, $booleans);
+
+            return;
+        }
+
+        $query->whereIn($key, $values);
     }
 
     private function applyNumberFilter($query, string $key, array $filter): void

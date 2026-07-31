@@ -26,6 +26,10 @@ class LegacyInvoiceService
         'cancelled'       => 'void',
     ];
 
+    public function __construct(
+        private readonly InvoiceNumberGenerator $invoice_number_generator
+    ) {}
+
     /**
      * Create a brand-new invoice for a legacy order that doesn't have one yet.
      */
@@ -33,9 +37,9 @@ class LegacyInvoiceService
     {
         $order->loadMissing(['items.drTier', 'user', 'orderCoupons.coupon']);
 
-        return DB::transaction(function () use ($order): Invoice {
+        return $this->invoice_number_generator->transact(function () use ($order): Invoice {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
+            $invoice_number = $this->invoice_number_generator->next();
 
             $date_issued = $order->created_at ?? now();
             $status      = $this->resolveInvoiceStatus($order->status);

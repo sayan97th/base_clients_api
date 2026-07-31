@@ -10,13 +10,16 @@ use App\Models\InvoiceCouponDiscount;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 
 class InvoiceService
 {
     private const BULK_DISCOUNT_THRESHOLD   = 10;
     private const BULK_DISCOUNT_RATE        = 0.10;
     public const DEFERRED_PAYMENT_DUE_DAYS = 7;
+
+    public function __construct(
+        private readonly InvoiceNumberGenerator $invoice_number_generator
+    ) {}
 
     /**
      * Create an invoice for a link building order.
@@ -481,7 +484,7 @@ class InvoiceService
         int $due_days = 30,
         ?string $payment_intent_id = null
     ): Invoice {
-        return DB::transaction(function () use (
+        return $this->invoice_number_generator->transact(function () use (
             $user, $order_id, $session_id, $session_title,
             $payment_method, $currency_type,
             $subtotal_amount, $discount_amount, $discount_type,
@@ -490,7 +493,7 @@ class InvoiceService
             $invoice_status, $due_days, $payment_intent_id
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
+            $invoice_number = $this->invoice_number_generator->next();
 
             $invoice = Invoice::create([
                 'unique_id'          => $unique_id,

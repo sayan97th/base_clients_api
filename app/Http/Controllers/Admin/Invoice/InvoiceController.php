@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
 use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
+use App\Services\InvoiceNumberGenerator;
 use App\Services\NotificationService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
@@ -38,7 +39,8 @@ class InvoiceController extends Controller
 
     public function __construct(
         protected NotificationService $notificationService,
-        protected StripeService $stripeService
+        protected StripeService $stripeService,
+        protected InvoiceNumberGenerator $invoiceNumberGenerator
     ) {}
 
     /**
@@ -142,12 +144,12 @@ class InvoiceController extends Controller
         $discount_amount = round($discount_amount, 2);
         $total_amount    = $subtotal_amount;
 
-        $invoice = DB::transaction(function () use (
+        $invoice = $this->invoiceNumberGenerator->transact(function () use (
             $user, $admin, $request, $currency,
             $subtotal_amount, $discount_amount, $total_amount, $computed_items
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
+            $invoice_number = $this->invoiceNumberGenerator->next();
 
             $invoice = Invoice::create([
                 'unique_id'       => $unique_id,
@@ -948,9 +950,9 @@ class InvoiceController extends Controller
 
         $admin = Auth::user();
 
-        $new_invoice = DB::transaction(function () use ($original, $admin) {
+        $new_invoice = $this->invoiceNumberGenerator->transact(function () use ($original, $admin) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
-            $invoice_number = 'BSM-' . str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT);
+            $invoice_number = $this->invoiceNumberGenerator->next();
 
             $new_invoice = Invoice::create([
                 'unique_id'       => $unique_id,

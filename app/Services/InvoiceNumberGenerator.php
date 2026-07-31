@@ -59,10 +59,17 @@ class InvoiceNumberGenerator
         }
     }
 
+    /**
+     * MySQL phrases a duplicate key error as "...for key
+     * 'invoices.invoices_invoice_number_unique'", SQLite (used in tests) as
+     * "UNIQUE constraint failed: invoices.invoice_number". Matching on
+     * "invoice_number" covers both while still excluding unrelated
+     * constraints on this table, e.g. a duplicate unique_id.
+     */
     private function isDuplicateInvoiceNumber(QueryException $e): bool
     {
         return $e->getCode() === '23000'
-            && str_contains($e->getMessage(), 'invoices_invoice_number_unique');
+            && str_contains($e->getMessage(), 'invoice_number');
     }
 
     private function resyncPastMaxIssuedNumber(): void

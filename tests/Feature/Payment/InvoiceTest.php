@@ -290,6 +290,109 @@ class InvoiceTest extends TestCase
         $this->assertNotEquals($invoice->id, $response->json('id'));
     }
 
+    // ─── Invoice number regression (duplicate BSM-XXXX bug) ─────────────────
+    //
+    // Invoice numbers used to be computed as `Invoice::count() + 1`. Once an
+    // invoice was deleted, the count dropped below the highest number ever
+    // issued, so the next create() could reuse a number that was still on
+    // file and fail with "Integrity constraint violation: 1062 Duplicate
+    // entry 'BSM-XXXX' for key invoices_invoice_number_unique".
+
+    public function test_creating_invoices_through_the_api_produces_unique_sequential_numbers(): void
+    {
+        $numbers = [];
+        for ($i = 0; $i < 3; $i++) {
+            $response = $this->actingAs($this->admin, 'api')
+                ->postJson('/api/admin/invoices', $this->storePayload());
+
+            $response->assertStatus(201);
+            $numbers[] = $response->json('invoice_number');
+        }
+
+        $this->assertEquals(['BSM-0001', 'BSM-0002', 'BSM-0003'], $numbers);
+    }
+
+    /**
+     * This is the exact production failure: five invoices are created
+     * (BSM-0001..BSM-0005), the admin deletes one stray early invoice
+     * (BSM-0001) and keeps the rest. Invoice::count() drops to 4, so the old
+     * `count() + 1` formula would reissue BSM-0005 — which is still on file
+     * — and the insert would fail with the reported 1062 duplicate-entry
+     * error instead of returning 201.
+     */
+    public function test_creating_invoice_after_an_early_invoice_is_deleted_does_not_collide(): void
+    {
+        $created_ids     = [];
+        $created_numbers = [];
+
+        for ($i = 0; $i < 5; $i++) {
+            $response = $this->actingAs($this->admin, 'api')
+                ->postJson('/api/admin/invoices', $this->storePayload());
+
+            $response->assertStatus(201);
+            $created_ids[]     = $response->json('id');
+            $created_numbers[] = $response->json('invoice_number');
+        }
+
+        $this->assertEquals(
+            ['BSM-0001', 'BSM-0002', 'BSM-0003', 'BSM-0004', 'BSM-0005'],
+            $created_numbers
+        );
+
+        $this->actingAs($this->admin, 'api')
+            ->deleteJson('/api/admin/invoices/' . $created_ids[0])
+            ->assertNoContent();
+
+        $this->assertEquals(4, Invoice::count());
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/invoices', $this->storePayload());
+
+        $response->assertStatus(201);
+
+        $new_number = $response->json('invoice_number');
+        $this->assertEquals('BSM-0006', $new_number);
+        $this->assertDatabaseHas('invoices', ['invoice_number' => $new_number]);
+
+        $all_numbers = Invoice::pluck('invoice_number');
+        $this->assertEquals(
+            $all_numbers->count(),
+            $all_numbers->unique()->count(),
+            'Invoice numbers must be unique after creating post-deletion.'
+        );
+    }
+
+    public function test_duplicating_invoice_after_earlier_invoices_were_deleted_does_not_collide(): void
+    {
+        $created_ids = [];
+        for ($i = 0; $i < 4; $i++) {
+            $response = $this->actingAs($this->admin, 'api')
+                ->postJson('/api/admin/invoices', $this->storePayload());
+
+            $created_ids[] = $response->json('id');
+        }
+
+        $surviving_invoice_id = end($created_ids);
+
+        foreach (array_slice($created_ids, 0, 3) as $id) {
+            $this->actingAs($this->admin, 'api')
+                ->deleteJson("/api/admin/invoices/{$id}")
+                ->assertNoContent();
+        }
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson("/api/admin/invoices/{$surviving_invoice_id}/duplicate");
+
+        $response->assertStatus(201);
+
+        $numbers = Invoice::pluck('invoice_number');
+        $this->assertEquals(
+            $numbers->count(),
+            $numbers->unique()->count(),
+            'Invoice numbers must be unique after duplicating post-deletion.'
+        );
+    }
+
     // ─── Delete ──────────────────────────────────────────────────────────────
 
     public function test_admin_can_delete_invoice(): void

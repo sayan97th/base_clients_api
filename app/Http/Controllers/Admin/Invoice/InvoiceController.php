@@ -111,9 +111,10 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'User not found.'], 404);
         }
 
-        $admin     = Auth::user();
-        $currency  = $request->input('currency_type', 'usd');
-        $raw_items = $request->input('line_items');
+        $admin          = Auth::user();
+        $currency       = $request->input('currency_type', 'usd');
+        $raw_items      = $request->input('line_items');
+        $payment_method = $currency === 'credits' ? 'Account Balance' : 'Credit Card';
 
         $subtotal_amount = 0.0;
         $discount_amount = 0.0;
@@ -145,7 +146,7 @@ class InvoiceController extends Controller
         $total_amount    = $subtotal_amount;
 
         $invoice = $this->invoiceNumberGenerator->transact(function () use (
-            $user, $admin, $request, $currency,
+            $user, $admin, $request, $currency, $payment_method,
             $subtotal_amount, $discount_amount, $total_amount, $computed_items
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
@@ -159,7 +160,7 @@ class InvoiceController extends Controller
                 'session_id'      => null,
                 'session_title'   => null,
                 'status'          => 'unpaid',
-                'payment_method'  => 'Account Balance',
+                'payment_method'  => $payment_method,
                 'currency_type'   => $currency,
                 'subtotal_amount' => $subtotal_amount,
                 'discount_amount' => $discount_amount,

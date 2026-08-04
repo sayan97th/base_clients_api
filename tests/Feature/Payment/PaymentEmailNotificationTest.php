@@ -8,6 +8,7 @@ use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Jobs\SendAdminPayLaterOrderNotificationJob;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Models\DrTier;
+use App\Models\EmailNotificationSetting;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\StripeService;
@@ -184,6 +185,54 @@ class PaymentEmailNotificationTest extends TestCase
             ->assertStatus(200);
 
         Mail::assertQueued(PaymentSuccessfulEmail::class, 1);
+    }
+
+    public function test_card_payment_fires_payment_completed_exactly_once_per_admin_recipient(): void
+    {
+        // Regression test: InvoiceService used to fire PaymentCompleted for
+        // every super_admin unconditionally, and CartController fired it a
+        // second time (filtered) for the same invoice, so a single checkout
+        // produced two "Payment Receipt" emails for the same admin.
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class]);
+        Event::fake([PaymentCompleted::class]);
+        $admin = $this->createAdminUser();
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        Event::assertDispatchedTimes(PaymentCompleted::class, 1);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $admin->id);
+    }
+
+    public function test_card_payment_only_notifies_admins_enabled_in_email_notification_settings(): void
+    {
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class]);
+        Event::fake([PaymentCompleted::class]);
+        $enabled_admin  = $this->createAdminUser();
+        $excluded_admin = $this->createAdminUser();
+
+        EmailNotificationSetting::create([
+            'notify_all_admins' => false,
+            'enabled_user_ids'  => [$enabled_admin->id],
+        ]);
+
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        Event::assertDispatchedTimes(PaymentCompleted::class, 1);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin->id);
+        Event::assertNotDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $excluded_admin->id);
     }
 
     // ─── Credits payment notifications ───────────────────────────────────────

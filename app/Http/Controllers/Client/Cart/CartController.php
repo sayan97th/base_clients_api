@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Client\Cart;
 
 use App\Events\LinkBuildingOrderPlaced;
-use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Cart\CheckoutCartRequest;
 use App\Http\Requests\Cart\UpsertCartRequest;
@@ -22,7 +21,6 @@ use App\Models\LinkBuildingOrderPlacement;
 use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
-use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceService;
 use App\Services\OrderDetailsService;
 use App\Services\StripeService;
@@ -1196,31 +1194,10 @@ class CartController extends Controller
             ]);
         }
 
-        // Admin in-app notifications to all configured admin recipients
-        try {
-            $payer_name  = $user->full_name ?? $user->email;
-            $admin_link  = '/admin/invoices/' . $invoice->id;
-            $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
-            $admin_users = User::whereIn('email', array_column($recipients, 'email'))
-                ->where('is_active', true)
-                ->get();
-
-            foreach ($admin_users as $admin) {
-                event(new PaymentCompleted(
-                    user:           $admin,
-                    payer_name:     $payer_name,
-                    amount:         (float) $invoice->total_amount,
-                    invoice_number: $invoice->invoice_number,
-                    link:           $admin_link,
-                    invoice:        $invoice,
-                ));
-            }
-        } catch (Throwable $e) {
-            Log::warning('Failed to dispatch admin in-app payment notifications after checkout.', [
-                'invoice_id' => $invoice->id,
-                'error'      => $e->getMessage(),
-            ]);
-        }
+        // Admin in-app notification (respecting Email Notification Settings) is
+        // already dispatched by InvoiceService when it creates the "paid"
+        // invoice above. Dispatching it again here would double-notify and
+        // double-email every configured admin recipient.
     }
 
     private function createContentBriefOrder(

@@ -2,12 +2,11 @@
 
 namespace App\Services;
 
-use App\Events\PaymentCompleted;
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Models\Invoice;
 use App\Models\Transaction;
-use App\Models\User;
+use App\Services\Concerns\DispatchesAdminPaymentNotifications;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Stripe\Exception\ApiErrorException;
@@ -15,6 +14,8 @@ use Stripe\StripeClient;
 
 class StripePublicPaymentService
 {
+    use DispatchesAdminPaymentNotifications;
+
     private StripeClient $client;
     private StripeService $stripe_service;
 
@@ -236,21 +237,11 @@ class StripePublicPaymentService
             // Email to all recipients configured in /admin/email-notifications
             SendAdminInvoicePaidNotificationJob::dispatch($invoice->id);
 
-            // In-app portal notifications for admin/super_admin users
+            // In-app portal notifications for the admin recipients configured
+            // in Email Notification Settings.
             $payer_name = $invoice->user?->full_name ?? $invoice->user?->email ?? 'A client';
 
-            User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin']))
-                ->where('is_active', true)
-                ->each(function (User $admin) use ($invoice, $payer_name) {
-                    event(new PaymentCompleted(
-                        user:           $admin,
-                        payer_name:     $payer_name,
-                        amount:         (float) $invoice->total_amount,
-                        invoice_number: $invoice->invoice_number,
-                        link:           '/admin/invoices/' . $invoice->id,
-                        invoice:        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $invoice->total_amount);
         } catch (\Exception $e) {
             logger()->warning("Failed to send admin notifications for invoice {$invoice->unique_id}", [
                 'error' => $e->getMessage(),

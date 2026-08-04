@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Invoice;
 
-use App\Events\PaymentCompleted;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Mail\PaymentSuccessfulEmail;
@@ -14,6 +13,7 @@ use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\Concerns\DispatchesAdminPaymentNotifications;
 use App\Services\OrderDetailsService;
 use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
@@ -25,6 +25,8 @@ use Illuminate\Validation\Rule;
 
 class InvoicePayController extends Controller
 {
+    use DispatchesAdminPaymentNotifications;
+
     private const PAYABLE_STATUSES = ['unpaid', 'overdue'];
 
     private const ORDER_MODELS = [
@@ -304,18 +306,7 @@ class InvoicePayController extends Controller
 
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin']))
-                ->where('is_active', true)
-                ->each(function (User $admin) use ($invoice, $payer_name) {
-                    event(new PaymentCompleted(
-                        user:           $admin,
-                        payer_name:     $payer_name,
-                        amount:         (float) $invoice->total_amount,
-                        invoice_number: $invoice->invoice_number,
-                        link:           '/admin/invoices/' . $invoice->id,
-                        invoice:        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $invoice->total_amount);
         } catch (\Exception $e) {
             logger()->warning("Failed to dispatch admin payment notifications for invoice {$invoice->unique_id}", [
                 'error' => $e->getMessage(),

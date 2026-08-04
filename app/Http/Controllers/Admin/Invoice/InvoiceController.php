@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
 use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
+use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceNumberGenerator;
 use App\Services\NotificationService;
 use App\Services\StripeService;
@@ -220,17 +221,21 @@ class InvoiceController extends Controller
         }
 
         if ($request->boolean('send_admin_notification')) {
-            User::whereHas('roles', fn ($q) => $q->whereIn('name', ['super_admin', 'admin']))
-                ->each(function (User $admin_user) use ($invoice) {
-                    $this->notificationService->createNotification(
-                        user: $admin_user,
-                        type: 'invoice',
-                        message: "Invoice {$invoice->invoice_number} has been created for {$invoice->user->full_name}.",
-                        extra: [
-                            'link' => '/admin/invoices/' . $invoice->id,
-                        ],
-                    );
-                });
+            $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
+            $admin_users = User::whereIn('email', array_column($recipients, 'email'))
+                ->where('is_active', true)
+                ->get();
+
+            foreach ($admin_users as $admin_user) {
+                $this->notificationService->createNotification(
+                    user: $admin_user,
+                    type: 'invoice',
+                    message: "Invoice {$invoice->invoice_number} has been created for {$invoice->user->full_name}.",
+                    extra: [
+                        'link' => '/admin/invoices/' . $invoice->id,
+                    ],
+                );
+            }
         }
 
         return response()->json($this->formatInvoice($invoice), 201);

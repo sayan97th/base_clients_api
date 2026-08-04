@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Events\PaymentCompleted;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
@@ -10,9 +9,12 @@ use App\Models\InvoiceCouponDiscount;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\User;
+use App\Services\Concerns\DispatchesAdminPaymentNotifications;
 
 class InvoiceService
 {
+    use DispatchesAdminPaymentNotifications;
+
     private const BULK_DISCOUNT_THRESHOLD   = 10;
     private const BULK_DISCOUNT_RATE        = 0.10;
     public const DEFERRED_PAYMENT_DUE_DAYS = 7;
@@ -90,17 +92,7 @@ class InvoiceService
         if ($invoice_status === 'paid') {
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
-                    event(new PaymentCompleted(
-                        $admin,
-                        $payer_name,
-                        $order->total_amount,
-                        $invoice->invoice_number,
-                        '/invoices/' . $invoice->unique_id,
-                        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $order->total_amount);
         }
 
         return $invoice;
@@ -161,17 +153,7 @@ class InvoiceService
         if ($invoice_status === 'paid') {
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
-                    event(new PaymentCompleted(
-                        $admin,
-                        $payer_name,
-                        $order->total_amount,
-                        $invoice->invoice_number,
-                        '/invoices/' . $invoice->unique_id,
-                        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $order->total_amount);
         }
 
         return $invoice;
@@ -232,17 +214,7 @@ class InvoiceService
         if ($invoice_status === 'paid') {
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
-                    event(new PaymentCompleted(
-                        $admin,
-                        $payer_name,
-                        $order->total_amount,
-                        $invoice->invoice_number,
-                        '/invoices/' . $invoice->unique_id,
-                        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $order->total_amount);
         }
 
         return $invoice;
@@ -303,17 +275,7 @@ class InvoiceService
         if ($invoice_status === 'paid') {
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-                ->each(function (User $admin) use ($invoice, $payer_name, $order) {
-                    event(new PaymentCompleted(
-                        $admin,
-                        $payer_name,
-                        $order->total_amount,
-                        $invoice->invoice_number,
-                        '/invoices/' . $invoice->unique_id,
-                        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $order->total_amount);
         }
 
         return $invoice;
@@ -449,17 +411,7 @@ class InvoiceService
         if ($invoice_status === 'paid') {
             $payer_name = $user->full_name ?? $user->email;
 
-            User::whereHas('roles', fn ($q) => $q->where('name', 'super_admin'))
-                ->each(function (User $admin) use ($invoice, $payer_name, $total_amount) {
-                    event(new PaymentCompleted(
-                        $admin,
-                        $payer_name,
-                        $total_amount,
-                        $invoice->invoice_number,
-                        '/invoices/' . $invoice->unique_id,
-                        $invoice,
-                    ));
-                });
+            $this->dispatchAdminPaymentCompletedEvent($invoice, $payer_name, (float) $total_amount);
         }
 
         return $invoice;

@@ -31,10 +31,19 @@ class SendPaymentNotification implements ShouldQueue
                 ])->toArray();
             }
 
+            // PaymentCompleted is only ever dispatched for the admin recipients
+            // resolved from Email Notification Settings (see
+            // DispatchesAdminPaymentNotifications), never for the paying
+            // client, so every link in this receipt must point at the admin
+            // portal. There is no PDF download route for invoices; the PDF
+            // export on the admin invoice page is generated client-side, so
+            // no invoice_pdf_url is provided here.
+            $invoice_admin_url = rtrim(config('app.admin_url', config('app.frontend_url')), '/')
+                . '/admin/invoices/' . $invoice->id;
+
             $mail_data = [
                 'invoice_number'  => $invoice->invoice_number,
-                'invoice_url'     => config('app.frontend_url') . '/invoices/' . $invoice->unique_id,
-                'invoice_pdf_url' => config('app.frontend_url') . '/share/invoices/' . $invoice->unique_id . '/pdf',
+                'invoice_url'     => $invoice_admin_url,
                 'currency_type'   => $invoice->currency_type,
                 'subtotal_amount' => $invoice->subtotal_amount,
                 'total_amount'    => $invoice->total_amount,

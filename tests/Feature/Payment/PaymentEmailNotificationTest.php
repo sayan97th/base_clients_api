@@ -6,9 +6,12 @@ use App\Events\PayLaterOrderPlaced;
 use App\Events\PaymentCompleted;
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Jobs\SendAdminPayLaterOrderNotificationJob;
+use App\Jobs\SendEmailJob;
+use App\Mail\NotificationEmail;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Models\DrTier;
 use App\Models\EmailNotificationSetting;
+use App\Models\Invoice;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\StripeService;
@@ -232,6 +235,89 @@ class PaymentEmailNotificationTest extends TestCase
 
         Event::assertDispatchedTimes(PaymentCompleted::class, 1);
         Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin->id);
+        Event::assertNotDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $excluded_admin->id);
+    }
+
+    public function test_card_payment_receipt_email_links_to_the_admin_invoice_view(): void
+    {
+        // Regression test: the "Payment Receipt" email is only ever sent to
+        // admin recipients (see DispatchesAdminPaymentNotifications), but its
+        // "View in your account" button and line item links used to point at
+        // the client-only /invoices/{unique_id} route, so an admin clicking
+        // through landed on a page that was not theirs to view. It must link
+        // to the admin invoice detail page instead, and must not advertise a
+        // PDF download link since no such route exists.
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class, SendEmailJob::class]);
+        $admin = $this->createAdminUser();
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        Bus::assertDispatched(SendEmailJob::class, function (SendEmailJob $job) use ($admin) {
+            if ($job->recipient_email !== $admin->email || ! ($job->mailable instanceof NotificationEmail)) {
+                return false;
+            }
+
+            $mail_data = $job->mailable->mail_data;
+
+            return str_contains($mail_data['invoice_url'] ?? '', '/admin/invoices/')
+                && ! array_key_exists('invoice_pdf_url', $mail_data);
+        });
+    }
+
+    public function test_card_payment_notifies_every_recipient_configured_in_email_notification_settings(): void
+    {
+        // Confirms the fix scales to any number of configured recipients, not
+        // just a single admin: two enabled admins and a custom email address
+        // must all receive both the "Payment Received" email and the in-app
+        // "Payment Receipt" notification, while a third, non-enabled admin
+        // must receive neither.
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class, SendEmailJob::class]);
+        Event::fake([PaymentCompleted::class]);
+
+        $enabled_admin_one = $this->createAdminUser();
+        $enabled_admin_two = $this->createAdminUser();
+        $excluded_admin    = $this->createAdminUser();
+        $custom_email      = 'billing@agency.com';
+
+        EmailNotificationSetting::create([
+            'notify_all_admins' => false,
+            'enabled_user_ids'  => [$enabled_admin_one->id, $enabled_admin_two->id],
+            'custom_emails'     => [$custom_email],
+        ]);
+
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        // "Payment Received" job is dispatched once; run its handler for real
+        // (it was faked above purely to stop it from actually mailing) and
+        // assert it queues an email for every configured recipient.
+        Bus::assertDispatched(SendAdminInvoicePaidNotificationJob::class);
+        $invoice = Invoice::where('user_id', $this->client->id)->firstOrFail();
+        (new SendAdminInvoicePaidNotificationJob($invoice->id))->handle();
+
+        Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $enabled_admin_one->email);
+        Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $enabled_admin_two->email);
+        Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $custom_email);
+        Bus::assertNotDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $excluded_admin->email);
+
+        // The in-app "Payment Receipt" event fires once per enabled admin
+        // user, but never for the custom email (it has no portal account to
+        // notify in-app) and never for the excluded admin.
+        Event::assertDispatchedTimes(PaymentCompleted::class, 2);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin_one->id);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin_two->id);
         Event::assertNotDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $excluded_admin->id);
     }
 

@@ -41,6 +41,30 @@ class StripeController extends Controller
     }
 
     /**
+     * POST /api/stripe/customer
+     *
+     * Resolves the authenticated user's Stripe Customer ID, creating one if it
+     * does not yet exist. This is the single source of truth for customer
+     * resolution. Any flow that needs a Stripe Customer for this user must
+     * resolve it here rather than creating a second, divergent Customer via
+     * the Stripe SDK directly, which would leave PaymentMethods attached to a
+     * customer the backend cannot match against `users.stripe_customer_id`.
+     */
+    public function resolveCustomer(): JsonResponse
+    {
+        /** @var User $user */
+        $user = auth()->user();
+
+        $customer_result = $this->stripeService->findOrCreateCustomer($user);
+
+        if (!$customer_result['success']) {
+            return response()->json(['error' => 'Failed to resolve Stripe customer.'], 500);
+        }
+
+        return response()->json(['stripe_customer_id' => $customer_result['customer_id']]);
+    }
+
+    /**
      * POST /api/stripe/create-payment-intent
      *
      * Creates a Stripe PaymentIntent and returns the client_secret to the frontend

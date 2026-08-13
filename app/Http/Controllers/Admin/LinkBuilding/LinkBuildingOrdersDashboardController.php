@@ -72,6 +72,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $link_builder      = $request->input('link_builder');
         $client_user_id    = $request->input('client_user_id');
         $assigned_user_id  = $request->input('assigned_user_id');
+        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
         $sort_rules        = $request->input('sort_rules', []);
         $column_filters    = $request->input('column_filters', []);
 
@@ -86,6 +87,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $this->applyGlobalSearch($query, $search);
         $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
+        $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
         $this->applyColumnFilters($query, $column_filters);
         $this->applySortRules($query, $sort_rules);
 
@@ -296,6 +298,26 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * GET /api/admin/link-building-orders/needs-approval-count
+     *
+     * Lightweight count of "Live" orders that still have no LB TL Approval value.
+     * Powers the badge on the dashboard's "Needs LB TL Approval" filter toggle so
+     * admins can see at a glance how many live links are still waiting on review.
+     */
+    public function needsApprovalCount(): JsonResponse
+    {
+        $query = LinkBuildingOrderPlacement::where(function ($q) {
+            $q->whereNotNull('order_id')
+              ->orWhereNotNull('order_item_id')
+              ->orWhereNotNull('user_id');
+        });
+
+        $this->applyNeedsLbTlApprovalFilter($query, true);
+
+        return response()->json(['count' => $query->count()]);
+    }
+
+    /**
      * GET /api/admin/link-building-orders/assignable-clients
      *
      * Lightweight list of client users for the "Client Account" dropdown in the
@@ -495,6 +517,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $link_builder      = $request->input('link_builder');
         $client_user_id    = $request->input('client_user_id');
         $assigned_user_id  = $request->input('assigned_user_id');
+        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
         $sort_rules        = $request->input('sort_rules', []);
         $column_filters    = $request->input('column_filters', []);
 
@@ -511,6 +534,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         } else {
             $this->applyGlobalSearch($query, $search);
             $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
+            $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
             $this->applyColumnFilters($query, $column_filters);
             $this->applySortRules($query, $sort_rules);
         }
@@ -770,6 +794,24 @@ class LinkBuildingOrdersDashboardController extends Controller
             $q->where('client', 'like', '%' . $value . '%');
             $this->orWhereRelatedCompanyLike($q, $value);
         });
+    }
+
+    /**
+     * Restricts the query to "Live" orders that have not been reviewed yet, i.e. the
+     * LB TL Approval column is still empty. This is the filter behind the dashboard's
+     * "Needs LB TL Approval" toggle, which lets an admin quickly find live links they
+     * have not checked yet instead of scanning the entire live-links list by hand.
+     */
+    private function applyNeedsLbTlApprovalFilter($query, bool $needs_approval): void
+    {
+        if (! $needs_approval) {
+            return;
+        }
+
+        $query->where('status', 'Live')
+            ->where(function ($q) {
+                $q->whereNull('lb_tl_approval')->orWhere('lb_tl_approval', '');
+            });
     }
 
     private function applyQuickFilters($query, ?string $status, ?string $link_type, ?string $client, ?string $link_builder, $client_user_id = null, $assigned_user_id = null): void

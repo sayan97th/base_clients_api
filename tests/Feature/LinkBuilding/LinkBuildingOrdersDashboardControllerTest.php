@@ -935,6 +935,132 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertNull($placement->fresh()->assigned_admin_user_id);
     }
 
+    // ─── Column values (copy an entire column, e.g. domains for Ahrefs) ────────
+
+    public function test_unauthenticated_column_values_returns_401(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/column-values', ['column' => 'landing_page'])
+            ->assertStatus(401);
+    }
+
+    public function test_client_role_cannot_access_column_values(): void
+    {
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', ['column' => 'landing_page'])
+            ->assertStatus(403);
+    }
+
+    public function test_column_values_rejects_a_non_whitelisted_column(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', ['column' => 'internal_notes_but_fake'])
+            ->assertStatus(422);
+    }
+
+    public function test_column_values_rejects_a_missing_column(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', [])
+            ->assertStatus(422);
+    }
+
+    public function test_column_values_returns_every_non_empty_value_for_the_column(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-700', 'landing_page' => 'https://acme.com']);
+        $this->adminPlacement(['order_id' => 'BL-701', 'landing_page' => 'https://globex.com']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', ['column' => 'landing_page'])
+            ->assertStatus(200);
+
+        $this->assertSame(2, $response->json('count'));
+        $this->assertEqualsCanonicalizing(
+            ['https://acme.com', 'https://globex.com'],
+            $response->json('data')
+        );
+    }
+
+    public function test_column_values_omits_blank_values(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-710', 'notes' => 'has a note']);
+        $this->adminPlacement(['order_id' => 'BL-711', 'notes' => '']);
+        $this->adminPlacement(['order_id' => 'BL-712', 'notes' => null]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', ['column' => 'notes'])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('count'));
+        $this->assertSame(['has a note'], $response->json('data'));
+    }
+
+    public function test_column_values_respects_row_ids_and_ignores_other_filters(): void
+    {
+        $wanted = $this->adminPlacement(['order_id' => 'BL-720', 'status' => 'Cancelled', 'landing_page' => 'https://wanted.com']);
+        $this->adminPlacement(['order_id' => 'BL-721', 'status' => 'Live', 'landing_page' => 'https://unwanted.com']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', [
+                'column'  => 'landing_page',
+                'row_ids' => [$wanted->id],
+                // A status filter that would otherwise exclude the requested row —
+                // row_ids must take priority and other filters must be ignored.
+                'status'  => 'Live',
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(['https://wanted.com'], $response->json('data'));
+    }
+
+    public function test_column_values_respects_status_filter_when_no_row_ids_given(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-730', 'status' => 'Live', 'landing_page' => 'https://live.com']);
+        $this->adminPlacement(['order_id' => 'BL-731', 'status' => 'Cancelled', 'landing_page' => 'https://cancelled.com']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', [
+                'column' => 'landing_page',
+                'status' => 'Live',
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(['https://live.com'], $response->json('data'));
+    }
+
+    public function test_column_values_for_client_column_returns_derived_company_name(): void
+    {
+        // Mirrors the derived-Company logic already covered for search(): a placement
+        // linked to a client user via user_id, with no raw `client` value, should
+        // surface the linked user's company — the same value the admin sees on screen.
+        LinkBuildingOrderPlacement::create([
+            'user_id'      => $this->client->id,
+            'keyword'      => 'derived company link',
+            'landing_page' => 'https://acme.com',
+            'status'       => 'New Request',
+        ]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', ['column' => 'client'])
+            ->assertStatus(200);
+
+        $this->assertSame(['Acme Corp'], $response->json('data'));
+    }
+
+    public function test_column_values_returns_empty_array_when_nothing_matches(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-740', 'status' => 'Live']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/column-values', [
+                'column' => 'landing_page',
+                'status' => 'Cancelled',
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(0, $response->json('count'));
+        $this->assertSame([], $response->json('data'));
+    }
+
     // ─── Assignable clients ───────────────────────────────────────────────────
 
     public function test_assignable_clients_returns_correct_shape(): void

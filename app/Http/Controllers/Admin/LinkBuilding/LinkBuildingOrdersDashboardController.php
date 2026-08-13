@@ -55,6 +55,22 @@ class LinkBuildingOrdersDashboardController extends Controller
     ];
 
     /**
+     * Columns that may be written by the batch-update endpoints (batchUpdate and
+     * batchUpdateCells). order_id is intentionally excluded — it must stay unique
+     * per row, so bulk-assigning it across multiple selected rows is not safe.
+     * Admins edit order_id individually via the single-row update endpoint.
+     */
+    private const ALLOWED_BATCH_FIELDS = [
+        'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
+        'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',
+        'partnership', 'partnership_check', 'article_title', 'article',
+        'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
+        'current_traffic', 'dr_formula', 'current_poc', 'current_price',
+        'lb_tl_approval', 'approval_date', 'final_price', 'currency',
+        'assigned_admin_user_id', 'user_id',
+    ];
+
+    /**
      * POST /api/admin/link-building-orders/search
      *
      * Paginated list with server-side filtering and multi-column sorting.
@@ -197,22 +213,9 @@ class LinkBuildingOrdersDashboardController extends Controller
         $row_ids = (array) ($request->input('row_ids') ?? []);
         $updates = (array) ($request->input('updates') ?? []);
 
-        // NOTE: order_id is intentionally excluded — it must stay unique per row, so
-        // bulk-assigning the same value across multiple selected rows is not safe.
-        // Admins edit order_id individually via the single-row update endpoint.
-        $allowed_fields = [
-            'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
-            'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',
-            'partnership', 'partnership_check', 'article_title', 'article',
-            'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
-            'current_traffic', 'dr_formula', 'current_poc', 'current_price',
-            'lb_tl_approval', 'approval_date', 'final_price', 'currency',
-            'assigned_admin_user_id', 'user_id',
-        ];
-
         $safe_updates = array_filter(
             $updates,
-            fn ($key) => in_array($key, $allowed_fields, true),
+            fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
             ARRAY_FILTER_USE_KEY
         );
 
@@ -231,6 +234,129 @@ class LinkBuildingOrdersDashboardController extends Controller
         return response()->json([
             'message'       => "Updated {$placements->count()} row(s) successfully.",
             'updated_count' => $placements->count(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/batch-update-cells
+     *
+     * Applies a rectangular block of values, for example a range copied from Excel
+     * or Google Sheets and pasted into the dashboard grid, where every row can set a
+     * different combination of column values in a single request. Unlike batchUpdate()
+     * (one field applied to many rows), this is addressed per row.
+     *
+     * Request body:
+     *   updates : Array<{ id: string, fields: Record<string, string|null> }>
+     */
+    public function batchUpdateCells(Request $request): JsonResponse
+    {
+        $updates = (array) ($request->input('updates') ?? []);
+
+        if (empty($updates)) {
+            return response()->json(['message' => 'Nothing to update.'], 422);
+        }
+
+        $session_id          = $request->header('X-Session-ID');
+        $updated_placements  = [];
+
+        foreach ($updates as $update) {
+            $id     = $update['id'] ?? null;
+            $fields = (array) ($update['fields'] ?? []);
+
+            if (! $id || empty($fields)) {
+                continue;
+            }
+
+            $safe_fields = array_filter(
+                $fields,
+                fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
+                ARRAY_FILTER_USE_KEY
+            );
+
+            if (empty($safe_fields)) {
+                continue;
+            }
+
+            $placement = LinkBuildingOrderPlacement::find($id);
+
+            if (! $placement) {
+                continue;
+            }
+
+            $placement->update($safe_fields);
+            $fresh = $placement->fresh();
+            broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+            $updated_placements[] = $fresh->toApiArray();
+        }
+
+        return response()->json([
+            'message'       => count($updated_placements) . ' row(s) updated successfully.',
+            'updated_count' => count($updated_placements),
+            'data'          => $updated_placements,
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/column-values
+     *
+     * Returns every non-empty value found in a single column across all rows matching
+     * the current search/filters (or an explicit row_ids list), so the admin can copy
+     * an entire column to the clipboard, for example a list of domains to paste into
+     * a third-party SEO tool like Ahrefs. Capped at 5000 rows.
+     *
+     * Request body:
+     *   column       : string           — must be one of FILTERABLE_COLUMNS
+     *   row_ids      : string[]         — when provided, restricts to these specific rows
+     *   ...          : same filter parameters accepted by search()/export()
+     */
+    public function columnValues(Request $request): JsonResponse
+    {
+        $column = (string) $request->input('column', '');
+
+        if (! in_array($column, self::FILTERABLE_COLUMNS, true)) {
+            return response()->json(['message' => 'Invalid column.'], 422);
+        }
+
+        $row_ids           = (array) ($request->input('row_ids') ?? []);
+        $search            = $request->input('search');
+        $status            = $request->input('status');
+        $link_type         = $request->input('link_type');
+        $client            = $request->input('client');
+        $link_builder      = $request->input('link_builder');
+        $client_user_id    = $request->input('client_user_id');
+        $assigned_user_id  = $request->input('assigned_user_id');
+        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
+        $sort_rules        = $request->input('sort_rules', []);
+        $column_filters    = $request->input('column_filters', []);
+
+        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
+            ->where(function ($q) {
+                $q->whereNotNull('order_id')
+                  ->orWhereNotNull('order_item_id')
+                  ->orWhereNotNull('user_id');
+            });
+
+        if (! empty($row_ids)) {
+            $query->whereIn('id', $row_ids);
+        } else {
+            $this->applyGlobalSearch($query, $search);
+            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
+            $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
+            $this->applyColumnFilters($query, $column_filters);
+            $this->applySortRules($query, $sort_rules);
+        }
+
+        // toApiArray() is used (rather than a plain pluck) so derived columns such as
+        // Company, which falls back to the linked user's company when the raw `client`
+        // column is empty, return the same value the admin sees on screen.
+        $values = $query->limit(5000)->get()
+            ->map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray()[$column] ?? null)
+            ->filter(fn ($v) => filled($v))
+            ->values();
+
+        return response()->json([
+            'data'  => $values,
+            'count' => $values->count(),
         ]);
     }
 

@@ -779,6 +779,162 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertEquals($this->client->id, $p2->fresh()->user_id);
     }
 
+    // ─── Batch update cells ───────────────────────────────────────────────────
+    // Powers the dashboard's bulk grid paste, range paste, and the undo/redo
+    // feature (which reverts or replays a cell change via this same endpoint).
+
+    public function test_unauthenticated_batch_update_cells_returns_401(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/batch-update-cells', ['updates' => []])
+            ->assertStatus(401);
+    }
+
+    public function test_client_role_cannot_batch_update_cells(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-540']);
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['keyword' => 'hacked']]],
+            ])
+            ->assertStatus(403);
+
+        $this->assertSame('default keyword', $placement->fresh()->keyword);
+    }
+
+    public function test_batch_update_cells_applies_a_different_field_map_per_row(): void
+    {
+        $p1 = $this->adminPlacement(['order_id' => 'BL-550', 'keyword' => 'old kw 1', 'landing_page' => 'https://old1.com']);
+        $p2 = $this->adminPlacement(['order_id' => 'BL-551', 'keyword' => 'old kw 2', 'landing_page' => 'https://old2.com']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [
+                    ['id' => $p1->id, 'fields' => ['keyword' => 'new kw 1', 'landing_page' => 'https://new1.com']],
+                    ['id' => $p2->id, 'fields' => ['keyword' => 'new kw 2']],
+                ],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 2);
+
+        $this->assertSame('new kw 1', $p1->fresh()->keyword);
+        $this->assertSame('https://new1.com', $p1->fresh()->landing_page);
+        $this->assertSame('new kw 2', $p2->fresh()->keyword);
+        $this->assertSame('https://old2.com', $p2->fresh()->landing_page, 'A field left out of the row map must stay untouched');
+    }
+
+    public function test_batch_update_cells_response_includes_full_updated_row_data(): void
+    {
+        // The dashboard replaces its local rows straight from this response after a
+        // bulk paste or an undo/redo, so every dashboard-visible field must round-trip.
+        $placement = $this->adminPlacement(['order_id' => 'BL-552', 'keyword' => 'old kw']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['keyword' => 'new kw']]],
+            ])
+            ->assertStatus(200);
+
+        $row = $response->json('data.0');
+
+        $this->assertSame($placement->id, $row['id']);
+        $this->assertSame('new kw', $row['keyword']);
+        foreach (['id', 'order_id', 'client', 'landing_page', 'status', 'link_type', 'currency'] as $field) {
+            $this->assertArrayHasKey($field, $row, "Response row should contain field: {$field}");
+        }
+    }
+
+    public function test_batch_update_cells_ignores_non_whitelisted_fields(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-560']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['nonexistent_field' => 'value']]],
+            ])
+            ->assertStatus(200);
+
+        // The row map had no whitelisted fields left after filtering, so it is
+        // silently skipped rather than updated.
+        $this->assertSame(0, $response->json('updated_count'));
+    }
+
+    public function test_batch_update_cells_ignores_order_id_field_but_applies_the_rest(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-570', 'keyword' => 'old kw']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['order_id' => 'BL-999999', 'keyword' => 'new kw']]],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 1);
+
+        $fresh = $placement->fresh();
+        $this->assertSame('BL-570', $fresh->order_id, 'order_id must not be bulk-editable, even mixed in with safe fields');
+        $this->assertSame('new kw', $fresh->keyword);
+    }
+
+    public function test_batch_update_cells_skips_unknown_placement_id_but_applies_the_rest(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-580', 'keyword' => 'old kw']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [
+                    ['id' => '00000000-0000-0000-0000-000000000000', 'fields' => ['keyword' => 'ghost']],
+                    ['id' => $placement->id, 'fields' => ['keyword' => 'new kw']],
+                ],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 1);
+
+        $this->assertSame('new kw', $placement->fresh()->keyword);
+    }
+
+    public function test_batch_update_cells_returns_422_when_updates_is_empty(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', ['updates' => []])
+            ->assertStatus(422);
+    }
+
+    public function test_batch_update_cells_can_revert_a_text_field_back_to_an_empty_string(): void
+    {
+        // Undo of a cell edit whose original value was blank sends "" back as the
+        // revert value (the dashboard's before/after snapshot for an empty cell).
+        // Laravel's global empty-string-to-null conversion means it lands as null,
+        // not "", but both render as an empty cell on the dashboard.
+        $placement = $this->adminPlacement(['order_id' => 'BL-590', 'notes' => 'a note that was added']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['notes' => '']]],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 1);
+
+        $this->assertSame('', (string) $placement->fresh()->notes);
+    }
+
+    public function test_batch_update_cells_can_revert_assigned_admin_user_back_to_null(): void
+    {
+        // Undo of an "Assign To" cell change must be able to clear it back to
+        // unassigned, not just swap between two non-null user ids.
+        $staff = User::factory()->create(['is_active' => true]);
+        $staff->assignRole('staff');
+        $placement = $this->adminPlacement(['order_id' => 'BL-591', 'assigned_admin_user_id' => $staff->id]);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['assigned_admin_user_id' => null]]],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 1);
+
+        $this->assertNull($placement->fresh()->assigned_admin_user_id);
+    }
+
     // ─── Assignable clients ───────────────────────────────────────────────────
 
     public function test_assignable_clients_returns_correct_shape(): void

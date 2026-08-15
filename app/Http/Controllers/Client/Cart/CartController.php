@@ -24,6 +24,7 @@ use App\Services\CouponService;
 use App\Services\InvoiceService;
 use App\Services\OrderDetailsService;
 use App\Services\StripeService;
+use App\Services\TierPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,7 @@ class CartController extends Controller
         protected CouponService $couponService,
         protected InvoiceService $invoiceService,
         protected OrderDetailsService $orderDetailsService,
+        protected TierPricingService $tierPricingService,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -122,7 +124,17 @@ class CartController extends Controller
 
         // Calculate the expected order total server-side so it can be verified
         // against the Stripe PaymentIntent amount before any data is written.
-        $expected_total = $this->calculateExpectedTotal($request);
+        // This always resolves prices from the current tier records, not the
+        // client-submitted unit_price, so it can throw if a tier was removed
+        // between page load and checkout.
+        try {
+            $expected_total = $this->calculateExpectedTotal($request);
+        } catch (\DomainException $e) {
+            return response()->json([
+                'message' => 'One or more selected items are no longer available. Please refresh your cart and try again.',
+                'error'   => 'tier_unavailable',
+            ], 422);
+        }
 
         if ($is_credits_payment) {
             if ($is_atomic_credits) {
@@ -362,6 +374,15 @@ class CartController extends Controller
                 return response()->json([
                     'message' => 'Insufficient credit balance. Please check your account credits and try again.',
                     'error'   => 'insufficient_credits',
+                ], 422);
+            }
+
+            if (str_starts_with($e->getMessage(), 'tier_not_found:')) {
+                $this->recordFailedTransaction($user, $payment_method_id, $session_id, $session_title, $is_credits_payment, $is_hybrid_payment, $e->getMessage());
+
+                return response()->json([
+                    'message' => 'One or more selected items are no longer available. Please refresh your cart and try again.',
+                    'error'   => 'tier_unavailable',
                 ], 422);
             }
 
@@ -666,6 +687,7 @@ class CartController extends Controller
 
         // ── Link Building ──
         if (! empty($link_building_items)) {
+            $link_building_items = $this->tierPricingService->resolveItemPrices('link_building', $link_building_items);
             $total_links     = 0;
             $subtotal        = 0.0;
             $dr_tier_ids     = [];
@@ -719,6 +741,7 @@ class CartController extends Controller
 
         // ── Content Optimization ──
         if (! empty($content_optimization_items)) {
+            $content_optimization_items = $this->tierPricingService->resolveItemPrices('content_optimization', $content_optimization_items);
             $subtotal = 0.0;
             foreach ($content_optimization_items as $item) {
                 $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
@@ -741,6 +764,7 @@ class CartController extends Controller
 
         // ── New Content ──
         if (! empty($new_content_items)) {
+            $new_content_items = $this->tierPricingService->resolveItemPrices('new_content', $new_content_items);
             $subtotal = 0.0;
             foreach ($new_content_items as $item) {
                 $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
@@ -763,6 +787,7 @@ class CartController extends Controller
 
         // ── Content Briefs ──
         if (! empty($content_brief_items)) {
+            $content_brief_items = $this->tierPricingService->resolveItemPrices('content_brief', $content_brief_items);
             $subtotal = 0.0;
             foreach ($content_brief_items as $item) {
                 $subtotal += (float) $item['unit_price'] * (int) $item['quantity'];
@@ -799,6 +824,8 @@ class CartController extends Controller
         bool $skip_discounts = false,
         bool $defer_details = false
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('link_building', $items);
+
         $total_links     = 0;
         $subtotal        = 0.0;
         $dr_tier_ids     = [];
@@ -969,6 +996,8 @@ class CartController extends Controller
         bool $skip_discounts = false,
         bool $defer_details = false
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('content_optimization', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {
@@ -1074,6 +1103,8 @@ class CartController extends Controller
         bool $skip_discounts = false,
         bool $defer_details = false
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('new_content', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {
@@ -1213,6 +1244,8 @@ class CartController extends Controller
         bool $skip_discounts = false,
         bool $defer_details = false
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('content_brief', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {

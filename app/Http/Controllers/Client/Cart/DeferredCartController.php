@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\CouponService;
 use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceService;
+use App\Services\TierPricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -32,6 +33,7 @@ class DeferredCartController extends Controller
     public function __construct(
         protected CouponService $couponService,
         protected InvoiceService $invoiceService,
+        protected TierPricingService $tierPricingService,
     ) {}
 
     /**
@@ -107,6 +109,13 @@ class DeferredCartController extends Controller
                 }
             });
         } catch (Throwable $e) {
+            if ($e instanceof \DomainException && str_starts_with($e->getMessage(), 'tier_not_found:')) {
+                return response()->json([
+                    'message' => 'One or more selected items are no longer available. Please refresh your cart and try again.',
+                    'error'   => 'tier_unavailable',
+                ], 422);
+            }
+
             Log::error('Deferred cart checkout failed.', [
                 'user_id' => $user->id,
                 'error'   => $e->getMessage(),
@@ -251,6 +260,8 @@ class DeferredCartController extends Controller
         ?string $session_id,
         ?string $session_title
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('link_building', $items);
+
         $total_links     = 0;
         $subtotal        = 0.0;
         $dr_tier_ids     = [];
@@ -399,6 +410,8 @@ class DeferredCartController extends Controller
         ?string $session_id,
         ?string $session_title
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('content_optimization', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {
@@ -487,6 +500,8 @@ class DeferredCartController extends Controller
         ?string $session_id,
         ?string $session_title
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('new_content', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {
@@ -576,6 +591,8 @@ class DeferredCartController extends Controller
         ?string $session_id,
         ?string $session_title
     ): array {
+        $items = $this->tierPricingService->resolveItemPrices('content_brief', $items);
+
         $subtotal = 0.0;
 
         foreach ($items as $item) {

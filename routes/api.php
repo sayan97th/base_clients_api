@@ -134,6 +134,7 @@ use App\Http\Controllers\Client\Credits\CreditPurchaseController;
 use App\Http\Controllers\Client\Credits\CreditPurchaseHistoryController;
 use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
+use App\Http\Controllers\Public\PublicTierController;
 use App\Http\Controllers\Test\TestEmailController;
 
 // ─── Test routes (remove in production) ──────────────────────────────────────
@@ -172,6 +173,12 @@ Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show
 // Handles both authenticated (Endpoint 3) and public share-link (Endpoint 6) pay flows.
 // The controller inspects the Authorization header to select the correct flow.
 Route::post('/invoices/{unique_id}/pay', [InvoicePayController::class, 'pay']);
+
+// ─── Public tier catalog (no auth required) ──────────────────────────────────
+// Read-only pricing lookup for external sites (marketing site cart). Never a
+// checkout trust boundary — see PublicTierController docblock.
+Route::get('/public/tiers/{product_type}', [PublicTierController::class, 'index'])
+    ->middleware('throttle:60,1');
 
 // ─── Admin public routes (no auth required) ───────────────────────────────────
 Route::prefix('admin')->group(function () {

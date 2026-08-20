@@ -77,6 +77,11 @@ class DeferredCheckoutCouponTest extends TestCase
 
     private function linkBuildingItem(int $quantity = 1, float $unit_price = 100.0): array
     {
+        // The controller now resolves the authoritative price from the DrTier
+        // record rather than trusting the submitted unit_price, so the fixture
+        // must be kept in sync with whatever price this test wants to exercise.
+        $this->dr_tier->update(['price_per_link' => $unit_price]);
+
         return [
             'dr_tier_id' => $this->dr_tier->id,
             'quantity'   => $quantity,

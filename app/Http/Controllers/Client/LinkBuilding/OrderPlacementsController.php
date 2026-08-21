@@ -65,7 +65,11 @@ class OrderPlacementsController extends Controller
                 // Use the placement-level status when set; fall back to the order status.
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
-                'p.completed_date',
+                // completed_date is never populated by the admin dashboard; live_link_date
+                // is the field admins actually fill in when a link goes live, so it is used
+                // as the client-facing completion date (matches the legacy dashboard's
+                // "Live Link Date" column).
+                DB::raw('p.live_link_date as completed_date'),
                 // The internal ops-entered DR value from the admin Link Building Orders
                 // dashboard (LinkBuildingOrdersTable.tsx "DR" column), surfaced to the
                 // client once the placement's live link has been set.
@@ -91,7 +95,7 @@ class OrderPlacementsController extends Controller
                 'p.landing_page',
                 'p.status',
                 'p.live_link',
-                DB::raw('NULL as completed_date'),
+                DB::raw('p.live_link_date as completed_date'),
                 'p.dr_lbs',
                 'p.request_date',
                 DB::raw("'admin_assigned' as source"),
@@ -141,12 +145,12 @@ class OrderPlacementsController extends Controller
         if ($sort_by) {
             $dir = strtoupper($sort_direction);
             if (in_array($sort_by, $date_string_columns)) {
-                $wrapped->orderByRaw("ISNULL({$sort_by}) ASC, STR_TO_DATE({$sort_by}, '%m/%d/%Y') {$dir}");
+                $wrapped->orderByRaw("({$sort_by} IS NULL) ASC, STR_TO_DATE({$sort_by}, '%m/%d/%Y') {$dir}");
             } else {
-                $wrapped->orderByRaw("ISNULL({$sort_by}) ASC, {$sort_by} {$dir}");
+                $wrapped->orderByRaw("({$sort_by} IS NULL) ASC, {$sort_by} {$dir}");
             }
         } else {
-            $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
+            $wrapped->orderByRaw("(request_date IS NULL) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
         }
 
         $paginator = $wrapped->paginate($per_page);
@@ -206,7 +210,7 @@ class OrderPlacementsController extends Controller
                 'p.landing_page',
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
-                'p.completed_date',
+                DB::raw('p.live_link_date as completed_date'),
                 'p.dr_lbs',
                 'p.request_date',
             ]);
@@ -224,7 +228,7 @@ class OrderPlacementsController extends Controller
                 'p.landing_page',
                 'p.status',
                 'p.live_link',
-                DB::raw('NULL as completed_date'),
+                DB::raw('p.live_link_date as completed_date'),
                 'p.dr_lbs',
                 'p.request_date',
             ]);
@@ -262,7 +266,7 @@ class OrderPlacementsController extends Controller
             }
         }
 
-        $wrapped->orderByRaw("ISNULL(request_date) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
+        $wrapped->orderByRaw("(request_date IS NULL) ASC, STR_TO_DATE(request_date, '%m/%d/%Y') DESC, start_date DESC");
 
         if ($format === 'json') {
             $data = $wrapped->get()->map(fn ($row) => (array) $row)->values();
@@ -338,7 +342,7 @@ class OrderPlacementsController extends Controller
                 'p.landing_page',
                 DB::raw('COALESCE(p.status, o.status) as status'),
                 'p.live_link',
-                'p.completed_date',
+                DB::raw('p.live_link_date as completed_date'),
                 'p.dr_lbs',
             ]);
 
@@ -354,7 +358,7 @@ class OrderPlacementsController extends Controller
                 'p.landing_page',
                 'p.status',
                 'p.live_link',
-                DB::raw('NULL as completed_date'),
+                DB::raw('p.live_link_date as completed_date'),
                 'p.dr_lbs',
             ]);
 

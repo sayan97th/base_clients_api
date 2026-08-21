@@ -68,7 +68,7 @@ class NotificationEmail extends Mailable
             'notification_relative' => $this->notification->relative_time,
             'notification_id'       => $this->notification->id,
             'action_url'            => $this->buildActionUrl(),
-            'preferences_url'       => config('app.frontend_url') . '/settings/notifications',
+            'preferences_url'       => $this->buildPreferencesUrl(),
             'app_name'              => config('app.name'),
         ];
     }
@@ -89,9 +89,22 @@ class NotificationEmail extends Mailable
             'line_items'           => $this->mail_data['line_items'],
             'billed_to'            => $this->mail_data['billed_to'] ?? null,
             'coupon_discounts'     => $this->mail_data['coupon_discounts'] ?? [],
-            'preferences_url'      => config('app.frontend_url') . '/settings/notifications',
+            'preferences_url'      => $this->buildPreferencesUrl(),
             'app_name'             => config('app.name'),
         ];
+    }
+
+    /**
+     * Notification preferences live on the profile page, not a dedicated
+     * settings route, and admins and clients are on separate portal domains.
+     */
+    protected function buildPreferencesUrl(): string
+    {
+        if ($this->user->hasRole(['super_admin', 'admin', 'staff'])) {
+            return rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/profile';
+        }
+
+        return config('app.frontend_url') . '/profile';
     }
 
     protected function buildActionUrl(): ?string

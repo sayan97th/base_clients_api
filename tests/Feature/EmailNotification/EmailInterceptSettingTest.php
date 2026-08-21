@@ -148,6 +148,36 @@ class EmailInterceptSettingTest extends TestCase
         $this->assertSame([], EmailInterceptService::getInterceptRecipients($client->email));
     }
 
+    // ─── EmailInterceptService::claimIntercept() ─────────────────────────────
+
+    public function test_claim_intercept_allows_the_first_claim_for_a_given_email(): void
+    {
+        $this->assertTrue(
+            EmailInterceptService::claimIntercept('client@example.com', 'Subject', '<p>Body</p>')
+        );
+    }
+
+    public function test_claim_intercept_rejects_a_repeat_claim_within_the_dedup_window(): void
+    {
+        EmailInterceptService::claimIntercept('client@example.com', 'Subject', '<p>Body</p>');
+
+        $this->assertFalse(
+            EmailInterceptService::claimIntercept('client@example.com', 'Subject', '<p>Body</p>')
+        );
+    }
+
+    public function test_claim_intercept_treats_a_different_subject_or_body_as_a_distinct_email(): void
+    {
+        EmailInterceptService::claimIntercept('client@example.com', 'Subject', '<p>Body</p>');
+
+        $this->assertTrue(
+            EmailInterceptService::claimIntercept('client@example.com', 'Different subject', '<p>Body</p>')
+        );
+        $this->assertTrue(
+            EmailInterceptService::claimIntercept('client@example.com', 'Subject', '<p>Different body</p>')
+        );
+    }
+
     // ─── InterceptOutgoingEmailListener ──────────────────────────────────────
 
     private function makeSymfonyMessage(string $to, string $subject, string $html_body): Email
@@ -253,6 +283,64 @@ class EmailInterceptSettingTest extends TestCase
             SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS,
             abs($dispatched_jobs['third@agency.com']->delay->diffInSeconds($dispatched_jobs['second@agency.com']->delay))
         );
+    }
+
+    /**
+     * Reproduces the bug reported in production: MessageSending fired the
+     * listener twice for the same email (a duplicate event registration),
+     * which queued the copy job twice and made the destination mailbox
+     * receive the same "[Copy] ..." email more than once. The dedup guard in
+     * EmailInterceptService::claimIntercept() must stop the second firing
+     * cold, no matter what causes it.
+     */
+    public function test_listener_only_queues_one_round_of_copies_even_if_the_event_fires_twice_for_the_same_email(): void
+    {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => false,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => ['auditor@agency.com'],
+        ]);
+
+        $message = $this->makeSymfonyMessage($client->email, 'Order Update', '<p>Your order was updated.</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => 'App\\Mail\\OrderUpdateMail']);
+
+        // Same listener instance, same event, handled twice in a row — this is
+        // exactly what a duplicate event registration looks like from the
+        // listener's point of view.
+        $listener = new InterceptOutgoingEmailListener();
+        $listener->handle($event);
+        $listener->handle($event);
+
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, 1);
+        $this->assertSame(1, EmailInterceptLog::count());
+    }
+
+    public function test_listener_intercepts_again_when_a_genuinely_new_email_matches_an_old_fingerprint_after_the_dedup_window(): void
+    {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => false,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => ['auditor@agency.com'],
+        ]);
+
+        $message = $this->makeSymfonyMessage($client->email, 'Order Update', '<p>Your order was updated.</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => 'App\\Mail\\OrderUpdateMail']);
+
+        (new InterceptOutgoingEmailListener())->handle($event);
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, 1);
+
+        $this->travel(11)->seconds();
+
+        (new InterceptOutgoingEmailListener())->handle($event);
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, 2);
     }
 
     public function test_listener_does_nothing_when_interception_is_disabled(): void

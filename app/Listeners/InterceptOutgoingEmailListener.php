@@ -50,6 +50,13 @@ class InterceptOutgoingEmailListener
         $subject   = $message->getSubject() ?? '';
         $html_body = $this->extractHtmlBody($message);
 
+        // One claim per unique (recipient, subject, body): guarantees this exact
+        // email is only ever copied once, even if MessageSending somehow fires
+        // more than once for it.
+        if (! EmailInterceptService::claimIntercept($to_email, $subject, $html_body)) {
+            return;
+        }
+
         foreach (array_values($copy_recipients) as $position => $copy_recipient_email) {
             SendEmailInterceptCopyJob::dispatchStaggered(
                 original_subject:         $subject,

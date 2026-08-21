@@ -2,10 +2,7 @@
 
 namespace App\Providers;
 
-use App\Listeners\InterceptOutgoingEmailListener;
 use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Mail\Events\MessageSending;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
@@ -21,13 +18,14 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureHorizon();
         $this->configurePasswordReset();
-        $this->configureEmailIntercept();
     }
 
-    protected function configureEmailIntercept(): void
-    {
-        Event::listen(MessageSending::class, InterceptOutgoingEmailListener::class);
-    }
+    // Note: InterceptOutgoingEmailListener is intentionally NOT registered
+    // here. Laravel auto-discovers it from app/Listeners by its handle()
+    // type-hint (Illuminate\Mail\Events\MessageSending), matching every other
+    // listener in this codebase. Registering it again here as well made the
+    // event fire the listener twice per email, which is what was sending
+    // every Email Interceptor copy two to three times over.
 
     protected function configurePasswordReset(): void
     {

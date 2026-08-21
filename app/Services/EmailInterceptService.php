@@ -12,9 +12,11 @@ class EmailInterceptService
     public const AUDIENCE_ADMIN  = 'admin';
     public const AUDIENCE_CLIENT = 'client';
 
-    private const ADMIN_ROLES  = ['super_admin', 'admin', 'staff'];
-    private const CACHE_KEY    = 'email_intercept_settings';
-    private const CACHE_TTL    = 60;
+    private const ADMIN_ROLES        = ['super_admin', 'admin', 'staff'];
+    private const CACHE_KEY          = 'email_intercept_settings';
+    private const CACHE_TTL          = 60;
+    private const DEDUP_KEY_PREFIX   = 'email_intercept_dedup:';
+    private const DEDUP_TTL_SECONDS  = 10;
 
     /**
      * Determines who the destination address belongs to. A recipient found
@@ -64,6 +66,24 @@ class EmailInterceptService
             $settings->recipient_emails,
             fn (string $recipient) => strcasecmp($recipient, $to_email) !== 0
         ));
+    }
+
+    /**
+     * Atomically claims the right to intercept one specific outgoing email,
+     * identified by its recipient, subject, and rendered body. Returns true
+     * the first time a given combination is seen and false on every repeat
+     * within DEDUP_TTL_SECONDS, so a single logical send can never produce
+     * more than one round of copies — no matter how many times MessageSending
+     * happens to fire for it (duplicate event registration, a job retrying
+     * after a transient failure, etc.). A short TTL is enough to absorb those
+     * near-instant repeats while still letting a genuinely new email with the
+     * same subject/recipient be intercepted normally later on.
+     */
+    public static function claimIntercept(string $to_email, string $subject, string $html_body): bool
+    {
+        $fingerprint = self::DEDUP_KEY_PREFIX . md5($to_email . '|' . $subject . '|' . $html_body);
+
+        return Cache::add($fingerprint, true, now()->addSeconds(self::DEDUP_TTL_SECONDS));
     }
 
     public static function logIntercept(

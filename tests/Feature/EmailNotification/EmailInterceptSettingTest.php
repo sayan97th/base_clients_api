@@ -123,6 +123,28 @@ class EmailInterceptSettingTest extends TestCase
         $this->assertContains('auditor@agency.com', $recipients);
     }
 
+    /**
+     * The update form request normally forbids saving a toggle as enabled
+     * with an empty recipient list, but this guards the case where that
+     * invalid combination ends up in the database anyway (a stale row from
+     * before the rule existed, a manual edit, etc.) — interception must stay
+     * off no matter what the toggle says once there is nowhere to send it.
+     */
+    public function test_get_bcc_recipients_is_empty_when_toggle_is_on_but_no_recipients_are_configured(): void
+    {
+        $admin  = $this->makeAdmin();
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => true,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => [],
+        ]);
+
+        $this->assertSame([], EmailInterceptService::getBccRecipients($admin->email));
+        $this->assertSame([], EmailInterceptService::getBccRecipients($client->email));
+    }
+
     // ─── InterceptOutgoingEmailListener ──────────────────────────────────────
 
     public function test_listener_adds_bcc_and_logs_when_interception_is_enabled(): void
@@ -175,6 +197,28 @@ class EmailInterceptSettingTest extends TestCase
             'intercept_admin_emails'  => false,
             'intercept_client_emails' => false,
             'recipient_emails'        => ['auditor@agency.com'],
+        ]);
+
+        $symfony_message = new Email();
+        $symfony_message->to($client->email);
+        $symfony_message->subject('Some notification');
+
+        $event = new MessageSending($symfony_message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
+
+        (new InterceptOutgoingEmailListener())->handle($event);
+
+        $this->assertEmpty($symfony_message->getBcc());
+        $this->assertSame(0, EmailInterceptLog::count());
+    }
+
+    public function test_listener_does_nothing_when_toggle_is_on_but_no_recipients_are_configured(): void
+    {
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => true,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => [],
         ]);
 
         $symfony_message = new Email();

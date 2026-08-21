@@ -40,7 +40,12 @@ class EmailInterceptService
     {
         $settings = self::cachedSettings();
 
-        if (! $settings) {
+        // No settings row, or no destination addresses configured at all: never
+        // intercept, regardless of what the toggles say. This is the safety net
+        // for a stale/corrupted toggle (e.g. enabled with an empty list left
+        // over from removing every recipient) so a misconfigured setting can
+        // never silently start mirroring mail with nowhere to send the copy.
+        if (! $settings || empty($settings->recipient_emails)) {
             return [];
         }
 
@@ -55,7 +60,7 @@ class EmailInterceptService
         }
 
         return array_values(array_filter(
-            $settings->recipient_emails ?? [],
+            $settings->recipient_emails,
             fn (string $recipient) => strcasecmp($recipient, $to_email) !== 0
         ));
     }

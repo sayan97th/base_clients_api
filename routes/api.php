@@ -116,6 +116,7 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderSessionCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
+use App\Http\Controllers\Admin\EmailNotification\EmailInterceptSettingController;
 use App\Http\Controllers\Admin\Client\AdminClientController;
 use App\Http\Controllers\Admin\Impersonation\ImpersonationController;
 use App\Http\Controllers\Admin\Team\AdminTeamController as AdminTeamController;
@@ -569,6 +570,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             'email-notification-settings',
             [EmailNotificationSettingController::class, 'update']
         );
+
+        // Email interceptor — mirrors outgoing admin/client emails to configured
+        // addresses for auditing. Restricted to super_admin/admin only (no staff),
+        // since it exposes where every automated email in the system is copied to.
+        Route::middleware('role:super_admin,admin')->group(function () {
+            Route::get('email-intercept-settings', [EmailInterceptSettingController::class, 'index']);
+            Route::put('email-intercept-settings', [EmailInterceptSettingController::class, 'update']);
+            Route::get('email-intercept-settings/logs', [EmailInterceptSettingController::class, 'logs']);
+        });
 
         // Order comments — super_admin, admin, staff
         Route::middleware('role:super_admin,admin,staff')->group(function () {

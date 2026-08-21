@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
+use App\Listeners\InterceptOutgoingEmailListener;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
@@ -18,6 +21,12 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureHorizon();
         $this->configurePasswordReset();
+        $this->configureEmailIntercept();
+    }
+
+    protected function configureEmailIntercept(): void
+    {
+        Event::listen(MessageSending::class, InterceptOutgoingEmailListener::class);
     }
 
     protected function configurePasswordReset(): void

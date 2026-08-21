@@ -32,11 +32,12 @@ class EmailInterceptService
     }
 
     /**
-     * Returns the list of addresses that should receive a BCC copy of an
-     * email sent to $to_email, or an empty array when interception is off
-     * for that audience. The configured recipients never BCC themselves.
+     * Returns the list of addresses that should receive an independent copy
+     * of an email sent to $to_email, or an empty array when interception is
+     * off for that audience. The configured recipients never receive a copy
+     * of their own email.
      */
-    public static function getBccRecipients(string $to_email): array
+    public static function getInterceptRecipients(string $to_email): array
     {
         $settings = self::cachedSettings();
 

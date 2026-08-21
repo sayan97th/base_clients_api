@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\EmailNotification;
 
+use App\Jobs\SendEmailInterceptCopyJob;
 use App\Listeners\InterceptOutgoingEmailListener;
 use App\Mail\ClientCommentReplyNotification;
+use App\Mail\InterceptedEmailCopy;
 use App\Models\EmailInterceptLog;
 use App\Models\EmailInterceptSetting;
 use App\Models\Role;
@@ -11,6 +13,7 @@ use App\Models\User;
 use App\Services\EmailInterceptService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\Mime\Email;
 use Tests\TestCase;
@@ -71,14 +74,14 @@ class EmailInterceptSettingTest extends TestCase
         );
     }
 
-    // ─── EmailInterceptService::getBccRecipients() ───────────────────────────
+    // ─── EmailInterceptService::getInterceptRecipients() ─────────────────────
 
-    public function test_get_bcc_recipients_is_empty_when_no_settings_exist(): void
+    public function test_get_intercept_recipients_is_empty_when_no_settings_exist(): void
     {
-        $this->assertSame([], EmailInterceptService::getBccRecipients('client@example.com'));
+        $this->assertSame([], EmailInterceptService::getInterceptRecipients('client@example.com'));
     }
 
-    public function test_get_bcc_recipients_is_empty_when_audience_toggle_is_off(): void
+    public function test_get_intercept_recipients_is_empty_when_audience_toggle_is_off(): void
     {
         $client = $this->makeClient();
 
@@ -88,10 +91,10 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => ['auditor@agency.com'],
         ]);
 
-        $this->assertSame([], EmailInterceptService::getBccRecipients($client->email));
+        $this->assertSame([], EmailInterceptService::getInterceptRecipients($client->email));
     }
 
-    public function test_get_bcc_recipients_returns_configured_addresses_when_enabled(): void
+    public function test_get_intercept_recipients_returns_configured_addresses_when_enabled(): void
     {
         $admin = $this->makeAdmin();
 
@@ -101,13 +104,13 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => ['auditor@agency.com', 'lead@agency.com'],
         ]);
 
-        $recipients = EmailInterceptService::getBccRecipients($admin->email);
+        $recipients = EmailInterceptService::getInterceptRecipients($admin->email);
 
         $this->assertContains('auditor@agency.com', $recipients);
         $this->assertContains('lead@agency.com', $recipients);
     }
 
-    public function test_get_bcc_recipients_excludes_the_original_recipient(): void
+    public function test_get_intercept_recipients_excludes_the_original_recipient(): void
     {
         $admin = $this->makeAdmin();
 
@@ -117,7 +120,7 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => [$admin->email, 'auditor@agency.com'],
         ]);
 
-        $recipients = EmailInterceptService::getBccRecipients($admin->email);
+        $recipients = EmailInterceptService::getInterceptRecipients($admin->email);
 
         $this->assertNotContains($admin->email, $recipients);
         $this->assertContains('auditor@agency.com', $recipients);
@@ -130,7 +133,7 @@ class EmailInterceptSettingTest extends TestCase
      * before the rule existed, a manual edit, etc.) — interception must stay
      * off no matter what the toggle says once there is nowhere to send it.
      */
-    public function test_get_bcc_recipients_is_empty_when_toggle_is_on_but_no_recipients_are_configured(): void
+    public function test_get_intercept_recipients_is_empty_when_toggle_is_on_but_no_recipients_are_configured(): void
     {
         $admin  = $this->makeAdmin();
         $client = $this->makeClient();
@@ -141,20 +144,32 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => [],
         ]);
 
-        $this->assertSame([], EmailInterceptService::getBccRecipients($admin->email));
-        $this->assertSame([], EmailInterceptService::getBccRecipients($client->email));
+        $this->assertSame([], EmailInterceptService::getInterceptRecipients($admin->email));
+        $this->assertSame([], EmailInterceptService::getInterceptRecipients($client->email));
     }
 
     // ─── InterceptOutgoingEmailListener ──────────────────────────────────────
 
-    public function test_listener_adds_bcc_and_logs_when_interception_is_enabled(): void
+    private function makeSymfonyMessage(string $to, string $subject, string $html_body): Email
     {
+        $message = new Email();
+        $message->to($to);
+        $message->subject($subject);
+        $message->html($html_body);
+
+        return $message;
+    }
+
+    public function test_listener_queues_a_staggered_copy_job_per_destination_and_logs_it(): void
+    {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
         $client = $this->makeClient();
 
         EmailInterceptSetting::create([
             'intercept_admin_emails'  => false,
             'intercept_client_emails' => true,
-            'recipient_emails'        => ['auditor@agency.com'],
+            'recipient_emails'        => ['auditor@agency.com', 'lead@agency.com'],
         ]);
 
         $mailable = new ClientCommentReplyNotification(
@@ -171,16 +186,23 @@ class EmailInterceptSettingTest extends TestCase
             view_reply_url: 'https://example.com',
         );
 
-        $symfony_message = new Email();
-        $symfony_message->to($client->email);
-        $symfony_message->subject('Reply to your comment');
-
-        $event = new MessageSending($symfony_message, ['__laravel_mailable' => get_class($mailable)]);
+        $message = $this->makeSymfonyMessage($client->email, 'Reply to your comment', '<p>Hello</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => get_class($mailable)]);
 
         (new InterceptOutgoingEmailListener())->handle($event);
 
-        $bcc_addresses = array_map(fn ($a) => $a->getAddress(), $symfony_message->getBcc());
-        $this->assertContains('auditor@agency.com', $bcc_addresses);
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, function (SendEmailInterceptCopyJob $job) use ($client) {
+            return $job->copy_recipient_email === 'auditor@agency.com'
+                && $job->original_recipient_email === $client->email
+                && $job->original_subject === 'Reply to your comment'
+                && $job->html_body === '<p>Hello</p>';
+        });
+
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, function (SendEmailInterceptCopyJob $job) {
+            return $job->copy_recipient_email === 'lead@agency.com';
+        });
+
+        Bus::assertDispatched(SendEmailInterceptCopyJob::class, 2);
 
         $this->assertDatabaseHas('email_intercept_logs', [
             'mailable_class'           => get_class($mailable),
@@ -189,8 +211,54 @@ class EmailInterceptSettingTest extends TestCase
         ]);
     }
 
+    public function test_listener_staggers_each_copy_job_at_least_one_second_apart(): void
+    {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
+        $frozen_now = now();
+        $this->travelTo($frozen_now);
+
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => false,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => ['first@agency.com', 'second@agency.com', 'third@agency.com'],
+        ]);
+
+        $message = $this->makeSymfonyMessage($client->email, 'Some notification', '<p>Body</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
+
+        (new InterceptOutgoingEmailListener())->handle($event);
+
+        $dispatched_jobs = Bus::dispatched(SendEmailInterceptCopyJob::class)
+            ->keyBy(fn (SendEmailInterceptCopyJob $job) => $job->copy_recipient_email);
+
+        $this->assertCount(3, $dispatched_jobs);
+
+        $first_delay  = $frozen_now->copy()->addSeconds(0 * SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS);
+        $second_delay = $frozen_now->copy()->addSeconds(1 * SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS);
+        $third_delay  = $frozen_now->copy()->addSeconds(2 * SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS);
+
+        $this->assertTrue($dispatched_jobs['first@agency.com']->delay->equalTo($first_delay));
+        $this->assertTrue($dispatched_jobs['second@agency.com']->delay->equalTo($second_delay));
+        $this->assertTrue($dispatched_jobs['third@agency.com']->delay->equalTo($third_delay));
+
+        // Each destination must be at least MIN_STAGGER_SECONDS further out than the previous one.
+        $this->assertGreaterThanOrEqual(
+            SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS,
+            abs($dispatched_jobs['second@agency.com']->delay->diffInSeconds($dispatched_jobs['first@agency.com']->delay))
+        );
+        $this->assertGreaterThanOrEqual(
+            SendEmailInterceptCopyJob::MIN_STAGGER_SECONDS,
+            abs($dispatched_jobs['third@agency.com']->delay->diffInSeconds($dispatched_jobs['second@agency.com']->delay))
+        );
+    }
+
     public function test_listener_does_nothing_when_interception_is_disabled(): void
     {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
         $client = $this->makeClient();
 
         EmailInterceptSetting::create([
@@ -199,20 +267,19 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => ['auditor@agency.com'],
         ]);
 
-        $symfony_message = new Email();
-        $symfony_message->to($client->email);
-        $symfony_message->subject('Some notification');
-
-        $event = new MessageSending($symfony_message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
+        $message = $this->makeSymfonyMessage($client->email, 'Some notification', '<p>Body</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
 
         (new InterceptOutgoingEmailListener())->handle($event);
 
-        $this->assertEmpty($symfony_message->getBcc());
+        Bus::assertNotDispatched(SendEmailInterceptCopyJob::class);
         $this->assertSame(0, EmailInterceptLog::count());
     }
 
     public function test_listener_does_nothing_when_toggle_is_on_but_no_recipients_are_configured(): void
     {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
         $client = $this->makeClient();
 
         EmailInterceptSetting::create([
@@ -221,15 +288,33 @@ class EmailInterceptSettingTest extends TestCase
             'recipient_emails'        => [],
         ]);
 
-        $symfony_message = new Email();
-        $symfony_message->to($client->email);
-        $symfony_message->subject('Some notification');
-
-        $event = new MessageSending($symfony_message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
+        $message = $this->makeSymfonyMessage($client->email, 'Some notification', '<p>Body</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => 'App\\Mail\\SomeMail']);
 
         (new InterceptOutgoingEmailListener())->handle($event);
 
-        $this->assertEmpty($symfony_message->getBcc());
+        Bus::assertNotDispatched(SendEmailInterceptCopyJob::class);
+        $this->assertSame(0, EmailInterceptLog::count());
+    }
+
+    public function test_listener_never_intercepts_its_own_copy_emails(): void
+    {
+        Bus::fake([SendEmailInterceptCopyJob::class]);
+
+        $client = $this->makeClient();
+
+        EmailInterceptSetting::create([
+            'intercept_admin_emails'  => true,
+            'intercept_client_emails' => true,
+            'recipient_emails'        => ['auditor@agency.com'],
+        ]);
+
+        $message = $this->makeSymfonyMessage('auditor@agency.com', '[Copy] Some notification', '<p>Body</p>');
+        $event   = new MessageSending($message, ['__laravel_mailable' => InterceptedEmailCopy::class]);
+
+        (new InterceptOutgoingEmailListener())->handle($event);
+
+        Bus::assertNotDispatched(SendEmailInterceptCopyJob::class);
         $this->assertSame(0, EmailInterceptLog::count());
     }
 

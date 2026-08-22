@@ -208,8 +208,55 @@ class PaymentEmailNotificationTest extends TestCase
             ]))
             ->assertStatus(200);
 
-        Event::assertDispatchedTimes(PaymentCompleted::class, 1);
+        // One event for the paying client, one for the single admin recipient.
+        Event::assertDispatchedTimes(PaymentCompleted::class, 2);
         Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $admin->id);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $this->client->id);
+    }
+
+    public function test_card_payment_fires_payment_completed_event_for_the_paying_client(): void
+    {
+        // Regression test: PaymentCompleted used to be dispatched only for
+        // admin recipients, so the paying client never received a "Payment
+        // Receipt" portal notification or email for their own purchase.
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class]);
+        Event::fake([PaymentCompleted::class]);
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $this->client->id);
+    }
+
+    public function test_card_payment_receipt_email_links_to_the_client_invoice_view(): void
+    {
+        // The client's own "Payment Receipt" email must link to their
+        // client-portal invoice page, not the admin-only invoice view.
+        Mail::fake();
+        Bus::fake([SendAdminInvoicePaidNotificationJob::class, SendEmailJob::class]);
+        $this->mockStripe();
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/cart/checkout', $this->baseCheckoutPayload([
+                'link_building_items' => [$this->linkBuildingItem()],
+            ]))
+            ->assertStatus(200);
+
+        Bus::assertDispatched(SendEmailJob::class, function (SendEmailJob $job) {
+            if ($job->recipient_email !== $this->client->email || ! ($job->mailable instanceof NotificationEmail)) {
+                return false;
+            }
+
+            $mail_data = $job->mailable->mail_data;
+
+            return str_contains($mail_data['invoice_url'] ?? '', '/invoices/')
+                && ! str_contains($mail_data['invoice_url'] ?? '', '/admin/invoices/');
+        });
     }
 
     public function test_card_payment_only_notifies_admins_enabled_in_email_notification_settings(): void
@@ -233,8 +280,10 @@ class PaymentEmailNotificationTest extends TestCase
             ]))
             ->assertStatus(200);
 
-        Event::assertDispatchedTimes(PaymentCompleted::class, 1);
+        // One event for the paying client, one for the single enabled admin.
+        Event::assertDispatchedTimes(PaymentCompleted::class, 2);
         Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin->id);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $this->client->id);
         Event::assertNotDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $excluded_admin->id);
     }
 
@@ -312,10 +361,12 @@ class PaymentEmailNotificationTest extends TestCase
         Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $custom_email);
         Bus::assertNotDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->recipient_email === $excluded_admin->email);
 
-        // The in-app "Payment Receipt" event fires once per enabled admin
-        // user, but never for the custom email (it has no portal account to
-        // notify in-app) and never for the excluded admin.
-        Event::assertDispatchedTimes(PaymentCompleted::class, 2);
+        // The in-app "Payment Receipt" event fires once for the paying client
+        // and once per enabled admin user, but never for the custom email (it
+        // has no portal account to notify in-app) and never for the excluded
+        // admin.
+        Event::assertDispatchedTimes(PaymentCompleted::class, 3);
+        Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $this->client->id);
         Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin_one->id);
         Event::assertDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $enabled_admin_two->id);
         Event::assertNotDispatched(PaymentCompleted::class, fn (PaymentCompleted $event) => $event->user->id === $excluded_admin->id);

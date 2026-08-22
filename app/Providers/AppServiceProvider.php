@@ -20,6 +20,13 @@ class AppServiceProvider extends ServiceProvider
         $this->configurePasswordReset();
     }
 
+    // Note: InterceptOutgoingEmailListener is intentionally NOT registered
+    // here. Laravel auto-discovers it from app/Listeners by its handle()
+    // type-hint (Illuminate\Mail\Events\MessageSending), matching every other
+    // listener in this codebase. Registering it again here as well made the
+    // event fire the listener twice per email, which is what was sending
+    // every Email Interceptor copy two to three times over.
+
     protected function configurePasswordReset(): void
     {
         ResetPassword::createUrlUsing(function ($user, string $token) {

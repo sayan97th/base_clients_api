@@ -31,19 +31,24 @@ class SendPaymentNotification implements ShouldQueue
                 ])->toArray();
             }
 
-            // PaymentCompleted is only ever dispatched for the admin recipients
-            // resolved from Email Notification Settings (see
-            // DispatchesAdminPaymentNotifications), never for the paying
-            // client, so every link in this receipt must point at the admin
-            // portal. There is no PDF download route for invoices; the PDF
-            // export on the admin invoice page is generated client-side, so
-            // no invoice_pdf_url is provided here.
-            $invoice_admin_url = rtrim(config('app.admin_url', config('app.frontend_url')), '/')
-                . '/admin/invoices/' . $invoice->id;
+            // PaymentCompleted is dispatched both for the paying client and for the
+            // admin recipients resolved from Email Notification Settings (see
+            // DispatchesAdminPaymentNotifications), each with its own $event->link:
+            // an admin gets an /admin/invoices/{id} path while the client gets a
+            // client-portal /invoices/{unique_id} path. Resolve the domain from
+            // that path so each recipient's receipt links to the portal they
+            // actually have access to. There is no PDF download route for
+            // invoices; the PDF export on the invoice page is generated
+            // client-side, so no invoice_pdf_url is provided here.
+            $invoice_link = $event->link ?? '/invoices/' . $invoice->unique_id;
+            $base_url     = str_starts_with($invoice_link, '/admin')
+                ? config('app.admin_url', config('app.frontend_url'))
+                : config('app.frontend_url');
+            $invoice_url  = rtrim($base_url, '/') . $invoice_link;
 
             $mail_data = [
                 'invoice_number'  => $invoice->invoice_number,
-                'invoice_url'     => $invoice_admin_url,
+                'invoice_url'     => $invoice_url,
                 'currency_type'   => $invoice->currency_type,
                 'subtotal_amount' => $invoice->subtotal_amount,
                 'total_amount'    => $invoice->total_amount,

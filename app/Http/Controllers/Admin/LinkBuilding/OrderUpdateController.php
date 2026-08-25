@@ -57,12 +57,25 @@ class OrderUpdateController extends Controller
         }
 
         if ($request->boolean('send_email') && $order->user) {
+            $link_count      = null;
+            $dr_tier_summary = null;
+
+            if ($order instanceof LinkBuildingOrder) {
+                $order->loadMissing('items.drTier', 'items.placements');
+                $link_count      = $order->items->flatMap->placements->count();
+                $dr_tier_summary = $order->items->pluck('drTier.label')->filter()->unique()->implode(', ') ?: null;
+            }
+
             Mail::to($order->user->email)->queue(
                 new OrderUpdateMail(
                     user: $order->user,
                     update_title: $update->title,
                     update_message: $update->message,
                     order_id: $order->id,
+                    order_title: $order->order_title,
+                    purchased_at: $order->created_at,
+                    link_count: $link_count,
+                    dr_tier_summary: $dr_tier_summary,
                 )
             );
         }

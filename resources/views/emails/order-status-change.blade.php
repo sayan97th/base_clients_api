@@ -35,6 +35,33 @@
         $purchase_items = $purchase_items ?? [];
         $purchase_title = $purchase_title ?? null;
         $is_multi       = !empty($purchase_items);
+
+        $order_reference = $order_reference ?? null;
+        $order_title     = $order_title ?? null;
+        $purchase_date   = $purchase_date ?? null;
+        $link_count      = $link_count ?? null;
+        $dr_tier_summary = $dr_tier_summary ?? null;
+
+        // Link count + DR tier collapse into one "Details" value (e.g. "1 link · DR 30+")
+        // so the reference strip stays a single compact row instead of a grid of boxes.
+        // Purchase date is intentionally left out here — it's already stated in the
+        // heading copy above, so repeating it in the table would be redundant.
+        $order_details = collect([
+            $link_count ? ($link_count . ' link' . ($link_count === 1 ? '' : 's')) : null,
+            $dr_tier_summary,
+        ])->filter()->implode(' · ');
+
+        $meta_fields = [];
+        if ($order_reference) {
+            $meta_fields[] = ['label' => 'Order ID', 'value' => $order_reference];
+        }
+        if ($order_title) {
+            $meta_fields[] = ['label' => 'Order', 'value' => $order_title];
+        }
+        if ($order_details) {
+            $meta_fields[] = ['label' => 'Details', 'value' => $order_details];
+        }
+        $has_order_meta = !empty($meta_fields);
     @endphp
 
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -92,6 +119,10 @@
                                     style="margin:0 0 28px;font-weight:normal;color:#6b7280;font-size:13px;">
                                     @if ($purchase_title)
                                         {{ $purchase_title }}
+                                    @elseif ($is_completed && $link_count && $purchase_date)
+                                        All {{ $link_count }} link{{ $link_count === 1 ? '' : 's' }} in the order you purchased on {{ $purchase_date }} {{ $link_count === 1 ? 'is' : 'are' }} now live.
+                                    @elseif ($is_completed && $purchase_date)
+                                        All link placements in the order you purchased on {{ $purchase_date }} are now live.
                                     @elseif ($is_completed)
                                         All your link placements are now live.
                                     @elseif ($is_processing)
@@ -148,7 +179,17 @@
                                         </p>
                                     @elseif ($is_completed)
                                         <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
-                                            Great news — every link placement in your order is now live! Thank you for choosing us. You can review all your placements by clicking the button below.
+                                            Great news — every link placement in
+                                            @if ($order_title && $purchase_date)
+                                                the order <strong>{{ $order_title }}</strong>, purchased on <strong>{{ $purchase_date }}</strong>,
+                                            @elseif ($order_title)
+                                                the order <strong>{{ $order_title }}</strong>
+                                            @elseif ($purchase_date)
+                                                the order you purchased on <strong>{{ $purchase_date }}</strong>
+                                            @else
+                                                your order
+                                            @endif
+                                            is now live! Thank you for choosing us. You can review all your placements by clicking the button below.
                                         </p>
                                     @else
                                         <p style="margin:0 0 16px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
@@ -173,6 +214,25 @@
                                         <span style="display:inline-block;background-color:{{ $badge_bg }};color:{{ $badge_color }};font-size:16px;font-weight:700;padding:10px 32px;border-radius:6px;letter-spacing:0.5px;">
                                             {{ $new_status }}
                                         </span>
+                                    </div>
+                                @endif
+
+                                {{-- Order reference: one row per field, mirroring emails.client-welcome's account-details table --}}
+                                @if ($has_order_meta)
+                                    <div style="box-sizing:border-box;padding:0;color:#374151;margin:0 0 20px;">
+                                        <table cellpadding="8" cellspacing="0"
+                                            style="margin:0;box-sizing:border-box;width:100%;background-color:#fdf2f8;border-radius:4px;">
+                                            @foreach ($meta_fields as $index => $field)
+                                                <tr>
+                                                    <td style="box-sizing:border-box;vertical-align:top;text-align:left;font-weight:500;color:#c084a8;width:35%;{{ $index < count($meta_fields) - 1 ? 'border-bottom:1px dashed #f3d9e8;' : '' }}">
+                                                        {{ $field['label'] }}
+                                                    </td>
+                                                    <td style="box-sizing:border-box;vertical-align:top;text-align:right;{{ $index < count($meta_fields) - 1 ? 'border-bottom:1px dashed #f3d9e8;' : '' }}">
+                                                        {{ $field['value'] }}
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </table>
                                     </div>
                                 @endif
 

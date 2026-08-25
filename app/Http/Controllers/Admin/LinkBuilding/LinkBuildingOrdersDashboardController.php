@@ -11,6 +11,7 @@ use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
 use App\Jobs\ProcessLinkBuildingImportJob;
 use App\Jobs\ProcessLinkBuildingMetricsImportJob;
 use App\Mail\OrderStatusChangeMail;
+use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use Carbon\Carbon;
@@ -766,11 +767,11 @@ class LinkBuildingOrdersDashboardController extends Controller
             return;
         }
 
-        $all_statuses = LinkBuildingOrderPlacement::whereHas('orderItem', function ($q) use ($parent_order) {
+        $placement_statuses = LinkBuildingOrderPlacement::whereHas('orderItem', function ($q) use ($parent_order) {
             $q->where('order_id', $parent_order->id);
         })->pluck('status');
 
-        $new_order_status = $all_statuses->every(fn ($s) => $s === 'Live')
+        $new_order_status = $placement_statuses->every(fn ($s) => $s === 'Live')
             ? 'completed'
             : 'processing';
 
@@ -786,11 +787,33 @@ class LinkBuildingOrdersDashboardController extends Controller
             Mail::to($user->email)->queue(
                 new OrderStatusChangeMail(
                     user: $user,
-                    new_status: $new_order_status,
+                    status: $new_order_status,
                     order_id: $parent_order->id,
+                    order_title: $parent_order->order_title,
+                    purchased_at: $parent_order->created_at,
+                    link_count: $placement_statuses->count(),
+                    dr_tier_summary: $this->buildDrTierSummary($parent_order),
                 )
             );
         }
+    }
+
+    /**
+     * Builds a comma-separated summary of the DR tier(s) purchased on an order
+     * (e.g. "DR 30-49, DR 50-59"), so the client-facing email can identify not just
+     * which order this is, but what was actually purchased.
+     */
+    private function buildDrTierSummary(LinkBuildingOrder $parent_order): ?string
+    {
+        $parent_order->loadMissing('items.drTier');
+
+        $labels = $parent_order->items
+            ->pluck('drTier.label')
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $labels->isEmpty() ? null : $labels->implode(', ');
     }
 
     /**
@@ -827,8 +850,10 @@ class LinkBuildingOrdersDashboardController extends Controller
         Mail::to($user->email)->queue(
             new OrderStatusChangeMail(
                 user: $user,
-                new_status: $order_status,
+                status: $order_status,
                 order_id: $display_order_id,
+                purchased_at: $placement->created_at,
+                link_count: 1,
             )
         );
     }

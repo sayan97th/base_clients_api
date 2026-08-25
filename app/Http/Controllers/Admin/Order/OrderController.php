@@ -169,7 +169,7 @@ class OrderController extends Controller
      */
     public function updateStatus(Request $request, string $order): JsonResponse
     {
-        [$order_model, ] = $this->findOrder($order);
+        [$order_model, $product_type] = $this->findOrder($order);
 
         if (! $order_model) {
             return response()->json(['message' => 'Order not found.'], 404);
@@ -185,11 +185,19 @@ class OrderController extends Controller
         $order_model->update(['status' => $validated['status']]);
 
         if (($validated['notify_user'] ?? false) && $order_model->user) {
+            [$link_count, $dr_tier_summary] = $product_type === 'link_building'
+                ? $this->buildLinkBuildingMailData($order_model)
+                : [null, null];
+
             Mail::to($order_model->user->email)->queue(
                 new OrderStatusChangeMail(
                     user: $order_model->user,
-                    new_status: $order_model->status,
+                    status: $order_model->status,
                     order_id: $order_model->id,
+                    order_title: $order_model->order_title,
+                    purchased_at: $order_model->created_at,
+                    link_count: $link_count,
+                    dr_tier_summary: $dr_tier_summary,
                 )
             );
         }
@@ -198,6 +206,25 @@ class OrderController extends Controller
             'message' => 'Order status updated successfully.',
             'status'  => $order_model->status,
         ]);
+    }
+
+    /**
+     * Builds the link-building-specific email data (link count and DR tier summary)
+     * so the client-facing status email can identify exactly what this order contains,
+     * not just the order as a whole.
+     */
+    private function buildLinkBuildingMailData(LinkBuildingOrder $order_model): array
+    {
+        $order_model->loadMissing('items.drTier', 'items.placements');
+
+        $link_count      = $order_model->items->flatMap->placements->count();
+        $dr_tier_summary = $order_model->items
+            ->pluck('drTier.label')
+            ->filter()
+            ->unique()
+            ->implode(', ') ?: null;
+
+        return [$link_count, $dr_tier_summary];
     }
 
     // ─── Private helpers ──────────────────────────────────────────────────────

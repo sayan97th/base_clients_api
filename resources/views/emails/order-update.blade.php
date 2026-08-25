@@ -35,6 +35,33 @@
         $purchase_items = $purchase_items ?? [];
         $purchase_title = $purchase_title ?? null;
         $is_multi       = !empty($purchase_items);
+
+        $order_reference = $order_reference ?? null;
+        $order_title     = $order_title ?? null;
+        $purchase_date   = $purchase_date ?? null;
+        $link_count      = $link_count ?? null;
+        $dr_tier_summary = $dr_tier_summary ?? null;
+
+        // Link count + DR tier collapse into one "Details" value (e.g. "10 links · DR 50-59")
+        // so the reference strip stays a single compact row instead of a grid of boxes.
+        // Purchase date is intentionally left out here — it's already stated in the
+        // heading copy above whenever it's relevant, so repeating it would be redundant.
+        $order_details = collect([
+            $link_count ? ($link_count . ' link' . ($link_count === 1 ? '' : 's')) : null,
+            $dr_tier_summary,
+        ])->filter()->implode(' · ');
+
+        $meta_fields = [];
+        if ($order_reference) {
+            $meta_fields[] = ['label' => 'Order ID', 'value' => $order_reference];
+        }
+        if ($order_title) {
+            $meta_fields[] = ['label' => 'Order', 'value' => $order_title];
+        }
+        if ($order_details) {
+            $meta_fields[] = ['label' => 'Details', 'value' => $order_details];
+        }
+        $has_order_meta = !empty($meta_fields);
     @endphp
 
     <table width="100%" cellpadding="0" cellspacing="0" border="0"
@@ -78,6 +105,12 @@
                                     style="margin:0 0 28px;font-weight:normal;color:#6b7280;font-size:13px;">
                                     @if ($purchase_title)
                                         {{ $purchase_title }}
+                                    @elseif ($order_title && $purchase_date)
+                                        An update to your order {{ $order_title }}, purchased on {{ $purchase_date }}
+                                    @elseif ($order_title)
+                                        An update to your order: {{ $order_title }}
+                                    @elseif ($purchase_date)
+                                        An update to the order you purchased on {{ $purchase_date }}
                                     @else
                                         There has been an update to one of your orders.
                                     @endif
@@ -134,6 +167,25 @@
                                         Click the button below to view the full order details or contact support if you have any questions.
                                     </p>
                                 </div>
+
+                                {{-- Order reference: one row per field, mirroring emails.client-welcome's account-details table --}}
+                                @if ($has_order_meta)
+                                    <div style="box-sizing:border-box;padding:0;color:#374151;margin:0 0 28px;">
+                                        <table cellpadding="8" cellspacing="0"
+                                            style="margin:0;box-sizing:border-box;width:100%;background-color:#fdf2f8;border-radius:4px;">
+                                            @foreach ($meta_fields as $index => $field)
+                                                <tr>
+                                                    <td style="box-sizing:border-box;vertical-align:top;text-align:left;font-weight:500;color:#c084a8;width:35%;{{ $index < count($meta_fields) - 1 ? 'border-bottom:1px dashed #f3d9e8;' : '' }}">
+                                                        {{ $field['label'] }}
+                                                    </td>
+                                                    <td style="box-sizing:border-box;vertical-align:top;text-align:right;{{ $index < count($meta_fields) - 1 ? 'border-bottom:1px dashed #f3d9e8;' : '' }}">
+                                                        {{ $field['value'] }}
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </table>
+                                    </div>
+                                @endif
 
                                 {{-- CTA button --}}
                                 <div style="box-sizing:border-box;text-align:center;margin:0 0 10px;">

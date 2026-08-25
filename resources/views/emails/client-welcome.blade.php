@@ -61,7 +61,7 @@
 
                                             <p style="margin:0 0 20px;font-weight:normal;">
                                                 An administrator has set up an account for you on
-                                                <strong>{{ $platform_name }}</strong>. You're all set to get started —
+                                                <strong>{{ $platform_name }}</strong>. You're ready to get started —
                                                 use the button below to set your password and sign in for the first time.
                                             </p>
 

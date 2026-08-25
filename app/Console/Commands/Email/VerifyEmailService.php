@@ -15,7 +15,7 @@ class VerifyEmailService extends Command
     protected $signature = 'email:verify-service
                             {--to= : Recipient email address (required)}
                             {--name= : Recipient display name (defaults to email address)}
-                            {--mailer= : Mailer to use: mailgun, mailtrap, smtp (defaults to MAIL_MAILER)}';
+                            {--mailer= : Mailer to use: mailgun, mailtrap, mailpit, smtp (defaults to MAIL_MAILER)}';
 
     protected $description = 'Send a verification email to confirm the email delivery service is operational';
 
@@ -62,7 +62,7 @@ class VerifyEmailService extends Command
     {
         $requested = $this->option('mailer');
 
-        $supported = ['mailgun', 'mailtrap', 'smtp', 'log'];
+        $supported = ['mailgun', 'mailtrap', 'mailpit', 'smtp', 'log'];
 
         if ($requested) {
             if (!in_array($requested, $supported, true)) {
@@ -92,8 +92,8 @@ class VerifyEmailService extends Command
             $rows[] = ['Mailgun Endpoint', config('services.mailgun.endpoint', 'api.mailgun.net')];
         }
 
-        if (in_array($mailer, ['mailtrap', 'smtp'], true)) {
-            $config_key = $mailer === 'mailtrap' ? 'mailers.mailtrap' : 'mailers.smtp';
+        if (in_array($mailer, ['mailtrap', 'mailpit', 'smtp'], true)) {
+            $config_key = in_array($mailer, ['mailtrap', 'mailpit'], true) ? "mailers.{$mailer}" : 'mailers.smtp';
             $host = config("mail.{$config_key}.host", '(not set)');
             $port = config("mail.{$config_key}.port", '(not set)');
             $rows[] = ['SMTP Host', $host];
@@ -134,9 +134,10 @@ class VerifyEmailService extends Command
             $this->line('<fg=red>Error:</> ' . $e->getMessage());
             $this->newLine();
             $this->line('<fg=yellow>Troubleshooting hints:</>');
-            $this->line('  • Check your .env MAIL_MAILER and MAILGUN_* / MAILTRAP_* credentials.');
+            $this->line('  • Check your .env MAIL_MAILER and MAILGUN_* / MAILTRAP_* / MAILPIT_* credentials.');
             $this->line('  • Run <fg=cyan>php artisan config:clear</> if you recently changed .env values.');
             $this->line('  • For Mailgun, verify the domain is active in your Mailgun dashboard.');
+            $this->line('  • For Mailpit, confirm the Mailpit container/service is running and listening on the configured SMTP port.');
             $this->line('  • For SMTP, confirm the host and port are reachable from this server.');
             return self::FAILURE;
         }
@@ -178,8 +179,8 @@ class VerifyEmailService extends Command
             $info['Mailgun Endpoint'] = config('services.mailgun.endpoint', 'api.mailgun.net');
         }
 
-        if (in_array($mailer, ['mailtrap', 'smtp'], true)) {
-            $config_key = $mailer === 'mailtrap' ? 'mailers.mailtrap' : 'mailers.smtp';
+        if (in_array($mailer, ['mailtrap', 'mailpit', 'smtp'], true)) {
+            $config_key = in_array($mailer, ['mailtrap', 'mailpit'], true) ? "mailers.{$mailer}" : 'mailers.smtp';
             $info['SMTP Host'] = config("mail.{$config_key}.host", '(not set)');
             $info['SMTP Port'] = (string) config("mail.{$config_key}.port", '(not set)');
         }

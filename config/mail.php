@@ -33,6 +33,10 @@ return [
     |            "postmark", "resend", "log", "array",
     |            "failover", "roundrobin"
     |
+    | This application additionally configures "mailtrap" and "mailpit" as
+    | SMTP-based mailers below (see the "mailers" array), for local/testing
+    | email capture.
+    |
     */
 
     'mailers' => [
@@ -69,6 +73,20 @@ return [
             'encryption' => env('MAILTRAP_SMTP_ENCRYPTION', 'tls'),
             'username' => env('MAILTRAP_SMTP_USERNAME'),
             'password' => env('MAILTRAP_SMTP_PASSWORD'),
+            'timeout' => null,
+        ],
+
+        /*
+         * Mailpit SMTP — local email capture (https://mailpit.axllent.org).
+         * Set MAIL_MAILER=mailpit in your .env / .env.testing file.
+         */
+        'mailpit' => [
+            'transport' => 'smtp',
+            'host' => env('MAILPIT_SMTP_HOST', '127.0.0.1'),
+            'port' => env('MAILPIT_SMTP_PORT', 1025),
+            'encryption' => env('MAILPIT_SMTP_ENCRYPTION'),
+            'username' => env('MAILPIT_SMTP_USERNAME'),
+            'password' => env('MAILPIT_SMTP_PASSWORD'),
             'timeout' => null,
         ],
 

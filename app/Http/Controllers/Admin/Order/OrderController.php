@@ -9,9 +9,13 @@ use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderUpdate;
 use App\Models\NewContentOrder;
+use App\Models\OrderReport;
+use App\Models\OrderSessionComment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
@@ -206,6 +210,44 @@ class OrderController extends Controller
             'message' => 'Order status updated successfully.',
             'status'  => $order_model->status,
         ]);
+    }
+
+    /**
+     * DELETE /api/admin/orders/{order_id}
+     *
+     * Permanently deletes an order and everything owned exclusively by it:
+     * items, billing, coupon links, tracking updates, report tables/rows, and
+     * order-scoped comments. This is intended for test or mistaken orders that
+     * should never have existed.
+     *
+     * A linked invoice is deliberately NOT deleted here. In a multi-product
+     * checkout session, several sibling orders can share a single invoice
+     * (each order only "owns" that invoice through its own order_id), so
+     * cascading the delete into the invoice could wipe out billing records
+     * still needed by orders that are not being removed. Instead, the invoice
+     * is simply detached (its order_id is cleared) so it survives on its own
+     * and can be deleted separately from the Invoices page if that is also
+     * wanted.
+     */
+    public function destroy(string $order_id): Response|JsonResponse
+    {
+        [$order] = $this->findOrder($order_id);
+
+        if (! $order) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        DB::transaction(function () use ($order, $order_id) {
+            OrderReport::where('order_id', $order_id)->delete();
+            LinkBuildingOrderUpdate::where('order_id', $order_id)->delete();
+            OrderSessionComment::where('order_id', $order_id)->delete();
+
+            Invoice::where('order_id', $order_id)->update(['order_id' => null]);
+
+            $order->delete();
+        });
+
+        return response()->noContent();
     }
 
     /**

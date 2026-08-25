@@ -676,6 +676,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
                 // Order update delete — super_admin and admin only
                 Route::delete('orders/{order_id}/updates/{update_id}', [AdminOrderUpdateController::class, 'destroy']);
+
+                // Order delete — super_admin and admin only
+                Route::delete('orders/{order_id}', [AdminOrderController::class, 'destroy']);
             });
         });
     });

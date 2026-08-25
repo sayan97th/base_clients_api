@@ -46,7 +46,7 @@
                                             {{-- Heading --}}
                                             <h1 align="center"
                                                 style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;line-height:1.2em;color:#000;display:block;margin:10px 0 5px;padding:0;font-size:22px;font-weight:500;">
-                                                Welcome to {{ $platform_name }}!
+                                                Welcome to BASE Ordering Portal!
                                             </h1>
 
                                             <p align="center"

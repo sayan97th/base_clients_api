@@ -11,6 +11,8 @@
             New Post Update
         @elseif ($notification_type === 'order')
             Order Update
+        @elseif ($notification_type === 'invoice')
+            Invoice Update
         @else
             System Notification
         @endif
@@ -28,6 +30,7 @@
             'payment' => 'PAYMENT',
             'post'    => 'POST',
             'order'   => 'ORDER',
+            'invoice' => 'INVOICE',
             'system'  => 'SYSTEM',
         ];
         $type_label = $type_labels[$notification_type] ?? 'NOTIFICATION';
@@ -72,6 +75,8 @@
                                         New Post Update
                                     @elseif ($notification_type === 'order')
                                         Order Update
+                                    @elseif ($notification_type === 'invoice')
+                                        Invoice Update
                                     @else
                                         System Notification
                                     @endif
@@ -86,6 +91,8 @@
                                         New content has been published for you.
                                     @elseif ($notification_type === 'order')
                                         There has been an update to one of your orders.
+                                    @elseif ($notification_type === 'invoice')
+                                        There has been an update to one of your invoices.
                                     @else
                                         An important update from {{ $app_name }}.
                                     @endif
@@ -140,6 +147,14 @@
                                         <p style="margin:0;font-size:13px;color:#4b5563;line-height:1.6;">
                                             There has been a status change on one of your orders.
                                             Click below to view the full order details or contact support if needed.
+                                        </p>
+                                    @elseif ($notification_type === 'invoice')
+                                        <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:{{ $brand_color }};text-transform:uppercase;letter-spacing:0.5px;">
+                                            Invoice Information
+                                        </p>
+                                        <p style="margin:0;font-size:13px;color:#4b5563;line-height:1.6;">
+                                            An invoice has been created or updated.
+                                            Click below to view the full invoice details.
                                         </p>
                                     @else
                                         <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:{{ $brand_color }};text-transform:uppercase;letter-spacing:0.5px;">
@@ -196,6 +211,8 @@
                                                 Read Post
                                             @elseif ($notification_type === 'order')
                                                 View Order
+                                            @elseif ($notification_type === 'invoice')
+                                                View Invoice
                                             @else
                                                 View Details
                                             @endif

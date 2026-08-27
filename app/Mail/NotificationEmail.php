@@ -29,6 +29,7 @@ class NotificationEmail extends Mailable
             'post'    => 'New Post Update',
             'system'  => 'System Notification',
             'order'   => 'Order Update',
+            'invoice' => 'Invoice Update',
         ];
 
         $subject = $subjects[$this->notification->type] ?? 'New Notification';
@@ -107,18 +108,24 @@ class NotificationEmail extends Mailable
         return config('app.frontend_url') . '/profile';
     }
 
+    /**
+     * Admins and clients are on separate portal domains (see buildPreferencesUrl()).
+     * A relative link starting with "/admin" belongs to the admin portal, so it must
+     * resolve against admin_url rather than frontend_url or the button would send an
+     * admin recipient to the client portal's domain instead of their own.
+     */
     protected function buildActionUrl(): ?string
     {
-        if (!$this->notification->link) {
-            return config('app.frontend_url') . '/notifications';
+        $link = $this->notification->link ?: '/notifications';
+
+        if (str_starts_with($link, 'http')) {
+            return $link;
         }
 
-        $link = $this->notification->link;
+        $base_url = str_starts_with($link, '/admin')
+            ? config('app.admin_url', config('app.frontend_url'))
+            : config('app.frontend_url');
 
-        if (!str_starts_with($link, 'http')) {
-            return config('app.frontend_url') . $link;
-        }
-
-        return $link;
+        return rtrim($base_url, '/') . $link;
     }
 }

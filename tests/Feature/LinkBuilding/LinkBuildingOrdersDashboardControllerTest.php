@@ -362,6 +362,27 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertSame($dr_value, $response->json('data.dr_lbs'));
     }
 
+    /**
+     * status is free text now, but still bounded — a 256+ character value (e.g. an
+     * entire pasted paragraph landing in the wrong column) must still be rejected
+     * rather than silently truncated into the database.
+     */
+    public function test_store_rejects_a_status_value_over_the_max_length(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders', [
+                'link_type'    => 'DR 30+ External',
+                'client'       => 'Acme Corp',
+                'keyword'      => 'seo agency',
+                'landing_page' => 'https://acme.com',
+                'status'       => str_repeat('a', 256),
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
     // ─── Update ───────────────────────────────────────────────────────────────
 
     public function test_update_modifies_existing_placement(): void
@@ -399,6 +420,47 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ])
             ->assertStatus(200)
             ->assertJsonPath('data.status', 'Needs Client Approval');
+    }
+
+    public function test_update_rejects_a_status_value_over_the_max_length(): void
+    {
+        $placement = $this->adminPlacement(['status' => 'New Request']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'status' => str_repeat('a', 256),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+
+        $this->assertSame('New Request', $placement->fresh()->status);
+    }
+
+    public function test_update_accepts_a_dr_lbs_value_up_to_fifty_characters(): void
+    {
+        $placement = $this->adminPlacement(['dr_lbs' => '30']);
+        $dr_value  = str_repeat('4', 50);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'dr_lbs' => $dr_value,
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.dr_lbs', $dr_value);
+    }
+
+    public function test_update_rejects_a_dr_lbs_value_over_fifty_characters(): void
+    {
+        $placement = $this->adminPlacement(['dr_lbs' => '30']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'dr_lbs' => str_repeat('4', 51),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('dr_lbs');
+
+        $this->assertSame('30', $placement->fresh()->dr_lbs);
     }
 
     public function test_update_returns_404_for_unknown_placement(): void
@@ -839,6 +901,30 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertEquals($this->client->id, $p2->fresh()->user_id);
     }
 
+    /**
+     * This endpoint powers "paste one copied cell into every selected row" and the
+     * batch-fill toolbar on the dashboard, and (unlike store/update) applies field
+     * values with no FormRequest validation at all — so it never rejected an
+     * off-list status to begin with. This documents that a status value copied
+     * straight from the external BASE sheet round-trips through it correctly.
+     */
+    public function test_batch_update_applies_a_status_value_outside_the_preset_dropdown_list(): void
+    {
+        $p1 = $this->adminPlacement(['order_id' => 'BL-522', 'status' => 'New Request']);
+        $p2 = $this->adminPlacement(['order_id' => 'BL-523', 'status' => 'New Request']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update', [
+                'row_ids' => [$p1->id, $p2->id],
+                'updates' => ['status' => 'Needs Client Approval'],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 2);
+
+        $this->assertSame('Needs Client Approval', $p1->fresh()->status);
+        $this->assertSame('Needs Client Approval', $p2->fresh()->status);
+    }
+
     // ─── Batch update cells ───────────────────────────────────────────────────
     // Powers the dashboard's bulk grid paste, range paste, and the undo/redo
     // feature (which reverts or replays a cell change via this same endpoint).
@@ -902,6 +988,55 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         foreach (['id', 'order_id', 'client', 'landing_page', 'status', 'link_type', 'currency'] as $field) {
             $this->assertArrayHasKey($field, $row, "Response row should contain field: {$field}");
         }
+    }
+
+    /**
+     * This is the endpoint the dashboard's bulk grid paste and Excel-style range
+     * paste actually call for already-saved rows. It applies fields directly with no
+     * FormRequest validation, so it was never the source of the silent-drop bug —
+     * that lived in the frontend's parseCellForPaste — but it's still the most
+     * direct end-to-end check that a Status value copied from the external BASE
+     * sheet, which won't always match the dashboard's preset list, saves correctly
+     * when pasted onto an existing row.
+     */
+    public function test_batch_update_cells_applies_a_status_value_outside_the_preset_dropdown_list(): void
+    {
+        $p1 = $this->adminPlacement(['order_id' => 'BL-553', 'status' => 'New Request']);
+        $p2 = $this->adminPlacement(['order_id' => 'BL-554', 'status' => 'Reviewing']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [
+                    ['id' => $p1->id, 'fields' => ['status' => 'Needs Client Approval']],
+                    ['id' => $p2->id, 'fields' => ['status' => 'Done']],
+                ],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 2);
+
+        $this->assertSame('Needs Client Approval', $p1->fresh()->status);
+        $this->assertSame('Done', $p2->fresh()->status);
+    }
+
+    /**
+     * End-to-end guard for the dr_lbs column width migration: a value at the new
+     * 50-character cap must round-trip through the actual DB column (bulk grid
+     * paste for existing rows hits the database directly via this endpoint, with no
+     * length validation of its own to catch a mismatch first).
+     */
+    public function test_batch_update_cells_applies_a_dr_lbs_value_up_to_fifty_characters(): void
+    {
+        $placement = $this->adminPlacement(['order_id' => 'BL-555', 'dr_lbs' => '30']);
+        $dr_value  = str_repeat('4', 50);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['dr_lbs' => $dr_value]]],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 1);
+
+        $this->assertSame($dr_value, $placement->fresh()->dr_lbs);
     }
 
     public function test_batch_update_cells_ignores_non_whitelisted_fields(): void

@@ -64,10 +64,13 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|string|max:2000',
-            'status'                    => 'nullable|string|in:New Request,Reviewing,Ordered,Pending,Live,Quality Control,Cancelled,Partnership Check,Approved,Not Approved,Ready,Rejected,Scheduled',
+            // Not restricted to a fixed enum: the dashboard's status dropdown offers a
+            // preset list, but admins also paste status values copied straight from the
+            // external BASE link sheet, which does not always match that preset list.
+            'status'                    => 'nullable|string|max:255',
             'live_link'                 => 'nullable|url|max:2000',
             'live_link_date'            => 'nullable|string|max:20',
-            'dr_lbs'                    => 'nullable|string|max:20',
+            'dr_lbs'                    => 'nullable|string|max:50',
             'posting_fee_lbs'           => 'nullable|string|max:50',
             'current_traffic'           => 'nullable|string|max:50',
             'dr_formula'                => 'nullable|string|max:50',

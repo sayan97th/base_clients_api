@@ -314,6 +314,54 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ->assertStatus(422);
     }
 
+    /**
+     * The dashboard's status dropdown only offers a preset list, but admins also paste
+     * status values copied straight from the external BASE link sheet, which does not
+     * always match that preset list. Those values must still save instead of being
+     * rejected outright.
+     */
+    public function test_store_accepts_a_status_value_outside_the_preset_dropdown_list(): void
+    {
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders', [
+                'link_type'    => 'DR 30+ External',
+                'client'       => 'Acme Corp',
+                'keyword'      => 'seo agency',
+                'landing_page' => 'https://acme.com',
+                'status'       => 'Needs Client Approval',
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+            ])
+            ->assertStatus(201);
+
+        $this->assertSame('Needs Client Approval', $response->json('data.status'));
+    }
+
+    /**
+     * dr_lbs used to be capped at 20 characters, tighter than its sibling metric
+     * columns (posting_fee_lbs, current_traffic, dr_formula all allow 50) — pasted DR
+     * values with extra formatting from the external sheet could exceed that cap.
+     */
+    public function test_store_accepts_a_dr_lbs_value_up_to_fifty_characters(): void
+    {
+        $dr_value = str_repeat('4', 50);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders', [
+                'link_type'    => 'DR 30+ External',
+                'client'       => 'Acme Corp',
+                'keyword'      => 'seo agency',
+                'landing_page' => 'https://acme.com',
+                'status'       => 'New Request',
+                'exact_match'  => 'No',
+                'currency'     => 'USD',
+                'dr_lbs'       => $dr_value,
+            ])
+            ->assertStatus(201);
+
+        $this->assertSame($dr_value, $response->json('data.dr_lbs'));
+    }
+
     // ─── Update ───────────────────────────────────────────────────────────────
 
     public function test_update_modifies_existing_placement(): void
@@ -339,6 +387,18 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ->assertJsonPath('data.client', 'Updated Corp')
             ->assertJsonPath('data.keyword', 'updated keyword')
             ->assertJsonPath('data.status', 'Reviewing');
+    }
+
+    public function test_update_accepts_a_status_value_outside_the_preset_dropdown_list(): void
+    {
+        $placement = $this->adminPlacement(['status' => 'New Request']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'status' => 'Needs Client Approval',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.status', 'Needs Client Approval');
     }
 
     public function test_update_returns_404_for_unknown_placement(): void

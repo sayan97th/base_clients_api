@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
 use App\Http\Controllers\Admin\Invitation\InvitationController as AdminInvitationController;
 use App\Http\Controllers\Admin\Notification\NotificationController as AdminNotificationController;
+use App\Http\Controllers\Admin\Notification\NotificationRedirectController;
 use App\Http\Controllers\Admin\Invoice\InvoiceController as AdminInvoiceController;
 use App\Http\Controllers\Admin\Invoice\InvoiceShareLinkController as AdminInvoiceShareLinkController;
 use App\Http\Controllers\Admin\LinkBuilding\OrderController as AdminLinkBuildingOrderController;
@@ -237,6 +238,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::patch('/{notification}/read', [AdminNotificationController::class, 'markAsRead']);
             Route::patch('/{notification}/archive', [AdminNotificationController::class, 'archive']);
             Route::patch('/{notification}/unarchive', [AdminNotificationController::class, 'unarchive']);
+
+            // Read-only: resolves whether a client-side notification email link
+            // (e.g. "View Invoice") belongs to a client account, so the frontend can
+            // show the impersonation gate instead of silently bouncing an admin/staff
+            // visitor away. Open to all staff roles, actually starting an
+            // impersonation session is gated separately below.
+            Route::get('/{notification}/redirect-context', [NotificationRedirectController::class, 'context']);
         });
 
         // Scheduled Call Appointments — super_admin, admin, staff
@@ -537,6 +545,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         // Impersonation — super_admin and admin only
         Route::middleware('role:super_admin,admin')->group(function () {
             Route::post('users/{user_id}/impersonate', [ImpersonationController::class, 'impersonate']);
+
+            // Impersonation started from the notification redirect gate. Kept as its
+            // own route (rather than reusing users/{user_id}/impersonate) so it can
+            // enforce its own, stricter "client accounts only" rule independently of
+            // the general-purpose impersonation endpoint above.
+            Route::post('notifications/{notification}/impersonate', [NotificationRedirectController::class, 'impersonate']);
         });
 
         // Impersonation stop — any authenticated user (called while holding the client JWT)

@@ -55,6 +55,10 @@ class RolePermissionSeeder extends Seeder
             ['name' => 'invitations.manage', 'display_name' => 'Manage Invitations'],
             // Service management — restricted to super_admin and admin
             ['name' => 'services.manage', 'display_name' => 'Manage Services'],
+            // Impersonation is a highly sensitive capability, gated by its own
+            // permission on top of the role check already applied at the route
+            // level, see ImpersonationController and NotificationRedirectController.
+            ['name' => 'users.impersonate', 'display_name' => 'Impersonate Users'],
         ];
 
         foreach ($permissions as $permission) {
@@ -97,6 +101,12 @@ class RolePermissionSeeder extends Seeder
                 'invoices.view',
                 'invitations.manage',
                 'services.manage',
+                // Preserves existing behavior: the "admin" role could already
+                // impersonate client accounts before this permission existed, the
+                // route-level role check was the only gate. Revoke this permission
+                // from the role (leaving super_admin, which bypasses permission
+                // checks entirely) to lock impersonation down to super_admin only.
+                'users.impersonate',
                 // Legacy permissions kept for backward compat
                 'users.create', 'users.update',
                 'clients.view', 'clients.create', 'clients.update',

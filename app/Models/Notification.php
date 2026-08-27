@@ -84,6 +84,23 @@ class Notification extends Model
         return $query->where('user_id', $user_id);
     }
 
+    /**
+     * Restricts to notifications addressed to an admin/staff recipient. The admin
+     * notification feed previously queried every row regardless of recipient, so a
+     * client's own notifications (e.g. "Your order has been placed", or the client's
+     * copy of an order_comment reply, both carrying client-portal links with no
+     * "/admin" prefix) leaked into the admin feed. Clicking one there navigated the
+     * staff user to a client-only route, which the app's route guard always bounces
+     * back to /admin/dashboard, so every leaked notification looked "broken".
+     */
+    public function scopeForAdminAudience(Builder $query): Builder
+    {
+        return $query->whereHas(
+            'user.roles',
+            fn (Builder $q) => $q->whereIn('name', ['super_admin', 'admin', 'staff'])
+        );
+    }
+
     public function markAsRead(): void
     {
         $this->update([

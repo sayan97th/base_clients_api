@@ -81,6 +81,57 @@ class AdminNotificationControllerTest extends TestCase
             ->assertForbidden();
     }
 
+    /**
+     * A client's own notifications (e.g. their copy of an order_comment reply, or an
+     * order-placed confirmation) carry client-portal links with no "/admin" prefix.
+     * If these leak into the admin feed, a staff user clicking one gets bounced to
+     * /admin/dashboard by the app's route guard, which is exactly the bug this test
+     * guards against: the admin feed must only ever surface admin/staff-owned rows.
+     */
+    public function test_a_clients_own_notification_does_not_appear_in_the_admin_feed(): void
+    {
+        $this->service->createNotification(
+            $this->client,
+            'order_comment',
+            'A staff member replied to your order discussion.',
+            [
+                'link'      => '/orders/order-1?comment_id=9#comment-9',
+                'mail_data' => ['skip_email' => true],
+            ]
+        );
+        $this->service->createNotification(
+            $this->admin,
+            'order_comment',
+            'A client posted a comment on an order.',
+            [
+                'link'      => '/admin/orders/order-1?comment_id=9#comment-9',
+                'mail_data' => ['skip_email' => true],
+            ]
+        );
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/notifications')
+            ->assertOk();
+
+        $messages = collect($response->json('data'))->pluck('message')->all();
+
+        $this->assertSame(['A client posted a comment on an order.'], $messages);
+    }
+
+    public function test_admin_unread_count_excludes_a_clients_own_notifications(): void
+    {
+        $this->service->createNotification(
+            $this->client,
+            'order',
+            'Your order has been placed successfully.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+
+        $count = $this->service->getAdminUnreadCount();
+
+        $this->assertSame(0, $count);
+    }
+
     public function test_type_filter_rejects_an_unknown_type_value(): void
     {
         $this->actingAs($this->admin, 'api')

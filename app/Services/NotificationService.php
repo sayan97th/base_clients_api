@@ -106,12 +106,13 @@ class NotificationService
     }
 
     /**
-     * Return paginated platform notifications for admin — across all users, including archived.
+     * Return paginated notifications addressed to admin/staff recipients, including archived.
      * Frontend separates Active and Archived tabs using is_archived.
      */
     public function getAdminNotifications(array $filters = [], int $per_page = 15): LengthAwarePaginator
     {
         $query = Notification::with('user:id,first_name,last_name,email')
+            ->forAdminAudience()
             ->orderByDesc('created_at');
 
         $this->applyFilters($query, $filters);
@@ -120,21 +121,23 @@ class NotificationService
     }
 
     /**
-     * Return count of all unread, non-archived platform notifications.
+     * Return count of all unread, non-archived notifications addressed to admin/staff users.
      */
     public function getAdminUnreadCount(): int
     {
-        return Notification::unread()
+        return Notification::forAdminAudience()
+            ->unread()
             ->notArchived()
             ->count();
     }
 
     /**
-     * Mark all non-archived platform notifications as read.
+     * Mark all non-archived notifications addressed to admin/staff users as read.
      */
     public function markAdminAllAsRead(): int
     {
-        return Notification::unread()
+        return Notification::forAdminAudience()
+            ->unread()
             ->notArchived()
             ->update([
                 'is_read' => true,

@@ -16,7 +16,7 @@ class NotificationController extends Controller
 
     /**
      * GET /api/admin/notifications
-     * Lists all platform notifications visible to admin users.
+     * Lists notifications addressed to admin/staff recipients.
      */
     public function index(ListAdminNotificationsRequest $request): JsonResponse
     {

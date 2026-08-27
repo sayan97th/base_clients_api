@@ -19,7 +19,7 @@ class SendPayLaterOrderNotification implements ShouldQueue
         $this->notificationService->createNotification(
             user: $event->user,
             type: 'order',
-            message: "{$event->client_name} placed a Pay Later order — invoice #{$event->invoice_number} is awaiting payment (\${$amount}).",
+            message: "{$event->client_name} placed a Pay Later order, invoice #{$event->invoice_number} is awaiting payment (\${$amount}).",
             extra: [
                 'link'            => $event->link,
                 'mail_data'       => ['skip_email' => true],

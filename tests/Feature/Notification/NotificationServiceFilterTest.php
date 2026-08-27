@@ -86,9 +86,13 @@ class NotificationServiceFilterTest extends TestCase
 
     public function test_filtering_admin_notifications_by_order_type_also_returns_order_comment_notifications(): void
     {
-        $this->service->createNotification($this->user, 'order', 'Order updated.', ['mail_data' => ['skip_email' => true]]);
-        $this->service->createNotification($this->user, 'order_comment', 'A comment was posted.', ['mail_data' => ['skip_email' => true]]);
-        $this->service->createNotification($this->user, 'system', 'System alert.', ['mail_data' => ['skip_email' => true]]);
+        Role::firstOrCreate(['name' => 'admin'], ['display_name' => 'Admin', 'description' => 'Admin']);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->assignRole('admin');
+
+        $this->service->createNotification($admin, 'order', 'Order updated.', ['mail_data' => ['skip_email' => true]]);
+        $this->service->createNotification($admin, 'order_comment', 'A comment was posted.', ['mail_data' => ['skip_email' => true]]);
+        $this->service->createNotification($admin, 'system', 'System alert.', ['mail_data' => ['skip_email' => true]]);
 
         $paginated = $this->service->getAdminNotifications(['type' => 'order'], 15);
 

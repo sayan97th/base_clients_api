@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\LinkBuildingOrder;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -36,7 +37,7 @@ class OrderReportMail extends Mailable
         $client    = $this->order->user;
         $user_name = trim("{$client->first_name} {$client->last_name}");
         $app_name  = config('app.name');
-        $order_url = config('app.frontend_url') . '/orders/' . $this->order->id;
+        $order_url = FrontendUrl::to('/orders/' . $this->order->id);
 
         return new Content(
             view: 'emails.order-report',

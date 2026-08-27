@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -69,13 +70,11 @@ class OrderStatusChangeMail extends Mailable
      */
     private function buildOrderUrl(): string
     {
-        $frontend_url = rtrim(config('app.frontend_url'), '/');
-
         if ($this->placement_id) {
-            return $frontend_url . '/link-building/placements/' . $this->placement_id;
+            return FrontendUrl::to('/link-building/placements/' . $this->placement_id);
         }
 
-        $order_url = $frontend_url . '/orders/' . $this->order_id;
+        $order_url = FrontendUrl::to('/orders/' . $this->order_id);
 
         return $this->status === 'completed' ? $order_url . '#live-links' : $order_url;
     }

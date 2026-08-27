@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Support\FrontendUrl;
 use Illuminate\Notifications\Notification;
 use Illuminate\Notifications\Messages\MailMessage;
 
@@ -35,8 +36,6 @@ class ResetPasswordNotification extends Notification
 
     protected function buildResetUrl(object $notifiable): string
     {
-        $frontend_url = rtrim(config('app.frontend_url'), '/');
-
-        return "{$frontend_url}/reset-password/{$this->token}?email=" . urlencode($notifiable->email);
+        return FrontendUrl::to('/reset-password/' . $this->token) . '?email=' . urlencode($notifiable->email);
     }
 }

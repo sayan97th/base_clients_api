@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Invitation;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -21,11 +22,11 @@ class ClientInvitationMail extends Mailable
 
     public function __construct(public readonly Invitation $invitation)
     {
-        $this->accept_url   = rtrim(config('app.frontend_url'), '/') . '/client-invitation/' . $invitation->token;
+        $this->accept_url   = FrontendUrl::to('/client-invitation/' . $invitation->token);
         $this->inviter_name = $invitation->inviter->first_name . ' ' . $invitation->inviter->last_name;
         $this->expiry_date  = $invitation->expires_at->format('F j, Y');
         $this->platform_name = config('app.name', 'BASE Search Marketing');
-        $this->platform_url  = config('app.frontend_url');
+        $this->platform_url  = FrontendUrl::to();
     }
 
     public function envelope(): Envelope

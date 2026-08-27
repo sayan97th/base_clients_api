@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
@@ -46,7 +47,7 @@ class CreditPurchaseConfirmationMail extends Mailable
                 'new_balance'      => $this->new_balance,
                 'purchase_date'    => $this->purchase_date->format('F j, Y \a\t g:i A'),
                 'app_name'         => config('app.name'),
-                'frontend_url'     => config('app.frontend_url'),
+                'frontend_url'     => FrontendUrl::to(),
             ],
         );
     }

@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -57,7 +58,7 @@ class OrderUpdateMail extends Mailable
                 'user_email'      => $this->user->email,
                 'update_title'    => $this->update_title,
                 'update_message'  => $this->update_message,
-                'order_url'       => config('app.frontend_url') . '/orders/' . $this->order_id,
+                'order_url'       => FrontendUrl::to('/orders/' . $this->order_id),
                 'order_reference' => $this->formatOrderReference($this->order_id),
                 'order_title'     => $this->order_title,
                 'purchase_date'   => $this->purchased_at?->format('F j, Y'),

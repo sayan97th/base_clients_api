@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -19,13 +20,11 @@ class GoogleAuthController extends Controller
 
     public function callback(): RedirectResponse
     {
-        $frontend_url = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:3000')), '/');
-
         try {
             $google_user = Socialite::driver('google')->stateless()->user();
         } catch (\Throwable $e) {
             Log::error('Google OAuth callback error', ['message' => $e->getMessage()]);
-            return redirect("{$frontend_url}/signin?error=google_auth_failed");
+            return redirect(FrontendUrl::to('/signin') . '?error=google_auth_failed');
         }
 
         $user = User::where('google_id', $google_user->getId())
@@ -38,7 +37,7 @@ class GoogleAuthController extends Controller
             }
 
             if (! $user->is_active) {
-                return redirect("{$frontend_url}/signin?error=account_disabled");
+                return redirect(FrontendUrl::to('/signin') . '?error=account_disabled');
             }
         } else {
             $name_parts = explode(' ', trim((string) $google_user->getName()), 2);
@@ -68,7 +67,7 @@ class GoogleAuthController extends Controller
         $token      = auth()->login($user);
         $expires_in = auth()->factory()->getTTL() * 60;
 
-        return redirect("{$frontend_url}/auth/google/callback?" . http_build_query([
+        return redirect(FrontendUrl::to('/auth/google/callback') . '?' . http_build_query([
             'token'      => $token,
             'expires_in' => $expires_in,
         ]));

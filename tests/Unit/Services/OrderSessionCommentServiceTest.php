@@ -58,10 +58,9 @@ class OrderSessionCommentServiceTest extends TestCase
 
     // ─── buildCommentUrl ────────────────────────────────────────────────────────
 
-    public function test_build_comment_url_prefixes_the_base_url(): void
+    public function test_build_comment_url_prefixes_the_frontend_url(): void
     {
         $url = $this->service->buildCommentUrl(
-            'https://admin.example.com',
             true,
             'order-uuid-1',
             null,
@@ -69,15 +68,16 @@ class OrderSessionCommentServiceTest extends TestCase
         );
 
         $this->assertSame(
-            'https://admin.example.com/admin/orders/order-uuid-1?comment_id=42#comment-42',
+            config('app.frontend_url') . '/admin/orders/order-uuid-1?comment_id=42#comment-42',
             $url
         );
     }
 
-    public function test_build_comment_url_trims_a_trailing_slash_from_the_base_url(): void
+    public function test_build_comment_url_trims_a_trailing_slash_from_the_frontend_url(): void
     {
+        config(['app.frontend_url' => 'https://client.example.com/']);
+
         $url = $this->service->buildCommentUrl(
-            'https://client.example.com/',
             false,
             null,
             'session-xyz',

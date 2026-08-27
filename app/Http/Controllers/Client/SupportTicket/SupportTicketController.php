@@ -10,6 +10,7 @@ use App\Jobs\SendAdminNewTicketNotificationJob;
 use App\Jobs\SendAdminTicketMessageNotificationJob;
 use App\Models\SupportTicket;
 use App\Services\NotificationService;
+use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -66,8 +67,8 @@ class SupportTicketController extends Controller
 
         $client_name     = trim("{$user->first_name} {$user->last_name}");
         $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
-        $view_ticket_url = rtrim(config('app.admin_url', config('app.url')), '/') . "/admin/support-tickets/{$support_ticket->id}";
-        $settings_url    = rtrim(config('app.admin_url', config('app.url')), '/') . '/admin/settings/email-notifications';
+        $view_ticket_url = FrontendUrl::to("/admin/support-tickets/{$support_ticket->id}");
+        $settings_url    = FrontendUrl::to('/admin/email-notifications');
 
         SendAdminNewTicketNotificationJob::dispatch(
             ticket_number:   $support_ticket->ticket_number,
@@ -173,8 +174,8 @@ class SupportTicketController extends Controller
 
         $client_name     = trim("{$user->first_name} {$user->last_name}");
         $client_initials = strtoupper(substr($user->first_name, 0, 1) . substr($user->last_name, 0, 1));
-        $view_ticket_url = rtrim(config('app.admin_url', config('app.url')), '/') . "/admin/support-tickets/{$support_ticket->id}";
-        $settings_url    = rtrim(config('app.admin_url', config('app.url')), '/') . '/admin/settings/email-notifications';
+        $view_ticket_url = FrontendUrl::to("/admin/support-tickets/{$support_ticket->id}");
+        $settings_url    = FrontendUrl::to('/admin/email-notifications');
 
         SendAdminTicketMessageNotificationJob::dispatch(
             ticket_number:   $support_ticket->ticket_number,

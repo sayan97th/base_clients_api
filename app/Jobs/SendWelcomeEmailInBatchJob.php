@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\ClientPlatformWelcomeEmail;
 use App\Models\BulkEmailBatch;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -64,7 +65,7 @@ class SendWelcomeEmailInBatchJob implements ShouldQueue
         try {
             $token     = Password::createToken($user);
             $email     = urlencode($user->email);
-            $reset_url = rtrim(config('app.frontend_url'), '/') . "/reset-password/{$token}?email={$email}";
+            $reset_url = FrontendUrl::to("/reset-password/{$token}") . "?email={$email}";
 
             Mail::to($user->email)->send(new ClientPlatformWelcomeEmail(
                 user: $user,

@@ -8,6 +8,7 @@ use App\Jobs\SendAdminCommentNotificationJob;
 use App\Models\OrderSessionComment;
 use App\Services\NotificationService;
 use App\Services\OrderSessionCommentService;
+use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 
 class OrderSessionCommentController extends Controller
@@ -91,13 +92,12 @@ class OrderSessionCommentController extends Controller
                 comment_content:  $comment->content,
                 comment_date:     $comment_date,
                 view_comment_url: $this->comment_service->buildCommentUrl(
-                    config('app.admin_url'),
                     true,
                     null,
                     $session_id,
                     $comment->id
                 ),
-                settings_url:     config('app.admin_url') . '/admin/email-notifications',
+                settings_url:     FrontendUrl::to('/admin/email-notifications'),
             ))->onQueue('emails');
         }
 

@@ -10,6 +10,7 @@ use App\Jobs\SendClientTicketReplyNotificationJob;
 use App\Models\SupportTicket;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -138,7 +139,7 @@ class AdminSupportTicketController extends Controller
         $client = $support_ticket->user ?? User::find($support_ticket->user_id);
 
         if ($client) {
-            $view_ticket_url = rtrim(config('app.frontend_url'), '/') . "/support/{$support_ticket->id}";
+            $view_ticket_url = FrontendUrl::to("/support/{$support_ticket->id}");
             $admin_name      = trim("{$admin->first_name} {$admin->last_name}");
             $admin_initials  = strtoupper(substr($admin->first_name, 0, 1) . substr($admin->last_name, 0, 1));
 

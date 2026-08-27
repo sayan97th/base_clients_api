@@ -82,7 +82,7 @@ class OrderCommentDeepLinkTest extends TestCase
 
         Bus::assertDispatched(
             SendAdminCommentNotificationJob::class,
-            fn ($job) => $job->view_comment_url === config('app.admin_url') . $expected_link
+            fn ($job) => $job->view_comment_url === config('app.frontend_url') . $expected_link
         );
     }
 
@@ -111,7 +111,7 @@ class OrderCommentDeepLinkTest extends TestCase
 
         Bus::assertDispatched(
             SendAdminCommentNotificationJob::class,
-            fn ($job) => $job->view_comment_url === config('app.admin_url') . $expected_link
+            fn ($job) => $job->view_comment_url === config('app.frontend_url') . $expected_link
         );
 
         // Guard against the historical bug: the plural "/orders/sessions/" route never existed.
@@ -144,7 +144,7 @@ class OrderCommentDeepLinkTest extends TestCase
 
         Bus::assertDispatched(
             SendClientCommentReplyNotificationJob::class,
-            fn ($job) => $job->view_reply_url === config('app.client_url') . $expected_link
+            fn ($job) => $job->view_reply_url === config('app.frontend_url') . $expected_link
         );
     }
 
@@ -171,7 +171,7 @@ class OrderCommentDeepLinkTest extends TestCase
 
         Bus::assertDispatched(
             SendClientCommentReplyNotificationJob::class,
-            fn ($job) => $job->view_reply_url === config('app.client_url') . $expected_link
+            fn ($job) => $job->view_reply_url === config('app.frontend_url') . $expected_link
         );
     }
 

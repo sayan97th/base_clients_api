@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\AdminCreditPurchaseNotification;
 use App\Models\CreditPurchase;
 use App\Services\EmailNotificationSettingService;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -42,8 +43,8 @@ class SendAdminCreditPurchaseNotificationJob implements ShouldQueue
         $initials     = $this->buildInitials($client_name);
         $amount_paid  = '$' . number_format((float) $purchase->amount_paid, 2);
 
-        $view_purchases_url = rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/credits/purchases';
-        $settings_url       = rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/email-notifications';
+        $view_purchases_url = FrontendUrl::to('/admin/credits/purchases');
+        $settings_url       = FrontendUrl::to('/admin/email-notifications');
         $purchase_date      = $purchase->created_at->format('F j, Y \a\t g:i A');
 
         foreach ($recipients as $position => $recipient) {

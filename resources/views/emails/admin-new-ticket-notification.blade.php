@@ -32,7 +32,7 @@
 
                     {{-- Logo --}}
                     <div style="margin:0;box-sizing:border-box;padding:0 20px 20px;text-align:center;">
-                        <a href="{{ config('app.admin_url') }}"
+                        <a href="{{ config('app.frontend_url') }}"
                             style="color:{{ $brand_color }};text-decoration:none;" target="_blank">
                             <img src="{{ config('app.logo_url', config('app.url') . '/images/base-logo.png') }}"
                                 alt="{{ $app_name }}" style="max-width:200px;max-height:50px;">

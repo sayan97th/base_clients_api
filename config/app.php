@@ -54,11 +54,20 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Frontend Portal URL
+    |--------------------------------------------------------------------------
+    |
+    | base_portal is a single Next.js application: the admin area and the
+    | client area are route groups within that one app, not separate
+    | deployments. Every email/notification link (admin or client) must be
+    | built against this URL, via App\Support\FrontendUrl, so it always
+    | points at the actual running frontend.
+    |
+    */
+
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
-
-    'admin_url' => env('APP_ADMIN_URL', 'http://localhost:3001'),
-
-    'client_url' => env('APP_CLIENT_URL', 'http://localhost:3000'),
 
     /*
     |--------------------------------------------------------------------------

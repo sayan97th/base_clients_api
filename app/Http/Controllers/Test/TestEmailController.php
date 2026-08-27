@@ -7,6 +7,7 @@ use App\Jobs\SendEmailJob;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Mail\TestEmail;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -143,7 +144,7 @@ class TestEmailController extends Controller
                 'user_name'        => $user->full_name,
                 'user_email'       => $user->email,
                 'invoice_number'   => $invoice_number,
-                'invoice_url'      => config('app.frontend_url') . '/invoices/INV-2026-001234',
+                'invoice_url'      => FrontendUrl::to('/invoices/INV-2026-001234'),
                 'payment_date'     => now()->format('F j, Y \a\t g:i A'),
                 'payment_method'   => 'Credit Card',
                 'currency_type'    => $currency_type,
@@ -206,7 +207,7 @@ class TestEmailController extends Controller
                     'queue' => 'emails',
                     'horizon_worker' => 'supervisor-emails',
                     'mailer' => config('mail.default'),
-                    'horizon_dashboard_url' => config('app.frontend_url') . '/horizon',
+                    'horizon_dashboard_url' => FrontendUrl::to('/horizon'),
                     'instructions' => [
                         '1. Ensure Horizon is running: php artisan horizon',
                         '2. Or use Supervisor: sudo supervisorctl start base_clients_api:*',

@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Models\Notification;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -96,24 +97,17 @@ class NotificationEmail extends Mailable
     }
 
     /**
-     * Notification preferences live on the profile page, not a dedicated
-     * settings route, and admins and clients are on separate portal domains.
+     * Notification preferences live on the profile page, not a dedicated settings route.
      */
     protected function buildPreferencesUrl(): string
     {
         if ($this->user->hasRole(['super_admin', 'admin', 'staff'])) {
-            return rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/profile';
+            return FrontendUrl::to('/admin/profile');
         }
 
-        return config('app.frontend_url') . '/profile';
+        return FrontendUrl::to('/profile');
     }
 
-    /**
-     * Admins and clients are on separate portal domains (see buildPreferencesUrl()).
-     * A relative link starting with "/admin" belongs to the admin portal, so it must
-     * resolve against admin_url rather than frontend_url or the button would send an
-     * admin recipient to the client portal's domain instead of their own.
-     */
     protected function buildActionUrl(): ?string
     {
         $link = $this->notification->link ?: '/notifications';
@@ -122,10 +116,6 @@ class NotificationEmail extends Mailable
             return $link;
         }
 
-        $base_url = str_starts_with($link, '/admin')
-            ? config('app.admin_url', config('app.frontend_url'))
-            : config('app.frontend_url');
-
-        return rtrim($base_url, '/') . $link;
+        return FrontendUrl::to($link);
     }
 }

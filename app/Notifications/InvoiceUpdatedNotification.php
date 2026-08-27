@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -21,7 +22,7 @@ class InvoiceUpdatedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
-        $invoice_url = config('app.frontend_url') . '/invoices/' . $this->invoice->unique_id;
+        $invoice_url = FrontendUrl::to('/invoices/' . $this->invoice->unique_id);
         $line_items  = $this->invoice->lineItems->map(fn ($item) => [
             'name'       => $item->item_name,
             'price'      => $item->price,

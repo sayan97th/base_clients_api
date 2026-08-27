@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Mail\InvoiceRefundedNotification;
 use App\Models\Invoice;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -52,7 +53,7 @@ class SendClientInvoiceRefundedNotificationJob implements ShouldQueue
             'item_total' => '$' . number_format((float) $item->item_total, 2),
         ])->toArray();
 
-        $invoice_url  = rtrim(config('app.frontend_url'), '/') . '/invoices/' . $invoice->unique_id;
+        $invoice_url  = FrontendUrl::to('/invoices/' . $invoice->unique_id);
         $refund_date  = $invoice->refunded_at?->format('F j, Y \a\t g:i A') ?? now()->format('F j, Y \a\t g:i A');
 
         $mailable = new InvoiceRefundedNotification(

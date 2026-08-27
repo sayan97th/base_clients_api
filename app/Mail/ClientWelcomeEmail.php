@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -22,7 +23,7 @@ class ClientWelcomeEmail extends Mailable
         public readonly ?string $temporary_password,
     ) {
         $this->platform_name = config('app.name');
-        $this->platform_url  = rtrim(config('app.frontend_url'), '/');
+        $this->platform_url  = FrontendUrl::to();
     }
 
     public function envelope(): Envelope

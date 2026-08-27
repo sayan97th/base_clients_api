@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\OrderSessionComment;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Support\Facades\DB;
 
 class OrderSessionCommentService
@@ -96,12 +97,11 @@ class OrderSessionCommentService
     }
 
     /**
-     * Same as buildCommentPath(), but returns an absolute URL for use in email CTAs, which
-     * link to the admin/client portal domain rather than a relative in-app path.
+     * Same as buildCommentPath(), but returns an absolute URL for use in email CTAs.
      */
-    public function buildCommentUrl(string $base_url, bool $is_admin, ?string $order_id, ?string $session_id, int $comment_id): string
+    public function buildCommentUrl(bool $is_admin, ?string $order_id, ?string $session_id, int $comment_id): string
     {
-        return rtrim($base_url, '/') . $this->buildCommentPath($is_admin, $order_id, $session_id, $comment_id);
+        return FrontendUrl::to($this->buildCommentPath($is_admin, $order_id, $session_id, $comment_id));
     }
 
     public function formatComment(OrderSessionComment $comment, bool $with_replies = false): array

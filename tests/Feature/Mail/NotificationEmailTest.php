@@ -31,7 +31,7 @@ class NotificationEmailTest extends TestCase
         $this->admin->assignRole('admin');
     }
 
-    public function test_admin_link_resolves_against_the_admin_portal_domain(): void
+    public function test_admin_link_resolves_against_the_frontend_url(): void
     {
         $notification = Notification::create([
             'user_id' => $this->admin->id,
@@ -43,12 +43,12 @@ class NotificationEmailTest extends TestCase
         $mail = new NotificationEmail($this->admin, $notification);
 
         $this->assertSame(
-            rtrim(config('app.admin_url'), '/') . '/admin/invoices/123',
+            config('app.frontend_url') . '/admin/invoices/123',
             $mail->content()->with['action_url']
         );
     }
 
-    public function test_client_link_resolves_against_the_client_portal_domain(): void
+    public function test_client_link_resolves_against_the_frontend_url(): void
     {
         $notification = Notification::create([
             'user_id' => $this->client->id,

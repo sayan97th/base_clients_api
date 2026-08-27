@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -58,7 +59,7 @@ class PaymentSuccessfulEmail extends Mailable
 
         $invoice = $this->invoice->loadMissing(['lineItems', 'billedTo', 'order.orderCoupons.coupon']);
         $is_credits = $invoice->currency_type === 'credits';
-        $invoice_url = config('app.frontend_url') . '/invoices/' . $invoice->unique_id;
+        $invoice_url = FrontendUrl::to('/invoices/' . $invoice->unique_id);
 
         $line_items = $invoice->lineItems->map(fn ($item) => [
             'name'        => $item->item_name,

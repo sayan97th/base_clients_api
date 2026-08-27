@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Events\PaymentCompleted;
 use App\Services\NotificationService;
+use App\Support\FrontendUrl;
 use Illuminate\Contracts\Queue\ShouldQueue;
 
 class SendPaymentNotification implements ShouldQueue
@@ -35,16 +36,11 @@ class SendPaymentNotification implements ShouldQueue
             // admin recipients resolved from Email Notification Settings (see
             // DispatchesAdminPaymentNotifications), each with its own $event->link:
             // an admin gets an /admin/invoices/{id} path while the client gets a
-            // client-portal /invoices/{unique_id} path. Resolve the domain from
-            // that path so each recipient's receipt links to the portal they
-            // actually have access to. There is no PDF download route for
-            // invoices; the PDF export on the invoice page is generated
+            // client-portal /invoices/{unique_id} path. There is no PDF download
+            // route for invoices; the PDF export on the invoice page is generated
             // client-side, so no invoice_pdf_url is provided here.
             $invoice_link = $event->link ?? '/invoices/' . $invoice->unique_id;
-            $base_url     = str_starts_with($invoice_link, '/admin')
-                ? config('app.admin_url', config('app.frontend_url'))
-                : config('app.frontend_url');
-            $invoice_url  = rtrim($base_url, '/') . $invoice_link;
+            $invoice_url  = FrontendUrl::to($invoice_link);
 
             $mail_data = [
                 'invoice_number'  => $invoice->invoice_number,

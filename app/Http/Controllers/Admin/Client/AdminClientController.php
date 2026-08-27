@@ -10,6 +10,7 @@ use App\Mail\ClientWelcomeEmail;
 use App\Mail\ClientPlatformWelcomeEmail;
 use App\Models\BulkEmailBatch;
 use App\Models\User;
+use App\Support\FrontendUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -45,7 +46,7 @@ class AdminClientController extends Controller
         try {
             $token     = Password::createToken($user);
             $email     = urlencode($user->email);
-            $reset_url = rtrim(config('app.frontend_url'), '/') . "/reset-password/{$token}?email={$email}";
+            $reset_url = FrontendUrl::to("/reset-password/{$token}") . "?email={$email}";
 
             Mail::to($user->email)->send(new ClientWelcomeEmail(
                 user: $user,
@@ -217,7 +218,7 @@ class AdminClientController extends Controller
         $dummy_user->email                 = $preview_email;
         $dummy_user->welcome_email_sent_at = null;
 
-        $reset_url = rtrim(config('app.frontend_url'), '/') . '/reset-password/preview-token?email=' . urlencode($preview_email);
+        $reset_url = FrontendUrl::to('/reset-password/preview-token') . '?email=' . urlencode($preview_email);
 
         try {
             Mail::to($preview_email)->send(new ClientPlatformWelcomeEmail(
@@ -257,7 +258,7 @@ class AdminClientController extends Controller
             if ($request->boolean('send_welcome_email')) {
                 $token     = Password::createToken($user);
                 $email     = urlencode($user->email);
-                $reset_url = rtrim(config('app.frontend_url'), '/') . "/reset-password/{$token}?email={$email}";
+                $reset_url = FrontendUrl::to("/reset-password/{$token}") . "?email={$email}";
 
                 $temporary_password = $request->filled('password')
                     ? $request->input('password')

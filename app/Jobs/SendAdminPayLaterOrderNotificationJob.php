@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\AdminPayLaterOrderNotification;
 use App\Models\Invoice;
 use App\Services\EmailNotificationSettingService;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -48,8 +49,8 @@ class SendAdminPayLaterOrderNotificationJob implements ShouldQueue
             'item_total' => '$' . number_format((float) $item->item_total, 2),
         ])->toArray();
 
-        $view_invoice_url = rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/invoices/' . $invoice->id;
-        $settings_url     = rtrim(config('app.admin_url', config('app.frontend_url')), '/') . '/admin/email-notifications';
+        $view_invoice_url = FrontendUrl::to('/admin/invoices/' . $invoice->id);
+        $settings_url     = FrontendUrl::to('/admin/email-notifications');
         $order_date       = $invoice->date_issued?->format('F j, Y \a\t g:i A') ?? now()->format('F j, Y \a\t g:i A');
         $date_due         = $invoice->date_due?->format('F j, Y');
 

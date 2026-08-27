@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\TeamInvitation;
+use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -45,12 +46,10 @@ class TeamInvitationMail extends Mailable
 
     protected function generateAcceptUrl(): string
     {
-        $base_url = config('app.frontend_url');
-
         if ($this->is_existing_user) {
-            return "{$base_url}/invitations/{$this->invitation->token}/accept";
+            return FrontendUrl::to("/invitations/{$this->invitation->token}/accept");
         }
 
-        return "{$base_url}/register?invitation={$this->invitation->token}";
+        return FrontendUrl::to('/register') . "?invitation={$this->invitation->token}";
     }
 }

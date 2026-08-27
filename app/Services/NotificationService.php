@@ -57,6 +57,9 @@ class NotificationService
             'message'      => $message,
             'preview_text' => $extra['preview_text'] ?? null,
             'link'         => $extra['link'] ?? null,
+            'resource_type' => $extra['resource_type'] ?? null,
+            'resource_id'   => $extra['resource_id'] ?? null,
+            'metadata'      => $extra['metadata'] ?? null,
         ]);
 
         $this->sendEmailIfEnabled($user, $notification, $extra['mail_data'] ?? []);
@@ -162,10 +165,20 @@ class NotificationService
         return $preference->fresh();
     }
 
+    /**
+     * Types that share a filter bucket with a broader category. "order_comment" notifications
+     * are a sub-kind of "order" activity, so the "Orders" filter tab in the portal should also
+     * surface them instead of only exact-matching the literal "order" type value.
+     */
+    protected const TYPE_FILTER_GROUPS = [
+        'order' => ['order', 'order_comment'],
+    ];
+
     protected function applyFilters($query, array $filters): void
     {
         if (isset($filters['type'])) {
-            $query->ofType($filters['type']);
+            $grouped_types = self::TYPE_FILTER_GROUPS[$filters['type']] ?? [$filters['type']];
+            $query->whereIn('type', $grouped_types);
         }
 
         if (isset($filters['is_read'])) {

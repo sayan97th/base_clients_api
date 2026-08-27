@@ -79,6 +79,31 @@ class OrderSessionCommentService
         return $user->hasRole(self::ADMIN_ROLES);
     }
 
+    /**
+     * Builds the portal-relative path to the exact comment on an order, so a click (from the
+     * notification bell or an email button) lands on the comment itself instead of just the
+     * order's root page. The order route is singular ("session", not "sessions") to match the
+     * actual Next.js file-system routes.
+     */
+    public function buildCommentPath(bool $is_admin, ?string $order_id, ?string $session_id, int $comment_id): string
+    {
+        $prefix = $is_admin ? '/admin' : '';
+        $base_path = $order_id
+            ? "{$prefix}/orders/{$order_id}"
+            : "{$prefix}/orders/session/{$session_id}";
+
+        return "{$base_path}?comment_id={$comment_id}#comment-{$comment_id}";
+    }
+
+    /**
+     * Same as buildCommentPath(), but returns an absolute URL for use in email CTAs, which
+     * link to the admin/client portal domain rather than a relative in-app path.
+     */
+    public function buildCommentUrl(string $base_url, bool $is_admin, ?string $order_id, ?string $session_id, int $comment_id): string
+    {
+        return rtrim($base_url, '/') . $this->buildCommentPath($is_admin, $order_id, $session_id, $comment_id);
+    }
+
     public function formatComment(OrderSessionComment $comment, bool $with_replies = false): array
     {
         return [
@@ -133,15 +158,32 @@ class OrderSessionCommentService
                 $client = User::find($owner_user_id);
 
                 if ($client) {
-                    $client_link = $is_order_based
-                        ? "/orders/{$comment->order_id}"
-                        : "/orders/sessions/{$comment->session_id}";
+                    $client_link = $this->buildCommentPath(
+                        false,
+                        $comment->order_id,
+                        $comment->session_id,
+                        $comment->id
+                    );
 
                     $notification_service->createNotification(
                         $client,
                         'order_comment',
                         'A staff member replied to your order discussion.',
-                        ['link' => $client_link, 'mail_data' => ['skip_email' => true]]
+                        [
+                            'link'          => $client_link,
+                            'resource_type' => 'order_comment',
+                            'resource_id'   => (string) $comment->id,
+                            'metadata'      => [
+                                'comment_id'    => $comment->id,
+                                'parent_id'     => $comment->parent_id,
+                                'order_id'      => $comment->order_id,
+                                'session_id'    => $comment->session_id,
+                                'purchase_type' => $is_order_based ? 'single_order' : 'multi_purchase',
+                                'author_id'     => $author->id,
+                                'author_name'   => "{$author->first_name} {$author->last_name}",
+                            ],
+                            'mail_data' => ['skip_email' => true],
+                        ]
                     );
                 }
             }
@@ -152,9 +194,12 @@ class OrderSessionCommentService
                 fn ($q) => $q->whereIn('name', self::ADMIN_ROLES)
             )->get();
 
-            $admin_link = $is_order_based
-                ? "/admin/orders/{$comment->order_id}"
-                : "/admin/orders/sessions/{$comment->session_id}";
+            $admin_link = $this->buildCommentPath(
+                true,
+                $comment->order_id,
+                $comment->session_id,
+                $comment->id
+            );
 
             foreach ($admins as $admin) {
                 if ($admin->id !== $author->id) {
@@ -162,7 +207,21 @@ class OrderSessionCommentService
                         $admin,
                         'order_comment',
                         "{$author->first_name} {$author->last_name} posted a comment on an order.",
-                        ['link' => $admin_link, 'mail_data' => ['skip_email' => true]]
+                        [
+                            'link'          => $admin_link,
+                            'resource_type' => 'order_comment',
+                            'resource_id'   => (string) $comment->id,
+                            'metadata'      => [
+                                'comment_id'    => $comment->id,
+                                'parent_id'     => $comment->parent_id,
+                                'order_id'      => $comment->order_id,
+                                'session_id'    => $comment->session_id,
+                                'purchase_type' => $is_order_based ? 'single_order' : 'multi_purchase',
+                                'author_id'     => $author->id,
+                                'author_name'   => "{$author->first_name} {$author->last_name}",
+                            ],
+                            'mail_data' => ['skip_email' => true],
+                        ]
                     );
                 }
             }

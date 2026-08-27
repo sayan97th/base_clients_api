@@ -90,7 +90,13 @@ class OrderSessionCommentController extends Controller
                 client_initials:  $client_initials,
                 comment_content:  $comment->content,
                 comment_date:     $comment_date,
-                view_comment_url: config('app.admin_url') . '/admin/orders/' . $order_id,
+                view_comment_url: $this->comment_service->buildCommentUrl(
+                    config('app.admin_url'),
+                    true,
+                    null,
+                    $session_id,
+                    $comment->id
+                ),
                 settings_url:     config('app.admin_url') . '/admin/email-notifications',
             ))->onQueue('emails');
         }

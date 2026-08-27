@@ -26,8 +26,11 @@ class NotificationController extends Controller
             $validated['type'],
             $validated['message'],
             [
-                'preview_text' => $validated['preview_text'] ?? null,
-                'link'         => $validated['link'] ?? null,
+                'preview_text'  => $validated['preview_text'] ?? null,
+                'link'          => $validated['link'] ?? null,
+                'resource_type' => $validated['resource_type'] ?? null,
+                'resource_id'   => $validated['resource_id'] ?? null,
+                'metadata'      => $validated['metadata'] ?? null,
             ]
         );
 

@@ -21,6 +21,7 @@ class OrderStatusChangeMail extends Mailable
         public ?\DateTimeInterface $purchased_at = null,
         public ?int $link_count = null,
         public ?string $dr_tier_summary = null,
+        public ?string $placement_id = null,
     ) {
         $this->onQueue('emails');
     }
@@ -28,7 +29,7 @@ class OrderStatusChangeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Order Status Update — ' . config('app.name'),
+            subject: 'Order Status Update for ' . config('app.name'),
         );
     }
 
@@ -60,6 +61,25 @@ class OrderStatusChangeMail extends Mailable
         return '#' . strtoupper(substr($order_id, 0, 8));
     }
 
+    /**
+     * Standalone placements (assigned directly to a user, with no parent LinkBuildingOrder)
+     * have no "/orders/{id}" detail page to link to, since no order record exists for them.
+     * Those get routed to the placement's own detail page instead. A "completed" order links
+     * straight to the order's live-links section rather than just the order root.
+     */
+    private function buildOrderUrl(): string
+    {
+        $frontend_url = rtrim(config('app.frontend_url'), '/');
+
+        if ($this->placement_id) {
+            return $frontend_url . '/link-building/placements/' . $this->placement_id;
+        }
+
+        $order_url = $frontend_url . '/orders/' . $this->order_id;
+
+        return $this->status === 'completed' ? $order_url . '#live-links' : $order_url;
+    }
+
     public function content(): Content
     {
         return new Content(
@@ -68,7 +88,7 @@ class OrderStatusChangeMail extends Mailable
                 'user_name'       => $this->user->full_name,
                 'user_email'      => $this->user->email,
                 'new_status'      => $this->formatStatusLabel($this->status),
-                'order_url'       => config('app.frontend_url') . '/orders/' . $this->order_id,
+                'order_url'       => $this->buildOrderUrl(),
                 'order_reference' => $this->formatOrderReference($this->order_id),
                 'order_title'     => $this->order_title,
                 'purchase_date'   => $this->purchased_at?->format('F j, Y'),

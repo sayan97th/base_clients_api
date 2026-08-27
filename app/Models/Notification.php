@@ -17,6 +17,9 @@ class Notification extends Model
         'message',
         'preview_text',
         'link',
+        'resource_type',
+        'resource_id',
+        'metadata',
         'is_read',
         'is_archived',
         'is_snoozed',
@@ -34,6 +37,7 @@ class Notification extends Model
             'is_snoozed' => 'boolean',
             'read_at' => 'datetime',
             'snoozed_until' => 'datetime',
+            'metadata' => 'array',
         ];
     }
 

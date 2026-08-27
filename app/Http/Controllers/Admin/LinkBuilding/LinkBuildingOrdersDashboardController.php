@@ -854,6 +854,7 @@ class LinkBuildingOrdersDashboardController extends Controller
                 order_id: $display_order_id,
                 purchased_at: $placement->created_at,
                 link_count: 1,
+                placement_id: $placement->id,
             )
         );
     }

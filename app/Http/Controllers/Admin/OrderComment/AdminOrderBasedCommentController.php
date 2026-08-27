@@ -115,7 +115,13 @@ class AdminOrderBasedCommentController extends Controller
                 reply_date:               $reply_date,
                 admin_name:               $admin_name,
                 admin_initials:           $admin_initials,
-                view_reply_url:           config('app.client_url') . '/orders/' . $order_id,
+                view_reply_url:           $this->comment_service->buildCommentUrl(
+                    config('app.client_url'),
+                    false,
+                    $order->session_id ? null : $order_id,
+                    $order->session_id,
+                    $comment->id
+                ),
             ))->onQueue('emails');
         }
 

@@ -17,7 +17,7 @@ class ListAdminNotificationsRequest extends FormRequest
         return [
             'page'     => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'type'     => ['sometimes', Rule::in(['order', 'payment', 'system', 'user_registration', 'order_comment', 'invoice', 'post'])],
+            'type'     => ['sometimes', Rule::in(['order', 'payment', 'system', 'user_registration', 'order_comment', 'invoice', 'post', 'ticket'])],
             'is_read'  => ['sometimes', 'boolean'],
         ];
     }

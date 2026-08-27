@@ -43,6 +43,7 @@ class NotificationValidationTest extends TestCase
             'order_comment'     => ['order_comment'],
             'user_registration' => ['user_registration'],
             'invoice'           => ['invoice'],
+            'ticket'            => ['ticket'],
         ];
     }
 
@@ -56,6 +57,7 @@ class NotificationValidationTest extends TestCase
             'order_comment'     => ['order_comment'],
             'invoice'           => ['invoice'],
             'post'              => ['post'],
+            'ticket'            => ['ticket'],
         ];
     }
 

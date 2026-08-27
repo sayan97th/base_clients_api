@@ -14,7 +14,7 @@ class CreateNotificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'type'          => ['required', 'string', 'in:payment,post,system,order,order_comment,user_registration,invoice'],
+            'type'          => ['required', 'string', 'in:payment,post,system,order,order_comment,user_registration,invoice,ticket'],
             'message'       => ['required', 'string'],
             'preview_text'  => ['sometimes', 'nullable', 'string'],
             'link'          => ['sometimes', 'nullable', 'string'],

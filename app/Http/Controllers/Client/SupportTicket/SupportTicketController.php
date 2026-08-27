@@ -9,12 +9,20 @@ use App\Http\Requests\SupportTicket\UpdateSupportTicketRequest;
 use App\Jobs\SendAdminNewTicketNotificationJob;
 use App\Jobs\SendAdminTicketMessageNotificationJob;
 use App\Models\SupportTicket;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class SupportTicketController extends Controller
 {
+    private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+
+    public function __construct(
+        protected NotificationService $notificationService
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
@@ -72,6 +80,24 @@ class SupportTicketController extends Controller
             ticket_date:     $support_ticket->created_at->format('M d, Y \a\t g:i A'),
             view_ticket_url: $view_ticket_url,
             settings_url:    $settings_url,
+        );
+
+        $this->notificationService->notifyAdminRecipients(
+            'ticket',
+            "{$client_name} opened a new support ticket: \"{$support_ticket->subject}\".",
+            [
+                'preview_text'  => Str::limit($request->content, 140),
+                'link'          => "/admin/support-tickets/{$support_ticket->id}",
+                'resource_type' => 'support_ticket',
+                'resource_id'   => (string) $support_ticket->id,
+                'metadata'      => [
+                    'ticket_id'     => $support_ticket->id,
+                    'ticket_number' => $support_ticket->ticket_number,
+                    'client_id'     => $user->id,
+                    'client_name'   => $client_name,
+                ],
+                'mail_data' => ['skip_email' => true],
+            ]
         );
 
         return response()->json([
@@ -161,6 +187,29 @@ class SupportTicketController extends Controller
             view_ticket_url: $view_ticket_url,
             settings_url:    $settings_url,
         );
+
+        // This endpoint also accepts a super_admin acting on someone else's ticket (see the
+        // ownership check above), so only fan out to admins when the author is the actual
+        // client, otherwise a staff member's own reply would notify every other admin.
+        if (!$user->hasRole(self::STAFF_ROLES)) {
+            $this->notificationService->notifyAdminRecipients(
+                'ticket',
+                "{$client_name} replied to support ticket \"{$support_ticket->subject}\".",
+                [
+                    'preview_text'  => Str::limit($request->content, 140),
+                    'link'          => "/admin/support-tickets/{$support_ticket->id}",
+                    'resource_type' => 'support_ticket',
+                    'resource_id'   => (string) $support_ticket->id,
+                    'metadata'      => [
+                        'ticket_id'     => $support_ticket->id,
+                        'ticket_number' => $support_ticket->ticket_number,
+                        'client_id'     => $user->id,
+                        'client_name'   => $client_name,
+                    ],
+                    'mail_data' => ['skip_email' => true],
+                ]
+            );
+        }
 
         return response()->json([
             'message' => 'Message added successfully.',

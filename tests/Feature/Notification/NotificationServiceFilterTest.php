@@ -94,7 +94,7 @@ class NotificationServiceFilterTest extends TestCase
         $this->service->createNotification($admin, 'order_comment', 'A comment was posted.', ['mail_data' => ['skip_email' => true]]);
         $this->service->createNotification($admin, 'system', 'System alert.', ['mail_data' => ['skip_email' => true]]);
 
-        $paginated = $this->service->getAdminNotifications(['type' => 'order'], 15);
+        $paginated = $this->service->getAdminNotifications($admin, ['type' => 'order'], 15);
 
         $this->assertSame(2, $paginated->total());
         $this->assertEqualsCanonicalizing(

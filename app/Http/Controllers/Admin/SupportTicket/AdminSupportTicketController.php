@@ -9,12 +9,18 @@ use App\Jobs\SendAdminTicketMessageNotificationJob;
 use App\Jobs\SendClientTicketReplyNotificationJob;
 use App\Models\SupportTicket;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class AdminSupportTicketController extends Controller
 {
     private const STAFF_ROLES = ['super_admin', 'admin', 'staff'];
+
+    public function __construct(
+        protected NotificationService $notificationService
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -147,6 +153,25 @@ class AdminSupportTicketController extends Controller
                 reply_content:    $request->content,
                 reply_date:       $ticket_message->created_at->format('M d, Y \a\t g:i A'),
                 view_ticket_url:  $view_ticket_url,
+            );
+
+            $this->notificationService->createNotification(
+                $client,
+                'ticket',
+                "A staff member replied to your support ticket \"{$support_ticket->subject}\".",
+                [
+                    'preview_text'  => Str::limit($request->content, 140),
+                    'link'          => "/support/{$support_ticket->id}",
+                    'resource_type' => 'support_ticket',
+                    'resource_id'   => (string) $support_ticket->id,
+                    'metadata'      => [
+                        'ticket_id'     => $support_ticket->id,
+                        'ticket_number' => $support_ticket->ticket_number,
+                        'admin_id'      => $admin->id,
+                        'admin_name'    => $admin_name,
+                    ],
+                    'mail_data' => ['skip_email' => true],
+                ]
             );
         }
 

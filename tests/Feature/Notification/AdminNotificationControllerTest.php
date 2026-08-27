@@ -127,7 +127,7 @@ class AdminNotificationControllerTest extends TestCase
             ['mail_data' => ['skip_email' => true]]
         );
 
-        $count = $this->service->getAdminUnreadCount();
+        $count = $this->service->getAdminUnreadCount($this->admin);
 
         $this->assertSame(0, $count);
     }
@@ -137,5 +137,92 @@ class AdminNotificationControllerTest extends TestCase
         $this->actingAs($this->admin, 'api')
             ->getJson('/api/admin/notifications?type=not_a_real_type')
             ->assertStatus(422);
+    }
+
+    /**
+     * The reported bug: the admin feed queried every admin/staff-owned row instead of
+     * scoping to the authenticated admin, so one admin saw every other admin's
+     * notifications (e.g. every order-comment reply fanned out to the whole team).
+     */
+    public function test_an_admins_feed_excludes_another_admins_notifications(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $this->service->createNotification(
+            $other_admin,
+            'order_comment',
+            'A client posted a comment on an order.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+        $this->service->createNotification(
+            $this->admin,
+            'order_comment',
+            'A different client posted a comment on an order.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/notifications')
+            ->assertOk();
+
+        $messages = collect($response->json('data'))->pluck('message')->all();
+
+        $this->assertSame(['A different client posted a comment on an order.'], $messages);
+    }
+
+    public function test_an_admins_unread_count_excludes_another_admins_notifications(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $this->service->createNotification(
+            $other_admin,
+            'system',
+            'Unread for the other admin.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+
+        $count = $this->service->getAdminUnreadCount($this->admin);
+
+        $this->assertSame(0, $count);
+    }
+
+    public function test_admin_cannot_mark_another_admins_notification_as_read(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $notification = $this->service->createNotification(
+            $other_admin,
+            'system',
+            'Belongs to the other admin.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson("/api/admin/notifications/{$notification->id}/read")
+            ->assertForbidden();
+
+        $this->assertFalse($notification->fresh()->is_read);
+    }
+
+    public function test_admin_cannot_archive_another_admins_notification(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $notification = $this->service->createNotification(
+            $other_admin,
+            'system',
+            'Belongs to the other admin.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson("/api/admin/notifications/{$notification->id}/archive")
+            ->assertForbidden();
+
+        $this->assertFalse($notification->fresh()->is_archived);
     }
 }

@@ -106,13 +106,19 @@ class NotificationService
     }
 
     /**
-     * Return paginated notifications addressed to admin/staff recipients, including archived.
+     * Return paginated notifications addressed to a single admin/staff recipient, including
+     * archived. Each admin's inbox is scoped strictly to their own user_id, the same way a
+     * client's inbox is: the "admin side" of the notification system is not one shared feed,
+     * it is a per-user inbox for every recipient who happens to be an admin/staff user. Fan-out
+     * notifications (order comments, payments, tickets) already create one row per recipient
+     * (see notifyAdminRecipients()), so scoping to the caller's own user_id is both correct and
+     * sufficient, no separate "admin audience" query is needed.
      * Frontend separates Active and Archived tabs using is_archived.
      */
-    public function getAdminNotifications(array $filters = [], int $per_page = 15): LengthAwarePaginator
+    public function getAdminNotifications(User $admin_user, array $filters = [], int $per_page = 15): LengthAwarePaginator
     {
         $query = Notification::with('user:id,first_name,last_name,email')
-            ->forAdminAudience()
+            ->forUser($admin_user->id)
             ->orderByDesc('created_at');
 
         $this->applyFilters($query, $filters);
@@ -121,28 +127,48 @@ class NotificationService
     }
 
     /**
-     * Return count of all unread, non-archived notifications addressed to admin/staff users.
+     * Return count of unread, non-archived notifications addressed to this admin/staff user.
      */
-    public function getAdminUnreadCount(): int
+    public function getAdminUnreadCount(User $admin_user): int
     {
-        return Notification::forAdminAudience()
+        return Notification::forUser($admin_user->id)
             ->unread()
             ->notArchived()
             ->count();
     }
 
     /**
-     * Mark all non-archived notifications addressed to admin/staff users as read.
+     * Mark all non-archived notifications addressed to this admin/staff user as read.
      */
-    public function markAdminAllAsRead(): int
+    public function markAdminAllAsRead(User $admin_user): int
     {
-        return Notification::forAdminAudience()
+        return Notification::forUser($admin_user->id)
             ->unread()
             ->notArchived()
             ->update([
                 'is_read' => true,
                 'read_at' => now(),
             ]);
+    }
+
+    /**
+     * Fan out one portal notification per admin recipient configured in Email Notification
+     * Settings (or every active admin/staff user when "notify all admins" is enabled). This is
+     * the standard way to reach "all admins": create an independent row per recipient so each
+     * admin has their own read/archived state, instead of one shared row. Order comments and
+     * payments already follow this shape; use this helper for any new admin-facing notification
+     * type instead of re-implementing the recipient resolution.
+     */
+    public function notifyAdminRecipients(string $type, string $message, array $extra = []): void
+    {
+        $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
+        $admin_users = User::whereIn('email', array_column($recipients, 'email'))
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($admin_users as $admin_user) {
+            $this->createNotification($admin_user, $type, $message, $extra);
+        }
     }
 
     public function unsnoozeExpired(): int

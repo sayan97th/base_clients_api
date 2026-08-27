@@ -188,6 +188,23 @@ class AdminNotificationControllerTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    public function test_mark_all_as_read_only_affects_the_authenticated_admins_notifications(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $mine = $this->service->createNotification($this->admin, 'system', 'Mine.', ['mail_data' => ['skip_email' => true]]);
+        $theirs = $this->service->createNotification($other_admin, 'system', 'Theirs.', ['mail_data' => ['skip_email' => true]]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->patchJson('/api/admin/notifications/read-all')
+            ->assertOk();
+
+        $this->assertSame(1, $response->json('data.updated_count'));
+        $this->assertTrue($mine->fresh()->is_read);
+        $this->assertFalse($theirs->fresh()->is_read);
+    }
+
     public function test_admin_cannot_mark_another_admins_notification_as_read(): void
     {
         $other_admin = User::factory()->create(['is_active' => true]);
@@ -224,5 +241,25 @@ class AdminNotificationControllerTest extends TestCase
             ->assertForbidden();
 
         $this->assertFalse($notification->fresh()->is_archived);
+    }
+
+    public function test_admin_cannot_unarchive_another_admins_notification(): void
+    {
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $notification = $this->service->createNotification(
+            $other_admin,
+            'system',
+            'Belongs to the other admin.',
+            ['mail_data' => ['skip_email' => true]]
+        );
+        $notification->archive();
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson("/api/admin/notifications/{$notification->id}/unarchive")
+            ->assertForbidden();
+
+        $this->assertTrue($notification->fresh()->is_archived);
     }
 }

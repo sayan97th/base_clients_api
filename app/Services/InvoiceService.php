@@ -37,7 +37,8 @@ class InvoiceService
         ?int $total_links = null,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         $order->loadMissing(['items.drTier', 'billing', 'orderCoupons.coupon']);
 
@@ -87,6 +88,7 @@ class InvoiceService
             invoice_status:     $invoice_status,
             due_days:           $due_days,
             payment_intent_id:  $payment_intent_id,
+            details_deferred:   $details_deferred,
         );
 
         if ($invoice_status === 'paid') {
@@ -106,7 +108,8 @@ class InvoiceService
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -148,6 +151,7 @@ class InvoiceService
             invoice_status:    $invoice_status,
             due_days:          $due_days,
             payment_intent_id: $payment_intent_id,
+            details_deferred:  $details_deferred,
         );
 
         if ($invoice_status === 'paid') {
@@ -167,7 +171,8 @@ class InvoiceService
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -209,6 +214,7 @@ class InvoiceService
             invoice_status:    $invoice_status,
             due_days:          $due_days,
             payment_intent_id: $payment_intent_id,
+            details_deferred:  $details_deferred,
         );
 
         if ($invoice_status === 'paid') {
@@ -228,7 +234,8 @@ class InvoiceService
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         $order->loadMissing(['items.tier', 'billing', 'orderCoupons.coupon']);
 
@@ -270,6 +277,7 @@ class InvoiceService
             invoice_status:    $invoice_status,
             due_days:          $due_days,
             payment_intent_id: $payment_intent_id,
+            details_deferred:  $details_deferred,
         );
 
         if ($invoice_status === 'paid') {
@@ -296,7 +304,8 @@ class InvoiceService
         float $credit_amount = 0.0,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         $all_line_items    = [];
         $subtotal_amount   = 0.0;
@@ -406,6 +415,7 @@ class InvoiceService
             invoice_status:    $invoice_status,
             due_days:          $due_days,
             payment_intent_id: $payment_intent_id,
+            details_deferred:  $details_deferred,
         );
 
         if ($invoice_status === 'paid') {
@@ -434,7 +444,8 @@ class InvoiceService
         ?string $session_title = null,
         string $invoice_status = 'paid',
         int $due_days = 30,
-        ?string $payment_intent_id = null
+        ?string $payment_intent_id = null,
+        bool $details_deferred = false
     ): Invoice {
         return $this->invoice_number_generator->transact(function () use (
             $user, $order_id, $session_id, $session_title,
@@ -442,7 +453,7 @@ class InvoiceService
             $subtotal_amount, $discount_amount, $discount_type,
             $total_amount, $credit_amount, $line_items,
             $billing_data, $order_coupons,
-            $invoice_status, $due_days, $payment_intent_id
+            $invoice_status, $due_days, $payment_intent_id, $details_deferred
         ) {
             $unique_id      = strtoupper(bin2hex(random_bytes(4)));
             $invoice_number = $this->invoice_number_generator->next();
@@ -454,6 +465,7 @@ class InvoiceService
                 'order_id'           => $order_id,
                 'session_id'         => $session_id,
                 'session_title'      => $session_title,
+                'details_deferred'   => $details_deferred,
                 'status'             => $invoice_status,
                 'payment_method'     => $invoice_status === 'paid' ? $payment_method : 'Pending',
                 'currency_type'      => $currency_type,

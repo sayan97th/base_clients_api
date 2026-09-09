@@ -61,11 +61,12 @@ class DeferredCartController extends Controller
             $coupon_models[$coupon_id] = $coupon;
         }
 
-        $order_title   = $request->input('order_title');
-        $order_notes   = $request->input('order_notes');
-        $session_id    = $request->input('session_id') ?? (string) Str::uuid();
-        $session_title = $order_title;
-        $created_orders = [];
+        $order_title      = $request->input('order_title');
+        $order_notes      = $request->input('order_notes');
+        $session_id       = $request->input('session_id') ?? (string) Str::uuid();
+        $session_title    = $order_title;
+        $details_deferred = (bool) $request->input('defer_details', false);
+        $created_orders   = [];
 
         $link_building_items        = $request->input('link_building_items');
         $content_optimization_items = $request->input('content_optimization_items');
@@ -144,7 +145,8 @@ class DeferredCartController extends Controller
                 'usd',
                 0.0,
                 'unpaid',
-                InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
+                InvoiceService::DEFERRED_PAYMENT_DUE_DAYS,
+                details_deferred: $details_deferred
             );
         } else {
             $entry   = $created_orders[0];
@@ -157,7 +159,8 @@ class DeferredCartController extends Controller
                     0.0,
                     $entry['total_links'],
                     'unpaid',
-                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
+                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS,
+                    details_deferred: $details_deferred
                 ),
                 'new_content' => $this->invoiceService->createForNewContentOrder(
                     $user,
@@ -166,7 +169,8 @@ class DeferredCartController extends Controller
                     'usd',
                     0.0,
                     'unpaid',
-                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
+                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS,
+                    details_deferred: $details_deferred
                 ),
                 'content_optimization' => $this->invoiceService->createForContentOptimizationOrder(
                     $user,
@@ -175,7 +179,8 @@ class DeferredCartController extends Controller
                     'usd',
                     0.0,
                     'unpaid',
-                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
+                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS,
+                    details_deferred: $details_deferred
                 ),
                 'content_brief' => $this->invoiceService->createForContentBriefOrder(
                     $user,
@@ -184,7 +189,8 @@ class DeferredCartController extends Controller
                     'usd',
                     0.0,
                     'unpaid',
-                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS
+                    InvoiceService::DEFERRED_PAYMENT_DUE_DAYS,
+                    details_deferred: $details_deferred
                 ),
                 default => null,
             };

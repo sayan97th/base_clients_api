@@ -351,7 +351,12 @@ class InvoicePayController extends Controller
 
                 // Resolves to new_request (details complete) or pending_details,
                 // and starts the Link Building clock when the order is complete.
-                $this->order_details_service->applyPaidStatus($order);
+                // An invoice created from a "Skip for now" Pay Later checkout
+                // carries details_deferred=true, which forces pending_details
+                // here regardless of how much intake data ended up getting filled
+                // in before the invoice was paid — matching the immediate
+                // card-payment checkout path.
+                $this->order_details_service->applyPaidStatus($order, (bool) $invoice->details_deferred);
             }
         }
     }

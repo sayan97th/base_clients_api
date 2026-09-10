@@ -85,6 +85,7 @@ use App\Http\Controllers\Client\Team\TeamMemberController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefTierController;
 use App\Http\Controllers\Admin\ContentBrief\AdminContentBriefOrderController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageController;
+use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageComparisonController;
 use App\Http\Controllers\Admin\Client\ClientInvitationController as AdminClientInvitationController;
 use App\Http\Controllers\Auth\AcceptClientInvitationController;
 use App\Http\Controllers\Admin\SeoPackages\AdminSeoPackageAppointmentController;
@@ -104,6 +105,7 @@ use App\Http\Controllers\Client\Cart\DeferredCartController;
 use App\Http\Controllers\Client\ContentRefresh\ContentRefreshTierController;
 use App\Http\Controllers\Client\LinkBuilding\LinkBuildingTierController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageController;
+use App\Http\Controllers\Client\SeoPackages\SeoPackageComparisonController;
 use App\Http\Controllers\Client\SeoPackages\SeoPackageAppointmentController;
 use App\Http\Controllers\Client\SeoPackages\SeoSubscriptionController;
 use App\Http\Controllers\Client\PurchaseGroup\PurchaseGroupController;
@@ -281,6 +283,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
                 Route::patch('{id}/cancel', [AdminSeoPackageSubscriptionController::class, 'cancel']);
             });
 
+            Route::get('comparison', [AdminSeoPackageComparisonController::class, 'index']);
+
             Route::get('/',     [AdminSeoPackageController::class, 'index']);
             Route::get('/{id}', [AdminSeoPackageController::class, 'show']);
         });
@@ -288,6 +292,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::prefix('subscriptions')->group(function () {
                 Route::post('/', [AdminSeoPackageSubscriptionController::class, 'store']);
             });
+
+            Route::put('comparison', [AdminSeoPackageComparisonController::class, 'update']);
 
             Route::post('/',       [AdminSeoPackageController::class, 'store']);
             Route::patch('/{id}',  [AdminSeoPackageController::class, 'update']);
@@ -919,6 +925,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
     // SEO Packages
     Route::prefix('seo-packages')->group(function () {
         Route::get('/',                           [SeoPackageController::class,             'index']);
+        Route::get('comparison',                  [SeoPackageComparisonController::class,   'index']);
         Route::get('subscriptions/active',        [SeoPackageSubscriptionController::class, 'active']);
         Route::post('subscriptions',              [SeoSubscriptionController::class,        'store']);
         Route::post('appointments',               [SeoPackageAppointmentController::class,  'store']);

@@ -17,15 +17,16 @@ class UpdateAdminSeoPackageRequest extends FormRequest
 
         return [
             'name'                   => ['sometimes', 'string', 'max:255'],
+            'headline'               => ['sometimes', 'nullable', 'string', 'max:255'],
             'slug'                   => ['sometimes', 'string', "unique:seo_packages,slug,{$id}", 'regex:/^[a-z0-9-]+$/'],
             'price_per_month'        => ['sometimes', 'numeric', 'min:0.01'],
             'best_for'               => ['sometimes', 'nullable', 'string', 'max:500'],
-            'tagline'                => ['sometimes', 'nullable', 'string', 'max:500'],
+            'ideal_for'              => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_most_popular'        => ['sometimes', 'boolean'],
             'is_active'              => ['sometimes', 'boolean'],
             'sort_order'             => ['sometimes', 'integer', 'min:0'],
             'features'               => ['sometimes', 'array'],
-            'features.*.category'    => ['required_with:features', 'string', 'max:255'],
+            'features.*.title'       => ['required_with:features', 'string', 'max:255'],
             'features.*.description' => ['nullable', 'string', 'max:500'],
         ];
     }

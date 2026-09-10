@@ -18,9 +18,11 @@ class SeoPackageController extends Controller
         $data = $packages->map(fn ($package) => [
             'id'              => $package->id,
             'name'            => $package->name,
+            'headline'        => $package->headline,
             'slug'            => $package->slug,
             'price_per_month' => $package->price_per_month,
             'best_for'        => $package->best_for,
+            'ideal_for'       => $package->ideal_for,
             'is_most_popular' => $package->is_most_popular,
             'is_active'       => $package->is_active,
             'features'        => $package->features,

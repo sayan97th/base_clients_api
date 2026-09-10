@@ -14,10 +14,11 @@ class SeoPackage extends Model
     protected $fillable = [
         'id',
         'name',
+        'headline',
         'slug',
         'price_per_month',
         'best_for',
-        'tagline',
+        'ideal_for',
         'features',
         'is_most_popular',
         'is_active',
@@ -38,5 +39,10 @@ class SeoPackage extends Model
     public function subscriptions(): HasMany
     {
         return $this->hasMany(SeoSubscription::class, 'package_id');
+    }
+
+    public function comparisonValues(): HasMany
+    {
+        return $this->hasMany(SeoComparisonRowValue::class, 'seo_package_id');
     }
 }

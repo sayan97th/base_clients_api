@@ -111,10 +111,11 @@ class AdminSeoPackageController extends Controller
         return [
             'id'              => $package->id,
             'name'            => $package->name,
+            'headline'        => $package->headline,
             'slug'            => $package->slug,
             'price_per_month' => $package->price_per_month,
             'best_for'        => $package->best_for,
-            'tagline'         => $package->tagline,
+            'ideal_for'       => $package->ideal_for,
             'is_most_popular' => $package->is_most_popular,
             'is_active'       => $package->is_active,
             'sort_order'      => $package->sort_order,

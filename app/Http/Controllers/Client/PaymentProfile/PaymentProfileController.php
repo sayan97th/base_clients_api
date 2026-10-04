@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Client\PaymentProfile;
 
 use App\Http\Controllers\Controller;
+use App\Models\AutopaySetting;
 use App\Models\PaymentProfile;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
@@ -135,6 +136,15 @@ class PaymentProfileController extends Controller
             return response()->json(['message' => 'Payment profile not found.'], 404);
         }
 
+        // Removing the card autopay charges turns autopay off instead of silently
+        // switching to another card the client never chose for automatic charges.
+        $autopay_setting = AutopaySetting::where('user_id', $user_id)
+            ->where('payment_profile_id', $profile->id)
+            ->where('is_enabled', true)
+            ->first();
+
+        $autopay_setting?->disable('system', null, 'The card used for autopay was removed.');
+
         $this->stripeService->detachPaymentMethod($profile->stripe_payment_method_id);
 
         $was_default = $profile->is_default;
@@ -147,7 +157,12 @@ class PaymentProfileController extends Controller
                 ?->update(['is_default' => true]);
         }
 
-        return response()->json(['message' => 'Payment method removed successfully.']);
+        return response()->json([
+            'message'          => $autopay_setting
+                ? 'Payment method removed. Autopay was turned off because it used this card.'
+                : 'Payment method removed successfully.',
+            'autopay_disabled' => $autopay_setting !== null,
+        ]);
     }
 
     public function setDefault(string $id, Request $request): JsonResponse

@@ -11,9 +11,12 @@ use App\Http\Requests\Admin\Invoice\UpdateInvoiceBillingRequest;
 use App\Http\Requests\Admin\Invoice\UpdateInvoiceRequest;
 use App\Jobs\SendAdminInvoiceRefundedNotificationJob;
 use App\Jobs\SendClientInvoiceRefundedNotificationJob;
+use App\Models\AutopaySetting;
 use App\Models\Invoice;
+use App\Models\InvoiceChargeAttempt;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceLineItem;
+use App\Models\PaymentProfile;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
@@ -21,7 +24,9 @@ use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\EmailNotificationSettingService;
 use App\Services\InvoiceNumberGenerator;
+use App\Services\AutopayService;
 use App\Services\NotificationService;
+use App\Services\SavedCardChargeService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,7 +46,9 @@ class InvoiceController extends Controller
     public function __construct(
         protected NotificationService $notificationService,
         protected StripeService $stripeService,
-        protected InvoiceNumberGenerator $invoiceNumberGenerator
+        protected InvoiceNumberGenerator $invoiceNumberGenerator,
+        protected SavedCardChargeService $savedCardChargeService,
+        protected AutopayService $autopayService,
     ) {}
 
     /**
@@ -456,6 +463,111 @@ class InvoiceController extends Controller
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
         ));
+    }
+
+    /**
+     * GET /api/admin/invoices/{invoice_id}/saved-cards
+     *
+     * Saved cards of the invoice owner, their autopay status and the charge
+     * attempts already made for this invoice — everything the "Charge card on
+     * file" dialog needs.
+     */
+    public function savedCards(string $invoice_id): JsonResponse
+    {
+        $invoice = Invoice::with('user')->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $autopay_setting = AutopaySetting::with('paymentProfile')->where('user_id', $invoice->user_id)->first();
+
+        $payment_profiles = PaymentProfile::where('user_id', $invoice->user_id)
+            ->orderByDesc('is_default')
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (PaymentProfile $profile) => [
+                'id'              => $profile->id,
+                'card_brand'      => $profile->card_brand,
+                'last_four'       => $profile->last_four,
+                'expiry_month'    => $profile->expiry_month,
+                'expiry_year'     => $profile->expiry_year,
+                'cardholder_name' => $profile->cardholder_name,
+                'is_default'      => (bool) $profile->is_default,
+                'is_autopay_card' => $autopay_setting?->is_enabled && $autopay_setting->payment_profile_id === $profile->id,
+            ])
+            ->values();
+
+        $attempts = InvoiceChargeAttempt::where('invoice_id', $invoice->id)
+            ->latest()
+            ->get()
+            ->map(fn (InvoiceChargeAttempt $attempt) => $this->formatChargeAttempt($attempt))
+            ->values();
+
+        return response()->json([
+            'payment_profiles' => $payment_profiles,
+            'autopay'          => [
+                'is_enabled' => (bool) $autopay_setting?->is_enabled,
+                'card_label' => $autopay_setting?->paymentProfile
+                    ? $this->savedCardChargeService->buildCardLabel(
+                        $autopay_setting->paymentProfile->card_brand,
+                        $autopay_setting->paymentProfile->last_four,
+                    )
+                    : null,
+                'max_amount' => $autopay_setting?->max_amount,
+                'enabled_at' => $autopay_setting?->enabled_at?->toIso8601String(),
+                'schedule'   => $this->autopayService->describeInvoiceSchedule($invoice, $autopay_setting),
+            ],
+            'charge_attempts'  => $attempts,
+        ]);
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/charge-saved-card
+     *
+     * Charges the full invoice total to one of the client's saved cards
+     * (off-session). The outcome is logged in invoice_charge_attempts, the
+     * invoice history and the transactions table.
+     */
+    public function chargeSavedCard(Request $request, string $invoice_id): JsonResponse
+    {
+        $request->validate([
+            'payment_profile_id' => ['required', 'string', 'uuid'],
+            'confirmation'       => ['required', 'accepted'],
+        ]);
+
+        $invoice = Invoice::with('user')->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $payment_profile = PaymentProfile::where('id', $request->input('payment_profile_id'))
+            ->where('user_id', $invoice->user_id)
+            ->first();
+
+        if (! $payment_profile) {
+            return response()->json(['message' => 'Saved card not found for this client.'], 404);
+        }
+
+        /** @var User $admin */
+        $admin = Auth::user();
+
+        $result = $this->savedCardChargeService->chargeInvoice(
+            $invoice,
+            $payment_profile,
+            InvoiceChargeAttempt::SOURCE_ADMIN,
+            $admin,
+        );
+
+        $fresh_invoice = $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts']);
+
+        return response()->json([
+            'message' => $result['message'],
+            'status'  => $result['status'],
+            'invoice' => $this->formatInvoice($fresh_invoice),
+            'attempt' => $result['attempt'] ? $this->formatChargeAttempt($result['attempt']) : null,
+        ], $result['status_code']);
     }
 
     /**
@@ -1239,6 +1351,25 @@ class InvoiceController extends Controller
             'discount_value'  => $cd->discount_value,
             'discount_amount' => $cd->discount_amount,
         ])->values()->all();
+    }
+
+    private function formatChargeAttempt(InvoiceChargeAttempt $attempt): array
+    {
+        return [
+            'id'                       => $attempt->id,
+            'source'                   => $attempt->source,
+            'attempt_number'           => $attempt->attempt_number,
+            'status'                   => $attempt->status,
+            'amount'                   => $attempt->amount,
+            'card_label'               => $this->savedCardChargeService->buildCardLabel($attempt->card_brand, $attempt->card_last_four),
+            'stripe_payment_intent_id' => $attempt->stripe_payment_intent_id,
+            'failure_code'             => $attempt->failure_code,
+            'failure_message'          => $attempt->failure_message,
+            'next_retry_at'            => $attempt->next_retry_at?->toIso8601String(),
+            'initiated_by_name'        => $attempt->initiated_by_name,
+            'created_at'               => $attempt->created_at?->toIso8601String(),
+            'completed_at'             => $attempt->completed_at?->toIso8601String(),
+        ];
     }
 
     private function buildInitials(string $name): string

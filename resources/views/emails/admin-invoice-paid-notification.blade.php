@@ -68,7 +68,7 @@
                                 </p>
 
                                 <p style="margin:0 0 24px;font-weight:normal;color:#374151;font-size:15px;line-height:1.6;">
-                                    A client has paid their invoice via the public payment link. The invoice has been marked as <strong style="color:#059669;">paid</strong> in the system.
+                                    A client invoice has been paid ({{ $payment_method }}). The invoice has been marked as <strong style="color:#059669;">paid</strong> in the system.
                                 </p>
 
                                 {{-- Client info box --}}

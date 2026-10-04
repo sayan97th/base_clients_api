@@ -136,6 +136,9 @@ use App\Http\Controllers\Client\Credits\CreditPackagesController;
 use App\Http\Controllers\Client\Credits\CreditPurchaseController;
 use App\Http\Controllers\Client\Credits\CreditPurchaseHistoryController;
 use App\Http\Controllers\Invoice\InvoicePayController;
+use App\Http\Controllers\Invoice\InvoicePaymentIntentController;
+use App\Http\Controllers\Client\Autopay\AutopayController;
+use App\Http\Controllers\Admin\Autopay\AdminAutopayController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Public\PublicTierController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -176,6 +179,10 @@ Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show
 // Handles both authenticated (Endpoint 3) and public share-link (Endpoint 6) pay flows.
 // The controller inspects the Authorization header to select the correct flow.
 Route::post('/invoices/{unique_id}/pay', [InvoicePayController::class, 'pay']);
+// Card-only PaymentIntent for the pay page. The amount is taken from the invoice
+// server-side. Same Authorization-header flow selection as /pay.
+Route::post('/invoices/{unique_id}/payment-intent', [InvoicePaymentIntentController::class, 'store'])
+    ->middleware('throttle:20,1');
 
 // ─── Public tier catalog (no auth required) ──────────────────────────────────
 // Read-only pricing lookup for external sites (marketing site cart). Never a
@@ -399,6 +406,15 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{support_ticket}',                  [AdminSupportTicketController::class, 'show']);
             Route::patch('/{support_ticket}',                [AdminSupportTicketController::class, 'update']);
             Route::post('/{support_ticket}/messages',        [AdminSupportTicketController::class, 'storeMessage']);
+        });
+
+        // Autopay / card-on-file charge audit — read: super_admin, admin, staff | write: super_admin, admin
+        Route::middleware('role:super_admin,admin,staff')->prefix('autopay')->group(function () {
+            Route::get('/attempts',    [AdminAutopayController::class, 'attempts']);
+            Route::get('/enrollments', [AdminAutopayController::class, 'enrollments']);
+            Route::get('/health',      [AdminAutopayController::class, 'health']);
+            Route::middleware('role:super_admin,admin')
+                ->delete('/enrollments/{user_id}', [AdminAutopayController::class, 'disable']);
         });
 
         // Transactions — super_admin, admin, staff
@@ -632,6 +648,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
             Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
             Route::post('invoices/{invoice_id}/mark-paid', [AdminInvoiceController::class, 'markPaid']);
+            Route::get('invoices/{invoice_id}/saved-cards', [AdminInvoiceController::class, 'savedCards']);
+            // Charging a client's card moves money — super_admin and admin only.
+            Route::middleware(['role:super_admin,admin', 'throttle:10,1'])
+                ->post('invoices/{invoice_id}/charge-saved-card', [AdminInvoiceController::class, 'chargeSavedCard']);
             Route::post('invoices/{invoice_id}/mark-unpaid', [AdminInvoiceController::class, 'markUnpaid']);
             Route::post('invoices/{invoice_id}/mark-overdue', [AdminInvoiceController::class, 'markOverdue']);
             Route::post('invoices/{invoice_id}/refund', [AdminInvoiceController::class, 'refundInvoice']);
@@ -894,6 +914,13 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::post('/', [InvoiceController::class, 'store']);
         Route::get('/{unique_id}', [InvoiceController::class, 'show']);
         Route::post('/{unique_id}/send-notification', [InvoiceController::class, 'sendNotification']);
+    });
+
+    // Autopay (automatic invoice payments with a saved card)
+    Route::prefix('autopay')->group(function () {
+        Route::get('/',    [AutopayController::class, 'show']);
+        Route::put('/',    [AutopayController::class, 'update']);
+        Route::delete('/', [AutopayController::class, 'destroy']);
     });
 
     // Payment profiles

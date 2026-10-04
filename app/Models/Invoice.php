@@ -107,4 +107,9 @@ class Invoice extends Model
     {
         return $this->hasMany(InvoiceHistory::class);
     }
+
+    public function chargeAttempts(): HasMany
+    {
+        return $this->hasMany(InvoiceChargeAttempt::class);
+    }
 }

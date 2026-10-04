@@ -5,16 +5,12 @@ namespace App\Http\Controllers\Invoice;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Mail\PaymentSuccessfulEmail;
-use App\Models\ContentBriefOrder;
-use App\Models\ContentOptimizationOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
-use App\Models\LinkBuildingOrder;
-use App\Models\NewContentOrder;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Concerns\DispatchesAdminPaymentNotifications;
-use App\Services\OrderDetailsService;
+use App\Services\Concerns\TransitionsPaymentPendingOrders;
 use App\Services\StripePublicPaymentService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
@@ -25,21 +21,13 @@ use Illuminate\Validation\Rule;
 
 class InvoicePayController extends Controller
 {
-    use DispatchesAdminPaymentNotifications;
+    use DispatchesAdminPaymentNotifications, TransitionsPaymentPendingOrders;
 
     private const PAYABLE_STATUSES = ['unpaid', 'overdue'];
-
-    private const ORDER_MODELS = [
-        LinkBuildingOrder::class,
-        NewContentOrder::class,
-        ContentOptimizationOrder::class,
-        ContentBriefOrder::class,
-    ];
 
     public function __construct(
         protected StripeService $stripe_service,
         protected StripePublicPaymentService $public_payment_service,
-        protected OrderDetailsService $order_details_service,
     ) {}
 
     /**
@@ -224,6 +212,29 @@ class InvoicePayController extends Controller
             ];
         }
 
+        // The PaymentIntent must have been created for THIS invoice (and, when
+        // bound to a Stripe Customer, for this user) — an authorization made for
+        // another invoice or account can never settle this one.
+        $intent = $verify_result['intent'] ?? null;
+
+        if ($intent !== null) {
+            $intent_invoice_id = $intent->metadata['invoice_unique_id'] ?? null;
+            $intent_customer   = is_string($intent->customer ?? null) ? $intent->customer : ($intent->customer->id ?? null);
+
+            $belongs_to_other_invoice  = $intent_invoice_id !== null && $intent_invoice_id !== $invoice->unique_id;
+            $belongs_to_other_customer = $intent_customer !== null
+                && $user->stripe_customer_id !== null
+                && $intent_customer !== $user->stripe_customer_id;
+
+            if ($belongs_to_other_invoice || $belongs_to_other_customer) {
+                return [
+                    'success'     => false,
+                    'message'     => 'Payment verification failed. This payment does not belong to this invoice.',
+                    'status_code' => 402,
+                ];
+            }
+        }
+
         try {
             DB::transaction(function () use ($invoice, $user, $payment_intent_id) {
                 $invoice->status            = 'paid';
@@ -311,53 +322,6 @@ class InvoicePayController extends Controller
             logger()->warning("Failed to dispatch admin payment notifications for invoice {$invoice->unique_id}", [
                 'error' => $e->getMessage(),
             ]);
-        }
-    }
-
-    /**
-     * After a deferred invoice is paid, transition all associated
-     * payment_pending orders so work can begin. An order whose intake details
-     * are still missing lands in `pending_details` (staying visible on the
-     * dashboards) instead of `new_request`; a complete Link Building order also
-     * has its turnaround clock started. Delegated to OrderDetailsService so the
-     * paid-order transition logic lives in exactly one place.
-     */
-    private function updatePaymentPendingOrders(Invoice $invoice, ?string $payment_intent_id): void
-    {
-        $query = function (string $model) use ($invoice) {
-            if ($invoice->session_id) {
-                return $model::where('session_id', $invoice->session_id)
-                    ->where('status', 'payment_pending');
-            }
-
-            if ($invoice->order_id) {
-                return $model::where('id', $invoice->order_id)
-                    ->where('status', 'payment_pending');
-            }
-
-            return null;
-        };
-
-        foreach (self::ORDER_MODELS as $model) {
-            $builder = $query($model);
-
-            if ($builder === null) {
-                return;
-            }
-
-            foreach ($builder->get() as $order) {
-                $order->payment_intent_id = $payment_intent_id;
-                $order->save();
-
-                // Resolves to new_request (details complete) or pending_details,
-                // and starts the Link Building clock when the order is complete.
-                // An invoice created from a "Skip for now" Pay Later checkout
-                // carries details_deferred=true, which forces pending_details
-                // here regardless of how much intake data ended up getting filled
-                // in before the invoice was paid — matching the immediate
-                // card-payment checkout path.
-                $this->order_details_service->applyPaidStatus($order, (bool) $invoice->details_deferred);
-            }
         }
     }
 

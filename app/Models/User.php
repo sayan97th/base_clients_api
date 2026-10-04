@@ -106,6 +106,16 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasOne(UserPreference::class);
     }
 
+    public function paymentProfiles(): HasMany
+    {
+        return $this->hasMany(PaymentProfile::class);
+    }
+
+    public function autopaySetting(): HasOne
+    {
+        return $this->hasOne(AutopaySetting::class);
+    }
+
     public function teams(): BelongsToMany
     {
         return $this->belongsToMany(Team::class, 'team_user')

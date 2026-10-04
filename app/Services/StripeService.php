@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\User;
+use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
+use Stripe\Exception\CardException;
 use Stripe\StripeClient;
 
 class StripeService
@@ -384,5 +386,217 @@ class StripeService
                 'message' => $e->getMessage(),
             ];
         }
+    }
+    /**
+     * Create a card-only PaymentIntent for an invoice payment made by the client
+     * on the pay page (customer present).
+     *
+     * - Restricted to `card` so only credit/debit cards are offered (no Link,
+     *   wallets, bank debits or BNPL methods).
+     * - Uses capture_method: manual — the authorization is only captured after
+     *   the invoice is recorded as paid (see InvoicePayController).
+     * - When a saved card is given it is pre-attached, so the frontend only has
+     *   to confirm (and complete 3D Secure if the bank asks for it).
+     * - When `save_for_future` is true, Stripe attaches the new card to the
+     *   customer on confirmation so it can be reused later.
+     *
+     * Returns ['success' => true, 'client_secret' => '...', 'payment_intent_id' => '...']
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function createCardPaymentIntent(
+        int $amount_cents,
+        ?string $stripe_customer_id,
+        ?string $stripe_payment_method_id,
+        bool $save_for_future,
+        array $metadata,
+        string $description,
+    ): array {
+        try {
+            $params = [
+                'amount'               => $amount_cents,
+                'currency'             => 'usd',
+                'capture_method'       => 'manual',
+                'payment_method_types' => ['card'],
+                'metadata'             => $metadata,
+                'description'          => $description,
+            ];
+
+            if ($stripe_customer_id !== null) {
+                $params['customer'] = $stripe_customer_id;
+            }
+
+            if ($stripe_payment_method_id !== null) {
+                $params['payment_method'] = $stripe_payment_method_id;
+            }
+
+            if ($save_for_future && $stripe_customer_id !== null && $stripe_payment_method_id === null) {
+                $params['setup_future_usage'] = 'off_session';
+            }
+
+            $intent = $this->client->paymentIntents->create($params);
+
+            return [
+                'success'           => true,
+                'client_secret'     => $intent->client_secret,
+                'payment_intent_id' => $intent->id,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Charge a saved card while the customer is NOT present (autopay and the
+     * admin "Charge card on file" action). The PaymentIntent is created and
+     * confirmed in a single call with automatic capture.
+     *
+     * The idempotency key guarantees that retrying the same logical charge
+     * (e.g. after a timeout) never produces a second charge at Stripe.
+     *
+     * Returns one of:
+     *  ['success' => true,  'payment_intent_id' => '...', 'status' => 'succeeded']
+     *  ['success' => false, 'pending' => true, 'payment_intent_id' => ?string, 'message' => '...']
+     *      — outcome unknown or still processing; must be reconciled later.
+     *  ['success' => false, 'pending' => false, 'payment_intent_id' => ?string,
+     *   'error_code' => '...', 'decline_code' => ?string, 'message' => '...']
+     */
+    public function chargeSavedCardOffSession(
+        int $amount_cents,
+        string $stripe_customer_id,
+        string $stripe_payment_method_id,
+        array $metadata,
+        string $description,
+        string $idempotency_key,
+    ): array {
+        try {
+            $intent = $this->client->paymentIntents->create([
+                'amount'               => $amount_cents,
+                'currency'             => 'usd',
+                'customer'             => $stripe_customer_id,
+                'payment_method'       => $stripe_payment_method_id,
+                'payment_method_types' => ['card'],
+                'off_session'          => true,
+                'confirm'              => true,
+                'metadata'             => $metadata,
+                'description'          => $description,
+            ], ['idempotency_key' => $idempotency_key]);
+
+            if ($intent->status === 'succeeded') {
+                return [
+                    'success'           => true,
+                    'payment_intent_id' => $intent->id,
+                    'status'            => $intent->status,
+                ];
+            }
+
+            if ($intent->status === 'processing') {
+                return [
+                    'success'           => false,
+                    'pending'           => true,
+                    'payment_intent_id' => $intent->id,
+                    'message'           => 'The charge is still being processed by Stripe.',
+                ];
+            }
+
+            return [
+                'success'           => false,
+                'pending'           => false,
+                'payment_intent_id' => $intent->id,
+                'error_code'        => $intent->status === 'requires_action' ? 'authentication_required' : 'payment_failed',
+                'decline_code'      => null,
+                'message'           => $intent->last_payment_error?->message
+                    ?? "The charge could not be completed (status: {$intent->status}).",
+            ];
+        } catch (CardException $e) {
+            $stripe_error = $e->getError();
+
+            return [
+                'success'           => false,
+                'pending'           => false,
+                'payment_intent_id' => $stripe_error?->payment_intent?->id ?? null,
+                'error_code'        => $e->getStripeCode() ?? 'card_declined',
+                'decline_code'      => $e->getDeclineCode(),
+                'message'           => $e->getMessage(),
+            ];
+        } catch (ApiConnectionException $e) {
+            // Network failure: we cannot know whether Stripe processed the
+            // request. The attempt stays "processing" and is reconciled later.
+            return [
+                'success'           => false,
+                'pending'           => true,
+                'payment_intent_id' => null,
+                'message'           => 'Could not reach Stripe: ' . $e->getMessage(),
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success'           => false,
+                'pending'           => false,
+                'payment_intent_id' => null,
+                'error_code'        => $e->getStripeCode() ?? 'stripe_error',
+                'decline_code'      => null,
+                'message'           => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Retrieve the current state of a PaymentIntent.
+     *
+     * Returns ['success' => true, 'payment_intent' => [...]] or ['success' => false, 'message' => '...']
+     */
+    public function retrievePaymentIntent(string $payment_intent_id): array
+    {
+        try {
+            $intent = $this->client->paymentIntents->retrieve($payment_intent_id);
+
+            return ['success' => true, 'payment_intent' => $this->summarizePaymentIntent($intent)];
+        } catch (ApiErrorException $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Find the most recent PaymentIntent whose metadata[$key] equals $value.
+     * Used to reconcile a charge attempt that crashed before its PaymentIntent
+     * id could be stored locally.
+     *
+     * Returns ['success' => true, 'payment_intent' => array|null] or ['success' => false, 'message' => '...']
+     */
+    public function findPaymentIntentByMetadata(string $key, string $value): array
+    {
+        try {
+            $safe_key   = preg_replace('/[^A-Za-z0-9_]/', '', $key);
+            $safe_value = str_replace("'", '', $value);
+
+            $result = $this->client->paymentIntents->search([
+                'query' => "metadata['{$safe_key}']:'{$safe_value}'",
+                'limit' => 1,
+            ]);
+
+            $intent = $result->data[0] ?? null;
+
+            return [
+                'success'        => true,
+                'payment_intent' => $intent ? $this->summarizePaymentIntent($intent) : null,
+            ];
+        } catch (ApiErrorException $e) {
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    private function summarizePaymentIntent(\Stripe\PaymentIntent $intent): array
+    {
+        return [
+            'id'                 => $intent->id,
+            'status'             => $intent->status,
+            'amount'             => $intent->amount,
+            'customer'           => is_string($intent->customer) ? $intent->customer : $intent->customer?->id,
+            'metadata'           => $intent->metadata?->toArray() ?? [],
+            'last_error_code'    => $intent->last_payment_error?->decline_code ?? $intent->last_payment_error?->code,
+            'last_error_message' => $intent->last_payment_error?->message,
+        ];
     }
 }

@@ -136,6 +136,7 @@ use App\Http\Controllers\Client\Credits\CreditPackagesController;
 use App\Http\Controllers\Client\Credits\CreditPurchaseController;
 use App\Http\Controllers\Client\Credits\CreditPurchaseHistoryController;
 use App\Http\Controllers\Invoice\InvoicePayController;
+use App\Http\Controllers\Invoice\InvoicePaymentIntentController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Public\PublicTierController;
 use App\Http\Controllers\Test\TestEmailController;
@@ -176,6 +177,9 @@ Route::get('/invoices/{invoice_id}/view', [PublicInvoiceController::class, 'show
 // Handles both authenticated (Endpoint 3) and public share-link (Endpoint 6) pay flows.
 // The controller inspects the Authorization header to select the correct flow.
 Route::post('/invoices/{unique_id}/pay', [InvoicePayController::class, 'pay']);
+// Card-only PaymentIntent for the invoice pay page (same dual auth/public flow as /pay).
+Route::post('/invoices/{unique_id}/payment-intent', [InvoicePaymentIntentController::class, 'store'])
+    ->middleware('throttle:20,1');
 
 // ─── Public tier catalog (no auth required) ──────────────────────────────────
 // Read-only pricing lookup for external sites (marketing site cart). Never a
@@ -632,6 +636,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'show']);
             Route::patch('invoices/{invoice_id}/share-links', [AdminInvoiceShareLinkController::class, 'update']);
             Route::post('invoices/{invoice_id}/mark-paid', [AdminInvoiceController::class, 'markPaid']);
+            Route::get('invoices/{invoice_id}/payment-profiles', [AdminInvoiceController::class, 'paymentProfiles']);
+            Route::post('invoices/{invoice_id}/charge-card', [AdminInvoiceController::class, 'chargeCard']);
             Route::post('invoices/{invoice_id}/mark-unpaid', [AdminInvoiceController::class, 'markUnpaid']);
             Route::post('invoices/{invoice_id}/mark-overdue', [AdminInvoiceController::class, 'markOverdue']);
             Route::post('invoices/{invoice_id}/refund', [AdminInvoiceController::class, 'refundInvoice']);

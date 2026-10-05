@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Invoice;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Invoice\ChargeInvoiceCardRequest;
 use App\Http\Requests\Admin\Invoice\ListInvoicesRequest;
 use App\Http\Requests\Admin\Invoice\PartialRefundInvoiceRequest;
 use App\Http\Requests\Admin\Invoice\RefundInvoiceRequest;
@@ -14,12 +15,14 @@ use App\Jobs\SendClientInvoiceRefundedNotificationJob;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
 use App\Models\InvoiceLineItem;
+use App\Models\PaymentProfile;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Notifications\InvoiceCreatedNotification;
 use App\Notifications\InvoiceReminderNotification;
 use App\Notifications\InvoiceUpdatedNotification;
 use App\Services\EmailNotificationSettingService;
+use App\Services\InvoiceCardPaymentService;
 use App\Services\InvoiceNumberGenerator;
 use App\Services\NotificationService;
 use App\Services\StripeService;
@@ -452,6 +455,64 @@ class InvoiceController extends Controller
         ]);
 
         $this->recordInvoiceTransaction($invoice);
+
+        return response()->json($this->formatInvoice(
+            $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])
+        ));
+    }
+
+    /**
+     * GET /api/admin/invoices/{invoice_id}/payment-profiles
+     *
+     * Saved cards on file for the invoice's client.
+     */
+    public function paymentProfiles(string $invoice_id, InvoiceCardPaymentService $card_payment_service): JsonResponse
+    {
+        $invoice = Invoice::with('user')->find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        if (! $invoice->user) {
+            return response()->json(['data' => []]);
+        }
+
+        return response()->json([
+            'data' => $card_payment_service->listPaymentProfiles($invoice->user),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/invoices/{invoice_id}/charge-card
+     *
+     * Charges the client's saved card on file for the full invoice total and
+     * marks the invoice as paid.
+     */
+    public function chargeCard(
+        ChargeInvoiceCardRequest $request,
+        string $invoice_id,
+        InvoiceCardPaymentService $card_payment_service
+    ): JsonResponse {
+        $invoice = Invoice::find($invoice_id);
+
+        if (! $invoice) {
+            return response()->json(['message' => 'Invoice not found.'], 404);
+        }
+
+        $payment_profile = PaymentProfile::where('id', $request->input('payment_profile_id'))
+            ->where('user_id', $invoice->user_id)
+            ->first();
+
+        if (! $payment_profile) {
+            return response()->json(['message' => 'Saved card not found for this client.'], 404);
+        }
+
+        $result = $card_payment_service->chargeSavedCard($invoice, $payment_profile, Auth::user());
+
+        if (! $result['success']) {
+            return response()->json(['message' => $result['message']], $result['status_code'] ?? 422);
+        }
 
         return response()->json($this->formatInvoice(
             $invoice->fresh(['user', 'lineItems', 'billedTo', 'couponDiscounts'])

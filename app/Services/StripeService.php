@@ -334,6 +334,125 @@ class StripeService
     }
 
     /**
+     * Create a card-only PaymentIntent for an invoice, to be confirmed on the
+     * client with Stripe.js (which also handles 3D Secure when required).
+     *
+     * - payment_method_types: ['card'] so only credit / debit cards are accepted.
+     * - capture_method: manual so the card is only authorized until the invoice
+     *   is recorded as paid; capturePaymentIntent() then collects the funds.
+     * - When $save_for_future is true the PaymentMethod is set up for future
+     *   off-session use (requires $stripe_customer_id).
+     *
+     * Returns ['success' => true, 'client_secret' => '...', 'payment_intent_id' => '...']
+     *      or ['success' => false, 'message' => '...']
+     */
+    public function createInvoiceCardPaymentIntent(
+        int $amount_cents,
+        array $metadata,
+        ?string $stripe_customer_id = null,
+        ?string $stripe_payment_method_id = null,
+        bool $save_for_future = false
+    ): array {
+        try {
+            $params = [
+                'amount'               => $amount_cents,
+                'currency'             => 'usd',
+                'capture_method'       => 'manual',
+                'payment_method_types' => ['card'],
+                'metadata'             => $metadata,
+            ];
+
+            if ($stripe_customer_id !== null) {
+                $params['customer'] = $stripe_customer_id;
+            }
+
+            if ($stripe_payment_method_id !== null) {
+                $params['payment_method'] = $stripe_payment_method_id;
+            }
+
+            if ($save_for_future && $stripe_customer_id !== null && $stripe_payment_method_id === null) {
+                $params['setup_future_usage'] = 'off_session';
+            }
+
+            $intent = $this->client->paymentIntents->create($params);
+
+            return [
+                'success'           => true,
+                'client_secret'     => $intent->client_secret,
+                'payment_intent_id' => $intent->id,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Authorize a saved card off-session (no cardholder present), e.g. when an
+     * admin charges the card on file for an invoice. The intent is created and
+     * confirmed in one call with capture_method: manual, so the funds are only
+     * collected once capturePaymentIntent() is called.
+     *
+     * Returns ['success' => true, 'payment_intent_id' => '...']
+     *      or ['success' => false, 'message' => '...', 'error_code' => '...', 'payment_intent_id' => '...'|null]
+     */
+    public function chargeSavedCardOffSession(
+        int $amount_cents,
+        string $stripe_customer_id,
+        string $stripe_payment_method_id,
+        array $metadata
+    ): array {
+        try {
+            $intent = $this->client->paymentIntents->create([
+                'amount'               => $amount_cents,
+                'currency'             => 'usd',
+                'capture_method'       => 'manual',
+                'payment_method_types' => ['card'],
+                'customer'             => $stripe_customer_id,
+                'payment_method'       => $stripe_payment_method_id,
+                'off_session'          => true,
+                'confirm'              => true,
+                'metadata'             => $metadata,
+            ]);
+
+            if ($intent->status !== 'requires_capture' && $intent->status !== 'succeeded') {
+                return [
+                    'success'           => false,
+                    'message'           => 'The card could not be charged. Please ask the client to pay this invoice from their portal.',
+                    'error_code'        => $intent->status,
+                    'payment_intent_id' => $intent->id,
+                ];
+            }
+
+            return [
+                'success'           => true,
+                'payment_intent_id' => $intent->id,
+            ];
+        } catch (\Stripe\Exception\CardException $e) {
+            $error_code = $e->getDeclineCode() ?? $e->getStripeCode() ?? 'card_declined';
+
+            $message = $error_code === 'authentication_required'
+                ? 'This card requires authentication by the cardholder. Please ask the client to pay this invoice from their portal.'
+                : self::getUserFriendlyErrorMessage($error_code, 'The card was declined. Please try another card or ask the client to update their payment method.');
+
+            return [
+                'success'           => false,
+                'message'           => $message,
+                'error_code'        => $error_code,
+                'payment_intent_id' => $e->getError()?->payment_intent?->id ?? null,
+            ];
+        } catch (ApiErrorException $e) {
+            return [
+                'success'    => false,
+                'message'    => 'The card could not be charged: ' . $e->getMessage(),
+                'error_code' => $e->getStripeCode() ?? 'api_error',
+            ];
+        }
+    }
+
+    /**
      * Create a Stripe PaymentIntent and return the client_secret and payment_intent_id.
      *
      * Uses capture_method: manual so the card is only authorized (not charged) until

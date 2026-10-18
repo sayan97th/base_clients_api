@@ -4,6 +4,7 @@ namespace App\Listeners;
 
 use App\Jobs\SendEmailInterceptCopyJob;
 use App\Mail\InterceptedEmailCopy;
+use App\Services\EmailDeliveryService;
 use App\Services\EmailInterceptService;
 use Illuminate\Mail\Events\MessageSending;
 use Symfony\Component\Mime\Email;
@@ -40,6 +41,14 @@ class InterceptOutgoingEmailListener
         }
 
         $to_email = $to_address->getAddress();
+
+        // Listener order for MessageSending is not guaranteed, so an email the
+        // delivery policy is about to cancel must not be copied either.
+        $email_type = EmailDeliveryService::resolveEmailType($event->data);
+
+        if (! EmailDeliveryService::isDeliveryAllowed($email_type, $to_email)) {
+            return;
+        }
 
         $copy_recipients = EmailInterceptService::getInterceptRecipients($to_email);
 

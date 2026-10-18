@@ -119,6 +119,8 @@ use App\Http\Controllers\Admin\OrderComment\AdminOrderBasedCommentController;
 use App\Http\Controllers\Admin\OrderComment\AdminOrderCommentController;
 use App\Http\Controllers\Admin\EmailNotification\EmailNotificationSettingController;
 use App\Http\Controllers\Admin\EmailNotification\EmailInterceptSettingController;
+use App\Http\Controllers\Admin\EmailNotification\EmailTypeSettingController;
+use App\Http\Controllers\Admin\EmailNotification\UserEmailPreferenceController;
 use App\Http\Controllers\Admin\Client\AdminClientController;
 use App\Http\Controllers\Admin\Impersonation\ImpersonationController;
 use App\Http\Controllers\Admin\Team\AdminTeamController as AdminTeamController;
@@ -586,6 +588,22 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin')->put(
             'email-notification-settings',
             [EmailNotificationSettingController::class, 'update']
+        );
+
+        // Email delivery policy, every outgoing email is checked against these
+        // settings before it is sent. Viewing: super_admin, admin, staff.
+        // Global email type toggles: super_admin, admin. Personal preferences:
+        // super_admin and admin manage anyone, staff only manage their own
+        // (enforced in UpdateUserEmailPreferenceRequest).
+        Route::middleware('role:super_admin,admin,staff')->group(function () {
+            Route::get('email-type-settings', [EmailTypeSettingController::class, 'index']);
+            Route::get('email-type-settings/suppression-logs', [EmailTypeSettingController::class, 'suppressionLogs']);
+            Route::get('user-email-preferences', [UserEmailPreferenceController::class, 'index']);
+            Route::put('user-email-preferences/{user_id}', [UserEmailPreferenceController::class, 'update'])->whereNumber('user_id');
+        });
+        Route::middleware('role:super_admin,admin')->put(
+            'email-type-settings',
+            [EmailTypeSettingController::class, 'update']
         );
 
         // Email interceptor — mirrors outgoing admin/client emails to configured

@@ -142,6 +142,11 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasOne(NotificationPreference::class);
     }
 
+    public function emailPreference(): HasOne
+    {
+        return $this->hasOne(UserEmailPreference::class);
+    }
+
     public function unreadNotifications(): HasMany
     {
         return $this->notifications()->where('is_read', false);

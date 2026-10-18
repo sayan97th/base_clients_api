@@ -7,7 +7,6 @@ use App\Listeners\InterceptOutgoingEmailListener;
 use App\Mail\AdminCreditPurchaseNotification;
 use App\Mail\AdminInvoicePaidNotification;
 use App\Mail\AdminOrderCommentNotification;
-use App\Mail\ClientCommentReplyNotification;
 use App\Mail\NotificationEmail;
 use App\Mail\StaffInvitationMail;
 use App\Mail\TestEmail;
@@ -15,9 +14,6 @@ use App\Models\EmailInterceptSetting;
 use App\Models\EmailSuppressionLog;
 use App\Models\EmailTypeSetting;
 use App\Models\Notification;
-use App\Models\Role;
-use App\Models\User;
-use App\Models\UserEmailPreference;
 use App\Notifications\ResetPasswordNotification;
 use App\Services\EmailDeliveryService;
 use App\Support\Email\EmailTypeCatalog;
@@ -26,94 +22,26 @@ use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Mailable;
 use Illuminate\Notifications\Notification as BaseNotification;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Symfony\Component\Finder\Finder;
 use Symfony\Component\Mime\Email;
+use Tests\Feature\EmailNotification\Concerns\InteractsWithEmailDelivery;
 use Tests\TestCase;
 
 class EmailDeliveryPolicyTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, InteractsWithEmailDelivery;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        Role::firstOrCreate(['name' => 'admin'],       ['display_name' => 'Admin',       'description' => 'Admin']);
-        Role::firstOrCreate(['name' => 'super_admin'], ['display_name' => 'Super Admin', 'description' => 'Super Admin']);
-        Role::firstOrCreate(['name' => 'staff'],       ['display_name' => 'Staff',       'description' => 'Staff']);
-        Role::firstOrCreate(['name' => 'client'],      ['display_name' => 'Client',      'description' => 'Client']);
-
-        Cache::flush();
-    }
-
-    private function makeUserWithRole(string $role): User
-    {
-        $user = User::factory()->create(['is_active' => true]);
-        $user->assignRole($role);
-
-        return $user;
-    }
-
-    private function makeCommentReplyMailable(string $email): ClientCommentReplyNotification
-    {
-        return new ClientCommentReplyNotification(
-            client_name: 'Client',
-            client_email: $email,
-            order_id: 'order-1',
-            order_title: 'Sample Order',
-            original_comment_content: 'Original comment',
-            original_comment_date: 'Jan 1, 2026',
-            reply_content: 'Reply',
-            reply_date: 'Jan 2, 2026',
-            admin_name: 'Admin Person',
-            admin_initials: 'AP',
-            view_reply_url: 'https://example.com',
-        );
-    }
-
-    private function makeAdminCommentMailable(string $email): AdminOrderCommentNotification
-    {
-        return new AdminOrderCommentNotification(
-            recipient_name: 'Admin',
-            recipient_email: $email,
-            client_name: 'Client',
-            client_email: 'client@example.com',
-            client_initials: 'CL',
-            order_id: 'order-1',
-            order_title: 'Sample Order',
-            comment_content: 'A comment',
-            comment_date: 'Jan 1, 2026',
-            view_comment_url: 'https://example.com',
-            settings_url: 'https://example.com/settings',
-        );
+        $this->setUpEmailDelivery();
     }
 
     private function makeMessage(string ...$to): Email
     {
-        $message = new Email();
-        $message->to(...$to);
-        $message->subject('Subject');
-        $message->html('<p>Body</p>');
-
-        return $message;
-    }
-
-    private function sentMessages(): array
-    {
-        return app('mailer')->getSymfonyTransport()->messages()->all();
-    }
-
-    private function mutePreference(User $user, bool $mute_all, array $disabled_email_types = []): void
-    {
-        UserEmailPreference::create([
-            'user_id'              => $user->id,
-            'mute_all_emails'      => $mute_all,
-            'disabled_email_types' => $disabled_email_types,
-        ]);
-
-        EmailDeliveryService::invalidateCache();
+        return $this->makeSymfonyMessage($to);
     }
 
     // ─── EmailTypeCatalog ────────────────────────────────────────────────────
@@ -175,7 +103,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_recipient_who_muted_all_emails_is_blocked_case_insensitively(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
 
         $this->assertSame(
             EmailDeliveryService::REASON_RECIPIENT_MUTED_ALL,
@@ -186,7 +114,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_recipient_opt_out_only_blocks_the_selected_email_types(): void
     {
         $admin = $this->makeUserWithRole('staff');
-        $this->mutePreference($admin, false, ['admin_credit_purchase', 'admin_invoice_paid']);
+        $this->setEmailPreference($admin, false, ['admin_credit_purchase', 'admin_invoice_paid']);
 
         $this->assertSame(
             EmailDeliveryService::REASON_RECIPIENT_OPTED_OUT,
@@ -198,7 +126,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_mandatory_email_types_are_never_blocked(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
         EmailTypeSetting::create(['email_type' => 'password_reset', 'is_enabled' => false]);
 
         $this->assertNull(EmailDeliveryService::getBlockReason('password_reset', $admin->email));
@@ -241,7 +169,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_a_preference_row_never_mutes_a_client_side_user(): void
     {
         $client = $this->makeUserWithRole('client');
-        $this->mutePreference($client, true, ['portal_payment_notification']);
+        $this->setEmailPreference($client, true, ['portal_payment_notification']);
 
         $notification = Notification::create([
             'user_id' => $client->id,
@@ -250,7 +178,7 @@ class EmailDeliveryPolicyTest extends TestCase
         ]);
 
         Mail::to($client->email)->send(new NotificationEmail($client, $notification));
-        Mail::to($client->email)->send($this->makeCommentReplyMailable($client->email));
+        Mail::to($client->email)->send($this->makeClientCommentReplyMailable($client->email));
 
         $this->assertCount(2, $this->sentMessages());
         $this->assertSame(0, EmailSuppressionLog::count());
@@ -298,7 +226,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_muted_recipient_does_not_receive_the_email_and_it_is_logged(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
 
         Mail::to($admin->email)->send($this->makeAdminCommentMailable($admin->email));
 
@@ -315,7 +243,7 @@ class EmailDeliveryPolicyTest extends TestCase
     {
         $client = $this->makeUserWithRole('client');
 
-        Mail::to($client->email)->send($this->makeCommentReplyMailable($client->email));
+        Mail::to($client->email)->send($this->makeClientCommentReplyMailable($client->email));
 
         $this->assertCount(1, $this->sentMessages());
         $this->assertSame(0, EmailSuppressionLog::count());
@@ -324,7 +252,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_test_emails_ignore_the_delivery_policy(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
 
         Mail::to($admin->email)->send(new TestEmail('Admin'));
 
@@ -334,7 +262,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_password_reset_notification_is_delivered_to_a_muted_user(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
 
         $admin->notify(new ResetPasswordNotification('token'));
 
@@ -344,7 +272,7 @@ class EmailDeliveryPolicyTest extends TestCase
     public function test_portal_notification_email_is_blocked_by_its_resolved_type(): void
     {
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, false, ['portal_payment_notification']);
+        $this->setEmailPreference($admin, false, ['portal_payment_notification']);
 
         $notification = Notification::create([
             'user_id' => $admin->id,
@@ -367,7 +295,7 @@ class EmailDeliveryPolicyTest extends TestCase
     {
         $muted   = $this->makeUserWithRole('admin');
         $allowed = $this->makeUserWithRole('admin');
-        $this->mutePreference($muted, true);
+        $this->setEmailPreference($muted, true);
 
         $message = $this->makeMessage($muted->email, $allowed->email);
         $event   = new MessageSending($message, ['__laravel_mailable' => AdminInvoicePaidNotification::class]);
@@ -403,7 +331,7 @@ class EmailDeliveryPolicyTest extends TestCase
         Bus::fake();
 
         $admin = $this->makeUserWithRole('admin');
-        $this->mutePreference($admin, true);
+        $this->setEmailPreference($admin, true);
 
         EmailInterceptSetting::create([
             'intercept_admin_emails'  => true,

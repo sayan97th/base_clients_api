@@ -15,25 +15,17 @@ class PaymentSuccessfulEmail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /**
-     * @param User|null $user - Real User model (can be null for test data)
-     * @param Invoice|null $invoice - Real Invoice model (can be null for test data)
-     * @param array|null $test_data - Test data array if models are not available
-     */
     public function __construct(
-        public ?User $user = null,
-        public ?Invoice $invoice = null,
-        public ?array $test_data = null,
+        public User $user,
+        public Invoice $invoice,
     ) {
         $this->onQueue('emails');
     }
 
     public function envelope(): Envelope
     {
-        $invoice_number = $this->invoice?->invoice_number ?? $this->test_data['invoice_number'] ?? 'N/A';
-
         return new Envelope(
-            subject: "Payment Confirmed — Invoice {$invoice_number} - " . config('app.name'),
+            subject: "Payment Confirmed — Invoice {$this->invoice->invoice_number} - " . config('app.name'),
         );
     }
 
@@ -47,16 +39,6 @@ class PaymentSuccessfulEmail extends Mailable
 
     protected function buildPaymentData(): array
     {
-        // If test data is provided, use it directly
-        if ($this->test_data) {
-            return $this->test_data;
-        }
-
-        // Otherwise, build from real models
-        if (!$this->invoice || !$this->user) {
-            return [];
-        }
-
         $invoice = $this->invoice->loadMissing(['lineItems', 'billedTo', 'order.orderCoupons.coupon']);
         $is_credits = $invoice->currency_type === 'credits';
         $invoice_url = FrontendUrl::to('/invoices/' . $invoice->unique_id);

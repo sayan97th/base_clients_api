@@ -141,11 +141,6 @@ use App\Http\Controllers\Invoice\InvoicePayController;
 use App\Http\Controllers\Invoice\InvoicePaymentIntentController;
 use App\Http\Controllers\Public\PublicInvoiceController;
 use App\Http\Controllers\Public\PublicTierController;
-use App\Http\Controllers\Test\TestEmailController;
-
-// ─── Test routes (remove in production) ──────────────────────────────────────
-Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
-Route::get('/test/send-payment-successful-email', [TestEmailController::class, 'sendPaymentSuccessfulEmail']);
 
 // ─── Google OAuth routes (browser redirect flow, no JSON middleware) ──────────
 Route::prefix('auth/google')->group(function () {

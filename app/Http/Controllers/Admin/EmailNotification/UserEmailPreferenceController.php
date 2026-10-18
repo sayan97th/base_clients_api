@@ -12,8 +12,6 @@ use Illuminate\Http\JsonResponse;
 
 class UserEmailPreferenceController extends Controller
 {
-    private const ADMIN_ROLES = ['super_admin', 'admin', 'staff'];
-
     /**
      * Lists every active admin side user with their email preferences, plus
      * the email types that can reach the admin side, so the UI can render
@@ -21,7 +19,7 @@ class UserEmailPreferenceController extends Controller
      */
     public function index(): JsonResponse
     {
-        $users = User::whereHas('roles', fn ($q) => $q->whereIn('name', self::ADMIN_ROLES))
+        $users = User::whereHas('roles', fn ($q) => $q->whereIn('name', EmailDeliveryService::ADMIN_ROLES))
             ->where('is_active', true)
             ->with(['roles:id,name,display_name', 'emailPreference'])
             ->orderBy('first_name')
@@ -37,7 +35,16 @@ class UserEmailPreferenceController extends Controller
 
     public function update(UpdateUserEmailPreferenceRequest $request, int $user_id): JsonResponse
     {
-        $user      = User::findOrFail($user_id);
+        $user = User::findOrFail($user_id);
+
+        // Client side users always receive their emails, so they have no
+        // preferences to manage here.
+        if (! $user->hasRole(EmailDeliveryService::ADMIN_ROLES)) {
+            return response()->json([
+                'message' => 'Email preferences can only be managed for admin side users. Client side users always receive their emails.',
+            ], 422);
+        }
+
         $validated = $request->validated();
 
         $preference = UserEmailPreference::updateOrCreate(

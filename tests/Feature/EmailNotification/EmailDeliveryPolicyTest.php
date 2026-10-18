@@ -6,6 +6,7 @@ use App\Listeners\EnforceEmailDeliveryPolicyListener;
 use App\Listeners\InterceptOutgoingEmailListener;
 use App\Mail\AdminCreditPurchaseNotification;
 use App\Mail\AdminInvoicePaidNotification;
+use App\Mail\AdminOrderCommentNotification;
 use App\Mail\ClientCommentReplyNotification;
 use App\Mail\NotificationEmail;
 use App\Mail\StaffInvitationMail;
@@ -69,6 +70,23 @@ class EmailDeliveryPolicyTest extends TestCase
             admin_name: 'Admin Person',
             admin_initials: 'AP',
             view_reply_url: 'https://example.com',
+        );
+    }
+
+    private function makeAdminCommentMailable(string $email): AdminOrderCommentNotification
+    {
+        return new AdminOrderCommentNotification(
+            recipient_name: 'Admin',
+            recipient_email: $email,
+            client_name: 'Client',
+            client_email: 'client@example.com',
+            client_initials: 'CL',
+            order_id: 'order-1',
+            order_title: 'Sample Order',
+            comment_content: 'A comment',
+            comment_date: 'Jan 1, 2026',
+            view_comment_url: 'https://example.com',
+            settings_url: 'https://example.com/settings',
         );
     }
 
@@ -187,6 +205,94 @@ class EmailDeliveryPolicyTest extends TestCase
         $this->assertNull(EmailDeliveryService::getBlockReason('staff_invitation', $admin->email));
     }
 
+    // ─── Client side users always receive their emails ───────────────────────
+
+    public function test_every_client_side_email_type_is_mandatory(): void
+    {
+        foreach (EmailTypeCatalog::all() as $email_type) {
+            if ($email_type['audience'] === EmailTypeCatalog::AUDIENCE_CLIENT) {
+                $this->assertTrue($email_type['is_mandatory'], "{$email_type['key']} must always be delivered");
+                $this->assertNotContains($email_type['key'], EmailTypeCatalog::configurableKeys());
+            }
+        }
+    }
+
+    public function test_client_side_email_types_ignore_a_stale_global_toggle(): void
+    {
+        $client = $this->makeUserWithRole('client');
+        EmailTypeSetting::create(['email_type' => 'order_report', 'is_enabled' => false]);
+
+        $this->assertNull(EmailDeliveryService::getBlockReason('order_report', $client->email));
+    }
+
+    public function test_portal_notification_turned_off_globally_still_reaches_clients_but_not_admins(): void
+    {
+        $client = $this->makeUserWithRole('client');
+        $admin  = $this->makeUserWithRole('admin');
+        EmailTypeSetting::create(['email_type' => 'portal_payment_notification', 'is_enabled' => false]);
+
+        $this->assertNull(EmailDeliveryService::getBlockReason('portal_payment_notification', $client->email));
+        $this->assertSame(
+            EmailDeliveryService::REASON_EMAIL_TYPE_DISABLED,
+            EmailDeliveryService::getBlockReason('portal_payment_notification', $admin->email)
+        );
+    }
+
+    public function test_a_preference_row_never_mutes_a_client_side_user(): void
+    {
+        $client = $this->makeUserWithRole('client');
+        $this->mutePreference($client, true, ['portal_payment_notification']);
+
+        $notification = Notification::create([
+            'user_id' => $client->id,
+            'type'    => 'payment',
+            'message' => 'Payment received',
+        ]);
+
+        Mail::to($client->email)->send(new NotificationEmail($client, $notification));
+        Mail::to($client->email)->send($this->makeCommentReplyMailable($client->email));
+
+        $this->assertCount(2, $this->sentMessages());
+        $this->assertSame(0, EmailSuppressionLog::count());
+    }
+
+    public function test_global_toggle_still_applies_to_external_admin_notification_recipients(): void
+    {
+        EmailTypeSetting::create(['email_type' => 'admin_invoice_paid', 'is_enabled' => false]);
+
+        $this->assertSame(
+            EmailDeliveryService::REASON_EMAIL_TYPE_DISABLED,
+            EmailDeliveryService::getBlockReason('admin_invoice_paid', 'external@agency.com')
+        );
+    }
+
+    public function test_client_side_email_types_cannot_be_turned_off_globally(): void
+    {
+        $admin = $this->makeUserWithRole('admin');
+
+        $this->actingAs($admin)
+            ->putJson('/api/admin/email-type-settings', [
+                'email_types' => [['key' => 'order_report', 'is_enabled' => false]],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['email_types.0.key']);
+    }
+
+    public function test_preferences_cannot_be_saved_for_client_side_users(): void
+    {
+        $admin  = $this->makeUserWithRole('admin');
+        $client = $this->makeUserWithRole('client');
+
+        $this->actingAs($admin)
+            ->putJson("/api/admin/user-email-preferences/{$client->id}", [
+                'mute_all_emails'      => true,
+                'disabled_email_types' => [],
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseMissing('user_email_preferences', ['user_id' => $client->id]);
+    }
+
     // ─── End to end through the real mailer ──────────────────────────────────
 
     public function test_muted_recipient_does_not_receive_the_email_and_it_is_logged(): void
@@ -194,12 +300,12 @@ class EmailDeliveryPolicyTest extends TestCase
         $admin = $this->makeUserWithRole('admin');
         $this->mutePreference($admin, true);
 
-        Mail::to($admin->email)->send($this->makeCommentReplyMailable($admin->email));
+        Mail::to($admin->email)->send($this->makeAdminCommentMailable($admin->email));
 
         $this->assertCount(0, $this->sentMessages());
         $this->assertDatabaseHas('email_suppression_logs', [
-            'mailable_class'  => ClientCommentReplyNotification::class,
-            'email_type'      => 'client_comment_reply',
+            'mailable_class'  => AdminOrderCommentNotification::class,
+            'email_type'      => 'admin_order_comment',
             'recipient_email' => $admin->email,
             'reason'          => EmailDeliveryService::REASON_RECIPIENT_MUTED_ALL,
         ]);

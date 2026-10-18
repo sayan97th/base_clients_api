@@ -42,9 +42,13 @@ use App\Notifications\ResetPasswordNotification;
  * fails if a Mailable is left unregistered, so nothing can bypass the
  * Email Notification Settings by accident.
  *
- * Mandatory types (password resets, invitations, welcome emails) are always
- * delivered: they grant or recover access to an account, so neither a global
- * toggle nor a personal opt out can block them.
+ * Mandatory types are always delivered, neither a global toggle nor a
+ * personal opt out can block them. That covers two groups:
+ *   - Account and access emails (password resets, invitations, welcome
+ *     emails), since they grant or recover access to an account.
+ *   - Every client side email. Clients must always receive the emails about
+ *     their own orders, payments and tickets, so the Email Notification
+ *     Settings only ever control what reaches the admin side.
  */
 final class EmailTypeCatalog
 {
@@ -327,7 +331,8 @@ final class EmailTypeCatalog
                 'category'           => $definition['category'],
                 'classes'            => $definition['classes'],
                 'notification_types' => $definition['notification_types'] ?? [],
-                'is_mandatory'       => $definition['is_mandatory'] ?? false,
+                'is_mandatory'       => ($definition['is_mandatory'] ?? false)
+                    || $definition['audience'] === self::AUDIENCE_CLIENT,
             ];
         }
 
@@ -357,7 +362,8 @@ final class EmailTypeCatalog
     }
 
     /**
-     * Email types an admin or a recipient is allowed to turn off.
+     * Email types an admin or a recipient is allowed to turn off. Client side
+     * types are never included, see the class docblock.
      */
     public static function configurableKeys(): array
     {

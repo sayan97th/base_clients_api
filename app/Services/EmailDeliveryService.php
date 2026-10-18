@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\EmailSuppressionLog;
 use App\Models\EmailTypeSetting;
 use App\Models\Notification;
+use App\Models\User;
 use App\Models\UserEmailPreference;
 use App\Support\Email\EmailTypeCatalog;
 use Illuminate\Support\Facades\Cache;
@@ -19,7 +20,9 @@ use Illuminate\Support\Facades\Cache;
  *      every non mandatory email is muted, or only specific types are.
  *
  * Mandatory types and exempt classes (test emails, interceptor copies) are
- * always delivered. The policy is enforced from the MessageSending listener,
+ * always delivered. Client side users always receive their emails: both
+ * layers only ever apply to admin side recipients, plus the global switch for
+ * external addresses added as admin notification recipients. The policy is enforced from the MessageSending listener,
  * so no code path that sends mail can skip it.
  */
 class EmailDeliveryService
@@ -30,7 +33,10 @@ class EmailDeliveryService
 
     private const TYPE_SETTINGS_CACHE_KEY    = 'email_delivery_type_settings';
     private const PREFERENCES_CACHE_KEY      = 'email_delivery_user_preferences';
+    private const ADMIN_EMAILS_CACHE_KEY     = 'email_delivery_admin_side_emails';
     private const CACHE_TTL                  = 60;
+
+    public const ADMIN_ROLES = ['super_admin', 'admin', 'staff'];
 
     /**
      * Returns the outgoing email's class, whether it was sent as a Mailable
@@ -74,12 +80,27 @@ class EmailDeliveryService
 
         $definition = EmailTypeCatalog::find($email_type);
 
+        // Mandatory covers every client side email type as well.
         if (! $definition || $definition['is_mandatory']) {
+            return null;
+        }
+
+        $is_admin_side_recipient = self::isAdminSideRecipient($recipient_email);
+
+        // Portal notification emails reach both sides. A client receiving one
+        // is always allowed, the settings below only target the admin side.
+        if (! $is_admin_side_recipient && $definition['audience'] === EmailTypeCatalog::AUDIENCE_ANY) {
             return null;
         }
 
         if (! self::isEmailTypeEnabled($email_type)) {
             return self::REASON_EMAIL_TYPE_DISABLED;
+        }
+
+        // Personal preferences are an admin side feature. Ignoring them for
+        // anyone else guarantees a stray row can never silence a client.
+        if (! $is_admin_side_recipient) {
+            return null;
         }
 
         $preference = self::cachedPreferences()[strtolower($recipient_email)] ?? null;
@@ -97,6 +118,25 @@ class EmailDeliveryService
         }
 
         return null;
+    }
+
+    /**
+     * Whether the address belongs to a super_admin, admin or staff user. The
+     * full list is cached so the check on every send is an array lookup.
+     */
+    public static function isAdminSideRecipient(string $email): bool
+    {
+        $admin_side_emails = Cache::remember(
+            self::ADMIN_EMAILS_CACHE_KEY,
+            self::CACHE_TTL,
+            fn () => User::whereHas('roles', fn ($q) => $q->whereIn('name', self::ADMIN_ROLES))
+                ->pluck('email')
+                ->map(fn (string $admin_email) => strtolower($admin_email))
+                ->flip()
+                ->all(),
+        );
+
+        return isset($admin_side_emails[strtolower($email)]);
     }
 
     public static function isDeliveryAllowed(?string $email_type, string $recipient_email): bool
@@ -159,6 +199,7 @@ class EmailDeliveryService
     {
         Cache::forget(self::TYPE_SETTINGS_CACHE_KEY);
         Cache::forget(self::PREFERENCES_CACHE_KEY);
+        Cache::forget(self::ADMIN_EMAILS_CACHE_KEY);
     }
 
     /**

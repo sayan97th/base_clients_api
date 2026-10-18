@@ -144,8 +144,6 @@ use App\Http\Controllers\Public\PublicTierController;
 use App\Http\Controllers\Test\TestEmailController;
 
 // ─── Test routes (remove in production) ──────────────────────────────────────
-Route::get('/test/send-email', [TestEmailController::class, 'quickTestEmail']);
-Route::post('/test/send-email', [TestEmailController::class, 'sendTestEmail']);
 Route::get('/test/send-email-realtime', [TestEmailController::class, 'sendTestEmailRealtime']);
 Route::get('/test/send-payment-successful-email', [TestEmailController::class, 'sendPaymentSuccessfulEmail']);
 

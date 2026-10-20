@@ -284,6 +284,13 @@ class LinkBuildingOrdersDashboardController extends Controller
                 continue;
             }
 
+            // exact_match is a non-nullable boolean column, while the dashboard sends
+            // its "Yes"/"No" display text (or null when a cell is cleared with Delete).
+            // Same rule as Store/UpdateLinkBuildingOrderRequest: only "Yes" is true.
+            if (array_key_exists('exact_match', $safe_fields)) {
+                $safe_fields['exact_match'] = $safe_fields['exact_match'] === 'Yes';
+            }
+
             $placement = LinkBuildingOrderPlacement::find($id);
 
             if (! $placement) {

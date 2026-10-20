@@ -969,6 +969,33 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertSame('https://old2.com', $p2->fresh()->landing_page, 'A field left out of the row map must stay untouched');
     }
 
+    public function test_batch_update_cells_converts_exact_match_display_text_and_cleared_cells_to_boolean(): void
+    {
+        // The dashboard sends "Yes"/"No" for exact_match, and null once a cell is
+        // cleared with Delete in the spreadsheet view. The column is a non-nullable
+        // boolean, so both must be stored as true/false instead of failing.
+        $p1 = $this->adminPlacement(['order_id' => 'BL-553', 'exact_match' => false]);
+        $p2 = $this->adminPlacement(['order_id' => 'BL-554', 'exact_match' => true]);
+        $p3 = $this->adminPlacement(['order_id' => 'BL-555', 'keyword' => 'kw to clear']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [
+                    ['id' => $p1->id, 'fields' => ['exact_match' => 'Yes']],
+                    ['id' => $p2->id, 'fields' => ['exact_match' => null]],
+                    ['id' => $p3->id, 'fields' => ['keyword' => '']],
+                ],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('updated_count', 3)
+            ->assertJsonPath('data.0.exact_match', 'Yes')
+            ->assertJsonPath('data.1.exact_match', 'No');
+
+        $this->assertTrue($p1->fresh()->exact_match);
+        $this->assertFalse($p2->fresh()->exact_match);
+        $this->assertNull($p3->fresh()->keyword);
+    }
+
     public function test_batch_update_cells_response_includes_full_updated_row_data(): void
     {
         // The dashboard replaces its local rows straight from this response after a

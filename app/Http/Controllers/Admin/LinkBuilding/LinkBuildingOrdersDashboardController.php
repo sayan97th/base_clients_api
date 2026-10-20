@@ -6,6 +6,7 @@ use App\Events\LinkBuildingOrderCreated;
 use App\Events\LinkBuildingOrderDeleted;
 use App\Events\LinkBuildingOrderUpdated;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\LinkBuilding\BatchStoreLinkBuildingOrdersRequest;
 use App\Http\Requests\Admin\LinkBuilding\StoreLinkBuildingOrderRequest;
 use App\Http\Requests\Admin\LinkBuilding\UpdateLinkBuildingOrderRequest;
 use App\Jobs\ProcessLinkBuildingImportJob;
@@ -34,7 +35,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     private const ALLOWED_SORT_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
         'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
-        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'partnership_check',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'niche', 'partnership_check',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
@@ -50,7 +51,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     private const FILTERABLE_COLUMNS = [
         'order_id', 'team_specific_link_id', 'link_type', 'client', 'keyword',
         'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
-        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'partnership_check',
+        'estimated_turnaround_days', 'link_builder', 'pen_name', 'partnership', 'niche', 'partnership_check',
         'article_title', 'article', 'status', 'live_link', 'live_link_date',
         'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula',
         'current_poc', 'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
@@ -113,10 +114,19 @@ class LinkBuildingOrdersDashboardController extends Controller
      * per row, so bulk-assigning it across multiple selected rows is not safe.
      * Admins edit order_id individually via the single-row update endpoint.
      */
+    /** Cache lock held while batchStore() hands out a block of BL-{n} order ids. */
+    private const ORDER_ID_SEQUENCE_LOCK = 'link-building-orders:order-id-sequence';
+
+    /** Upper bound of rows one batchUpdateCells() request may touch. */
+    private const BATCH_UPDATE_CELLS_MAX_ROWS = 1000;
+
+    /** Batch fields holding a user id, where a cleared cell ("") must be stored as null. */
+    private const BATCH_USER_ID_FIELDS = ['assigned_admin_user_id', 'user_id'];
+
     private const ALLOWED_BATCH_FIELDS = [
         'status', 'link_type', 'client', 'keyword', 'landing_page', 'exact_match',
         'notes', 'internal_notes', 'team_specific_link_id', 'pen_name',
-        'partnership', 'partnership_check', 'article_title', 'article',
+        'partnership', 'niche', 'partnership_check', 'article_title', 'article',
         'live_link', 'live_link_date', 'dr_lbs', 'posting_fee_lbs',
         'current_traffic', 'dr_formula', 'current_poc', 'current_price',
         'lb_tl_approval', 'approval_date', 'final_price', 'currency',
@@ -252,20 +262,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         // Always generate a server-side BL-{n} order_id regardless of any client value.
         $data['order_id'] = $this->generateNextOrderId();
 
-        if (empty($data['request_date'])) {
-            $data['request_date'] = Carbon::today()->format('m/d/Y');
-        }
-
-        if (empty($data['estimated_delivery_date'])) {
-            try {
-                $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
-            } catch (\Exception) {
-                $base_date = Carbon::today();
-            }
-            $data['estimated_delivery_date'] = $base_date->addDays(30)->format('m/d/Y');
-        }
-
-        $placement  = LinkBuildingOrderPlacement::create($data);
+        $placement  = LinkBuildingOrderPlacement::create($this->withDefaultDates($data));
         $session_id = $request->header('X-Session-ID');
 
         broadcast(new LinkBuildingOrderCreated($placement, $session_id));
@@ -300,13 +297,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
 
-        if ($fresh->status !== $old_status) {
-            if ($fresh->order_item_id) {
-                $this->syncParentOrderStatus($fresh);
-            } elseif ($fresh->user_id) {
-                $this->notifyAssignedUser($fresh, $old_status);
-            }
-        }
+        $this->handleStatusChange($fresh, $old_status);
 
         return response()->json([
             'message' => 'Link building order updated successfully.',
@@ -329,11 +320,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $row_ids = (array) ($request->input('row_ids') ?? []);
         $updates = (array) ($request->input('updates') ?? []);
 
-        $safe_updates = array_filter(
-            $updates,
-            fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
-            ARRAY_FILTER_USE_KEY
-        );
+        $safe_updates = $this->normalizeBatchFields($updates);
 
         if (empty($row_ids) || empty($safe_updates)) {
             return response()->json(['message' => 'Nothing to update.'], 422);
@@ -343,8 +330,11 @@ class LinkBuildingOrdersDashboardController extends Controller
         $session_id = $request->header('X-Session-ID');
 
         foreach ($placements as $placement) {
+            $old_status = $placement->status;
             $placement->update($safe_updates);
-            broadcast(new LinkBuildingOrderUpdated($placement->fresh(), $session_id));
+            $fresh = $placement->fresh();
+            broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+            $this->handleStatusChange($fresh, $old_status);
         }
 
         return response()->json([
@@ -361,6 +351,10 @@ class LinkBuildingOrdersDashboardController extends Controller
      * different combination of column values in a single request. Unlike batchUpdate()
      * (one field applied to many rows), this is addressed per row.
      *
+     * Like a single cell edit, a pasted Status that changes a row syncs the parent
+     * order status and queues the client email, so pasting statuses in bulk has the
+     * same effect as picking them one cell at a time.
+     *
      * Request body:
      *   updates : Array<{ id: string, fields: Record<string, string|null> }>
      */
@@ -372,43 +366,46 @@ class LinkBuildingOrdersDashboardController extends Controller
             return response()->json(['message' => 'Nothing to update.'], 422);
         }
 
-        $session_id          = $request->header('X-Session-ID');
-        $updated_placements  = [];
+        if (count($updates) > self::BATCH_UPDATE_CELLS_MAX_ROWS) {
+            return response()->json([
+                'message' => 'A single paste can update at most ' . self::BATCH_UPDATE_CELLS_MAX_ROWS . ' rows.',
+            ], 422);
+        }
+
+        $requested_ids = array_filter(array_map(
+            fn ($update) => is_array($update) ? ($update['id'] ?? null) : null,
+            $updates
+        ));
+
+        $placements_by_id   = LinkBuildingOrderPlacement::whereIn('id', $requested_ids)->get()->keyBy('id');
+        $session_id         = $request->header('X-Session-ID');
+        $updated_placements = [];
 
         foreach ($updates as $update) {
-            $id     = $update['id'] ?? null;
-            $fields = (array) ($update['fields'] ?? []);
+            $id     = is_array($update) ? ($update['id'] ?? null) : null;
+            $fields = is_array($update) ? (array) ($update['fields'] ?? []) : [];
 
             if (! $id || empty($fields)) {
                 continue;
             }
 
-            $safe_fields = array_filter(
-                $fields,
-                fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
-                ARRAY_FILTER_USE_KEY
-            );
+            $safe_fields = $this->normalizeBatchFields($fields);
 
             if (empty($safe_fields)) {
                 continue;
             }
 
-            // exact_match is a non-nullable boolean column, while the dashboard sends
-            // its "Yes"/"No" display text (or null when a cell is cleared with Delete).
-            // Same rule as Store/UpdateLinkBuildingOrderRequest: only "Yes" is true.
-            if (array_key_exists('exact_match', $safe_fields)) {
-                $safe_fields['exact_match'] = $safe_fields['exact_match'] === 'Yes';
-            }
-
-            $placement = LinkBuildingOrderPlacement::find($id);
+            $placement = $placements_by_id->get($id);
 
             if (! $placement) {
                 continue;
             }
 
+            $old_status = $placement->status;
             $placement->update($safe_fields);
             $fresh = $placement->fresh();
             broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+            $this->handleStatusChange($fresh, $old_status);
             $updated_placements[] = $fresh->toApiArray();
         }
 
@@ -417,6 +414,53 @@ class LinkBuildingOrdersDashboardController extends Controller
             'updated_count' => count($updated_placements),
             'data'          => $updated_placements,
         ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/batch-store
+     *
+     * Creates a block of new orders in one request, for example several rows copied
+     * from the BASE link sheet and pasted into the dashboard's draft rows. The rows
+     * are created in a single transaction, in the order they were sent, so each one
+     * gets the next BL-{n} order id without two parallel requests racing for the same
+     * number, and either every row is saved or none is.
+     *
+     * Request body:
+     *   rows : Array<Record<string, string|null>>  same fields as store()
+     *
+     * Response:
+     *   data : rows in the same order as the request
+     */
+    public function batchStore(BatchStoreLinkBuildingOrdersRequest $request): JsonResponse
+    {
+        $rows = $request->validatedRows();
+
+        // The lock serializes concurrent batches on the BL-{n} sequence, a MAX()
+        // read inside a transaction alone would let two batches pick the same numbers.
+        $placements = Cache::lock(self::ORDER_ID_SEQUENCE_LOCK, 30)->block(10, function () use ($rows) {
+            return DB::transaction(function () use ($rows) {
+                $next_number = (int) substr(LinkBuildingOrderPlacement::generateNextOrderId(), 3);
+                $created     = [];
+
+                foreach ($rows as $data) {
+                    $data['order_id'] = 'BL-' . $next_number++;
+                    $created[]        = LinkBuildingOrderPlacement::create($this->withDefaultDates($data));
+                }
+
+                return $created;
+            });
+        });
+
+        $session_id = $request->header('X-Session-ID');
+
+        foreach ($placements as $placement) {
+            broadcast(new LinkBuildingOrderCreated($placement, $session_id));
+        }
+
+        return response()->json([
+            'message' => count($placements) . ' link building order(s) created successfully.',
+            'data'    => array_map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray(), $placements),
+        ], 201);
     }
 
     /**
@@ -993,7 +1037,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'order_id', 'status', 'team_specific_link_id', 'link_type', 'client', 'keyword',
             'landing_page', 'exact_match', 'notes', 'internal_notes', 'request_date', 'estimated_delivery_date',
             'estimated_turnaround_days', 'days_left', 'projected_health', 'link_builder',
-            'pen_name', 'partnership', 'partnership_check', 'article_title', 'article', 'live_link', 'live_link_date',
+            'pen_name', 'partnership', 'niche', 'partnership_check', 'article_title', 'article', 'live_link', 'live_link_date',
             'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
             'current_price', 'lb_tl_approval', 'approval_date', 'final_price', 'currency',
         ];
@@ -1178,6 +1222,75 @@ class LinkBuildingOrdersDashboardController extends Controller
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**
+     * Fills the Request Date with today and the Delivery Date with 30 days after the
+     * Request Date when a new order leaves them empty.
+     */
+    private function withDefaultDates(array $data): array
+    {
+        if (empty($data['request_date'])) {
+            $data['request_date'] = Carbon::today()->format('m/d/Y');
+        }
+
+        if (empty($data['estimated_delivery_date'])) {
+            try {
+                $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
+            } catch (\Exception) {
+                $base_date = Carbon::today();
+            }
+            $data['estimated_delivery_date'] = $base_date->addDays(30)->format('m/d/Y');
+        }
+
+        return $data;
+    }
+
+    /**
+     * Whitelisted, storage ready values for one row of a batch update: unknown
+     * fields are dropped, the "Yes"/"No" Exact Match text becomes a boolean and a
+     * cleared assignment cell becomes null.
+     */
+    private function normalizeBatchFields(array $fields): array
+    {
+        $safe_fields = array_filter(
+            $fields,
+            fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        // exact_match is a non-nullable boolean column, while the dashboard sends
+        // its "Yes"/"No" display text (or null when a cell is cleared with Delete).
+        // Same rule as Store/UpdateLinkBuildingOrderRequest: only "Yes" is true.
+        if (array_key_exists('exact_match', $safe_fields)) {
+            $safe_fields['exact_match'] = $safe_fields['exact_match'] === 'Yes';
+        }
+
+        foreach (self::BATCH_USER_ID_FIELDS as $user_field) {
+            if (array_key_exists($user_field, $safe_fields) && blank($safe_fields[$user_field])) {
+                $safe_fields[$user_field] = null;
+            }
+        }
+
+        return $safe_fields;
+    }
+
+    /**
+     * Runs the side effects of a Status change on a saved placement: a client
+     * purchased placement syncs its parent order status, a placement assigned to a
+     * client account emails that client. Does nothing when the status is unchanged.
+     */
+    private function handleStatusChange(LinkBuildingOrderPlacement $placement, ?string $old_status): void
+    {
+        if ($placement->status === $old_status) {
+            return;
+        }
+
+        if ($placement->order_item_id) {
+            $this->syncParentOrderStatus($placement);
+        } elseif ($placement->user_id) {
+            $this->notifyAssignedUser($placement, (string) $old_status);
+        }
+    }
+
+    /**
      * Generates the next sequential order ID in the BL-{n} format.
      * Delegates to the model so cart checkout and dashboard creation share the same sequence.
      */
@@ -1348,7 +1461,8 @@ class LinkBuildingOrdersDashboardController extends Controller
                 ->orWhere('keyword', 'like', $like)
                 ->orWhere('link_builder', 'like', $like)
                 ->orWhere('status', 'like', $like)
-                ->orWhere('partnership', 'like', $like);
+                ->orWhere('partnership', 'like', $like)
+                ->orWhere('niche', 'like', $like);
 
             // Also match the derived Company name (see applyCompanyFilter) so the
             // global search surfaces client-purchased / admin-assigned rows whose

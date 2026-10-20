@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use App\Models\LinkBuildingDomain;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -428,6 +429,8 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return [0, 0, 0, $chunk_skipped];
         }
 
+        $rows = $this->withPartnershipNiches($rows);
+
         // Exclude id, order_id, and created_at from the ON DUPLICATE KEY UPDATE clause.
         // All rows now have identical column shapes (id and created_at are always set),
         // so the upsert can be expressed as a single bulk statement without fallback.
@@ -689,5 +692,35 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             'errors'          => array_slice($errors, 0, 50),
             'skipped_records' => array_slice($skipped_records, 0, 100),
         ], now()->addHours(2));
+    }
+
+    /**
+     * Sets each row's Niche from the domain catalog, the same lookup the placement
+     * model runs when a Partnership is saved, which these bulk queries bypass. One
+     * catalog query per chunk. Rows of a CSV without a Partnership column are left
+     * as they are, so their Niche is not touched.
+     */
+    private function withPartnershipNiches(array $rows): array
+    {
+        if (! array_key_exists('partnership', $rows[0])) {
+            return $rows;
+        }
+
+        $domains = array_values(array_unique(array_filter(array_map(
+            fn (array $row) => LinkBuildingDomain::normalizeDomain($row['partnership'] ?? null),
+            $rows
+        ))));
+
+        $niches_by_domain = empty($domains)
+            ? collect()
+            : LinkBuildingDomain::whereIn('domain', $domains)->whereNotNull('niche')->pluck('niche', 'domain');
+
+        foreach ($rows as &$row) {
+            $domain       = LinkBuildingDomain::normalizeDomain($row['partnership'] ?? null);
+            $row['niche'] = $domain !== null ? ($niches_by_domain[$domain] ?? null) : null;
+        }
+        unset($row);
+
+        return $rows;
     }
 }

@@ -16,33 +16,52 @@ class StoreLinkBuildingOrderRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        $url_fields = ['landing_page', 'live_link', 'partnership'];
-
-        $normalized = [];
-        foreach ($url_fields as $field) {
-            if (! $this->has($field)) {
-                continue;
-            }
-
-            $value = $this->input($field);
-
-            if ($value === '' || $value === null) {
-                $normalized[$field] = null;
-            } elseif (! preg_match('#^https?://#i', $value)) {
-                $normalized[$field] = 'https://' . $value;
-            }
-        }
-
-        if ($this->has('exact_match')) {
-            $normalized['exact_match'] = $this->input('exact_match') === 'Yes';
-        }
+        $normalized = static::normalizeRowInput($this->all());
 
         if (! empty($normalized)) {
             $this->merge($normalized);
         }
     }
 
+    /**
+     * Normalized values for one order row: URL fields get an https:// prefix (or
+     * become null when blank) and exact_match "Yes"/"No" becomes a boolean. Only the
+     * keys that need a new value are returned. Shared with
+     * BatchStoreLinkBuildingOrdersRequest, which applies it to every pasted row.
+     */
+    public static function normalizeRowInput(array $row): array
+    {
+        $url_fields = ['landing_page', 'live_link', 'partnership'];
+
+        $normalized = [];
+        foreach ($url_fields as $field) {
+            if (! array_key_exists($field, $row)) {
+                continue;
+            }
+
+            $value = $row[$field];
+
+            if ($value === '' || $value === null) {
+                $normalized[$field] = null;
+            } elseif (is_string($value) && ! preg_match('#^https?://#i', $value)) {
+                $normalized[$field] = 'https://' . $value;
+            }
+        }
+
+        if (array_key_exists('exact_match', $row)) {
+            $normalized['exact_match'] = $row['exact_match'] === 'Yes';
+        }
+
+        return $normalized;
+    }
+
     public function rules(): array
+    {
+        return static::rowRules();
+    }
+
+    /** Validation rules for one order row, shared with BatchStoreLinkBuildingOrdersRequest. */
+    public static function rowRules(): array
     {
         return [
             'order_id'                  => 'nullable|string|max:50',
@@ -61,6 +80,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',
             'partnership'               => 'nullable|url|max:2000',
+            'niche'                     => 'nullable|string|max:255',
             'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|string|max:2000',

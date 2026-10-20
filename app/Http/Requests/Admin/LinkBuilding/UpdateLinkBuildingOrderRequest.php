@@ -88,6 +88,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',
             'partnership'               => 'nullable|url|max:2000',
+            'niche'                     => 'nullable|string|max:255',
             'partnership_check'         => 'nullable|string|in:Approved,Not Approved,Ready,Rejected,Scheduled',
             'article_title'             => 'nullable|string|max:500',
             'article'                   => 'nullable|string|max:2000',

@@ -16,6 +16,7 @@ class DatabaseSeeder extends Seeder
         $this->call(RolePermissionSeeder::class);
         $this->call(ResourcePermissionsSeeder::class);
         $this->call(DrTierSeeder::class);
+        $this->call(LinkBuildingDomainNicheSeeder::class);
         $this->call(ContentRefreshTierSeeder::class);
         $this->call(SmeAuthoredTierSeeder::class);
         $this->call(SmeCollaborationTierSeeder::class);

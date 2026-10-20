@@ -37,6 +37,8 @@ class LinkBuildingOrderPlacement extends Model
         'link_builder',
         'pen_name',
         'partnership',
+        // Niche of the partnership domain, filled from link_building_domains
+        'niche',
         'partnership_check',
         'article_title',
         'article',
@@ -68,6 +70,29 @@ class LinkBuildingOrderPlacement extends Model
             'dr'             => 'integer',
             'completed_date' => 'datetime',
         ];
+    }
+
+    /**
+     * Keeps the Niche of an order in sync with its Partnership domain, like a lookup
+     * column in the BASE link sheet:
+     *  - Changing the Partnership (without also setting a Niche) fills the Niche with
+     *    the niche saved for the new domain, or clears it when the domain has none.
+     *  - Setting a Niche saves it for the Partnership domain, so the next order that
+     *    uses that domain gets it automatically.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (LinkBuildingOrderPlacement $placement) {
+            if ($placement->isDirty('niche')) {
+                LinkBuildingDomain::rememberNiche($placement->partnership, $placement->niche);
+
+                return;
+            }
+
+            if ($placement->isDirty('partnership')) {
+                $placement->niche = LinkBuildingDomain::nicheFor($placement->partnership);
+            }
+        });
     }
 
     public function orderItem(): BelongsTo
@@ -166,6 +191,7 @@ class LinkBuildingOrderPlacement extends Model
             'link_builder'              => $this->link_builder ?? '',
             'pen_name'                  => $this->pen_name ?? '',
             'partnership'               => $this->partnership ?? '',
+            'niche'                     => $this->niche ?? '',
             'partnership_check'         => $this->partnership_check ?? '',
             'article_title'             => $this->article_title ?? '',
             'article'                   => $this->article ?? '',

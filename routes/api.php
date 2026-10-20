@@ -14,6 +14,7 @@ use App\Http\Controllers\Admin\Transaction\AdminTransactionController;
 use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountController;
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingDomainController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSavedFilterController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderFilterPreferenceController;
@@ -518,6 +519,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/link-building-orders/assignable-users',         [LinkBuildingOrdersDashboardController::class, 'assignableUsers']);
             Route::get('/link-building-orders/assignable-clients',       [LinkBuildingOrdersDashboardController::class, 'assignableClients']);
             Route::get('/link-building-orders/pen-names',                [LinkBuildingOrdersDashboardController::class, 'penNames']);
+            Route::get('/link-building-orders/niches',                   [LinkBuildingDomainController::class, 'niches']);
+            Route::get('/link-building-orders/partnership-domains',      [LinkBuildingDomainController::class, 'partnershipDomains']);
             Route::get('/link-building-orders/needs-approval-count',     [LinkBuildingOrdersDashboardController::class, 'needsApprovalCount']);
             Route::post('/link-building-orders/status-counts',           [LinkBuildingOrdersDashboardController::class, 'statusCounts']);
             Route::post('/link-building-orders/search',                  [LinkBuildingOrdersDashboardController::class, 'search']);
@@ -525,6 +528,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/export',                  [LinkBuildingOrdersDashboardController::class, 'export']);
             Route::post('/link-building-orders/batch-update',            [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);
             Route::post('/link-building-orders/batch-update-cells',      [LinkBuildingOrdersDashboardController::class, 'batchUpdateCells']);
+            Route::post('/link-building-orders/batch-store',             [LinkBuildingOrdersDashboardController::class, 'batchStore']);
             Route::post('/link-building-orders/column-values',           [LinkBuildingOrdersDashboardController::class, 'columnValues']);
             Route::post('/link-building-orders/filter-values',           [LinkBuildingOrdersDashboardController::class, 'filterValues']);
             Route::post('/link-building-orders/quick-filter-values',     [LinkBuildingOrdersDashboardController::class, 'quickFilterValues']);

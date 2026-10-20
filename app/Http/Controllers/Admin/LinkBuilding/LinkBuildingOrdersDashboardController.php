@@ -12,12 +12,14 @@ use App\Jobs\ProcessLinkBuildingImportJob;
 use App\Jobs\ProcessLinkBuildingMetricsImportJob;
 use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderItem;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -56,6 +58,28 @@ class LinkBuildingOrdersDashboardController extends Controller
     ];
 
     /**
+     * Columns whose values are numbers (or prices such as "$150.00"), so the
+     * "Filter by values" list orders them numerically instead of alphabetically.
+     */
+    private const NUMERIC_COLUMNS = [
+        'estimated_turnaround_days', 'dr_lbs', 'posting_fee_lbs', 'current_traffic',
+        'dr_formula', 'current_price', 'final_price',
+    ];
+
+    /** Operators accepted by the spreadsheet style "Filter by condition" column filter. */
+    private const CONDITION_OPERATORS = [
+        'is_empty', 'is_not_empty',
+        'text_contains', 'text_not_contains', 'text_starts_with', 'text_ends_with', 'text_is_exactly',
+        'date_is', 'date_is_before', 'date_is_after',
+        'greater_than', 'greater_than_or_equal', 'less_than', 'less_than_or_equal',
+        'is_equal_to', 'is_not_equal_to', 'is_between', 'is_not_between',
+    ];
+
+    /** Default and maximum number of distinct values returned by filterValues(). */
+    private const FILTER_VALUES_DEFAULT_LIMIT = 500;
+    private const FILTER_VALUES_MAX_LIMIT     = 1000;
+
+    /**
      * Columns that may be written by the batch-update endpoints (batchUpdate and
      * batchUpdateCells). order_id is intentionally excluded — it must stay unique
      * per row, so bulk-assigning it across multiple selected rows is not safe.
@@ -80,32 +104,14 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function search(Request $request): JsonResponse
     {
-        $page              = max(1, (int) $request->input('page', 1));
-        $per_page          = min((int) $request->input('per_page', 50), 500);
-        $search            = $request->input('search');
-        $status            = $request->input('status');
-        $link_type         = $request->input('link_type');
-        $client            = $request->input('client');
-        $link_builder      = $request->input('link_builder');
-        $client_user_id    = $request->input('client_user_id');
-        $assigned_user_id  = $request->input('assigned_user_id');
-        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
-        $sort_rules        = $request->input('sort_rules', []);
-        $column_filters    = $request->input('column_filters', []);
+        $page       = max(1, (int) $request->input('page', 1));
+        $per_page   = min((int) $request->input('per_page', 50), 500);
+        $sort_rules = $request->input('sort_rules', []);
 
-        // Include all visible placements: admin-created (order_id), client-purchased
-        // (order_item_id), or admin-assigned to a client (user_id).
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
-            ->where(function ($q) {
-                $q->whereNotNull('order_id')
-                  ->orWhereNotNull('order_item_id')
-                  ->orWhereNotNull('user_id');
-            });
+        $query = $this->dashboardQuery()
+            ->with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser']);
 
-        $this->applyGlobalSearch($query, $search);
-        $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
-        $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
-        $this->applyColumnFilters($query, $column_filters);
+        $this->applyRequestFilters($query, $request);
         $this->applySortRules($query, $sort_rules);
 
         $paginated = $query->paginate($per_page, ['*'], 'page', $page);
@@ -318,32 +324,16 @@ class LinkBuildingOrdersDashboardController extends Controller
             return response()->json(['message' => 'Invalid column.'], 422);
         }
 
-        $row_ids           = (array) ($request->input('row_ids') ?? []);
-        $search            = $request->input('search');
-        $status            = $request->input('status');
-        $link_type         = $request->input('link_type');
-        $client            = $request->input('client');
-        $link_builder      = $request->input('link_builder');
-        $client_user_id    = $request->input('client_user_id');
-        $assigned_user_id  = $request->input('assigned_user_id');
-        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
-        $sort_rules        = $request->input('sort_rules', []);
-        $column_filters    = $request->input('column_filters', []);
+        $row_ids    = (array) ($request->input('row_ids') ?? []);
+        $sort_rules = $request->input('sort_rules', []);
 
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
-            ->where(function ($q) {
-                $q->whereNotNull('order_id')
-                  ->orWhereNotNull('order_item_id')
-                  ->orWhereNotNull('user_id');
-            });
+        $query = $this->dashboardQuery()
+            ->with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser']);
 
         if (! empty($row_ids)) {
             $query->whereIn('id', $row_ids);
         } else {
-            $this->applyGlobalSearch($query, $search);
-            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
-            $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
-            $this->applyColumnFilters($query, $column_filters);
+            $this->applyRequestFilters($query, $request);
             $this->applySortRules($query, $sort_rules);
         }
 
@@ -358,6 +348,76 @@ class LinkBuildingOrdersDashboardController extends Controller
         return response()->json([
             'data'  => $values,
             'count' => $values->count(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/filter-values
+     *
+     * Returns the distinct values of a single column, with how many rows hold each
+     * one, to power the spreadsheet style "Filter by values" checklist on the
+     * dashboard. Mirrors Google Sheets: the list honors every other active filter
+     * (search, quick filters and the other columns' filters) but ignores the
+     * requested column's own filter, so values hidden by it can be checked again.
+     *
+     * Request body:
+     *   column       : string   must be one of FILTERABLE_COLUMNS
+     *   value_search : string   optional, narrows the list to values containing it
+     *   limit        : int      optional, max distinct values returned (default 500, max 1000)
+     *   ...          : same filter parameters accepted by search()/export()
+     */
+    public function filterValues(Request $request): JsonResponse
+    {
+        $column = (string) $request->input('column', '');
+
+        if (! in_array($column, self::FILTERABLE_COLUMNS, true)) {
+            return response()->json(['message' => 'Invalid column.'], 422);
+        }
+
+        $value_search = trim((string) $request->input('value_search', ''));
+        $limit        = (int) $request->input('limit', self::FILTER_VALUES_DEFAULT_LIMIT);
+        $limit        = min(max($limit, 1), self::FILTER_VALUES_MAX_LIMIT);
+        $expression   = "TRIM({$this->columnExpression($column)})";
+
+        $query = $this->dashboardQuery();
+        $this->applyRequestFilters($query, $request, $column);
+
+        if ($value_search !== '') {
+            $query->whereRaw(
+                "LOWER({$expression}) LIKE ? ESCAPE '!'",
+                ['%' . $this->escapeLike(mb_strtolower($value_search)) . '%']
+            );
+        }
+
+        // The displayed value is computed in a derived table first and grouped by its
+        // plain alias afterwards. Grouping directly by an expression that holds
+        // correlated subqueries (the Company fallback) is rejected by MySQL's
+        // ONLY_FULL_GROUP_BY mode.
+        $column_values = $query->toBase()->selectRaw("{$expression} AS filter_value");
+
+        $grouped = DB::query()
+            ->fromSub($column_values, 'column_values')
+            ->select('filter_value')
+            ->selectRaw('COUNT(*) AS row_count')
+            ->groupBy('filter_value');
+
+        $total_distinct = DB::query()->fromSub($grouped, 'filter_values')->count();
+
+        $values = $grouped
+            ->orderByRaw("CASE WHEN filter_value = '' THEN 0 ELSE 1 END")
+            ->orderByRaw($this->filterValueOrderExpression($column))
+            ->limit($limit)
+            ->get()
+            ->map(fn ($row) => [
+                'value' => (string) $row->filter_value,
+                'count' => (int) $row->row_count,
+            ])
+            ->values();
+
+        return response()->json([
+            'data'           => $values,
+            'total_distinct' => $total_distinct,
+            'has_more'       => $total_distinct > $values->count(),
         ]);
     }
 
@@ -636,33 +696,17 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function export(Request $request): StreamedResponse
     {
-        $row_ids           = (array) ($request->input('row_ids') ?? []);
-        $search            = $request->input('search');
-        $status            = $request->input('status');
-        $link_type         = $request->input('link_type');
-        $client            = $request->input('client');
-        $link_builder      = $request->input('link_builder');
-        $client_user_id    = $request->input('client_user_id');
-        $assigned_user_id  = $request->input('assigned_user_id');
-        $needs_lb_tl_approval = filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN);
-        $sort_rules        = $request->input('sort_rules', []);
-        $column_filters    = $request->input('column_filters', []);
+        $row_ids    = (array) ($request->input('row_ids') ?? []);
+        $sort_rules = $request->input('sort_rules', []);
 
-        $query = LinkBuildingOrderPlacement::with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'])
-            ->where(function ($q) {
-                $q->whereNotNull('order_id')
-                  ->orWhereNotNull('order_item_id')
-                  ->orWhereNotNull('user_id');
-            });
+        $query = $this->dashboardQuery()
+            ->with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser']);
 
         if (! empty($row_ids)) {
             // Export only the explicitly requested rows, preserving their selection order.
             $query->whereIn('id', $row_ids);
         } else {
-            $this->applyGlobalSearch($query, $search);
-            $this->applyQuickFilters($query, $status, $link_type, $client, $link_builder, $client_user_id, $assigned_user_id);
-            $this->applyNeedsLbTlApprovalFilter($query, $needs_lb_tl_approval);
-            $this->applyColumnFilters($query, $column_filters);
+            $this->applyRequestFilters($query, $request);
             $this->applySortRules($query, $sort_rules);
         }
 
@@ -892,6 +936,56 @@ class LinkBuildingOrdersDashboardController extends Controller
         return $count;
     }
 
+    /**
+     * Base query for every dashboard-visible placement: admin-created (order_id),
+     * client-purchased (order_item_id), or admin-assigned to a client (user_id).
+     */
+    private function dashboardQuery()
+    {
+        return LinkBuildingOrderPlacement::query()
+            ->where(function ($q) {
+                $q->whereNotNull('order_id')
+                  ->orWhereNotNull('order_item_id')
+                  ->orWhereNotNull('user_id');
+            });
+    }
+
+    /**
+     * Applies the search, quick filter, approval toggle and column filter parameters
+     * shared by search(), export(), columnValues() and filterValues().
+     *
+     * @param  string|null  $skip_column_filter_key  Column whose own column filters are
+     *                                               ignored, used by filterValues() so a
+     *                                               column's checklist is not narrowed by itself.
+     */
+    private function applyRequestFilters($query, Request $request, ?string $skip_column_filter_key = null): void
+    {
+        $column_filters = (array) $request->input('column_filters', []);
+
+        if ($skip_column_filter_key !== null) {
+            $column_filters = array_filter(
+                $column_filters,
+                fn ($filter) => ! is_array($filter) || ($filter['key'] ?? null) !== $skip_column_filter_key
+            );
+        }
+
+        $this->applyGlobalSearch($query, $request->input('search'));
+        $this->applyQuickFilters(
+            $query,
+            $request->input('status'),
+            $request->input('link_type'),
+            $request->input('client'),
+            $request->input('link_builder'),
+            $request->input('client_user_id'),
+            $request->input('assigned_user_id')
+        );
+        $this->applyNeedsLbTlApprovalFilter(
+            $query,
+            filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN)
+        );
+        $this->applyColumnFilters($query, $column_filters);
+    }
+
     private function applyGlobalSearch($query, ?string $search): void
     {
         if (! filled($search)) {
@@ -995,7 +1089,13 @@ class LinkBuildingOrdersDashboardController extends Controller
 
     private function applyColumnFilters($query, array $column_filters): void
     {
+        // Every filter is ANDed, so filters on different columns (and a condition plus
+        // a values filter on the same column) narrow the result set together.
         foreach ($column_filters as $filter) {
+            if (! is_array($filter)) {
+                continue;
+            }
+
             $key  = $filter['key']  ?? '';
             $type = $filter['type'] ?? '';
 
@@ -1004,13 +1104,246 @@ class LinkBuildingOrdersDashboardController extends Controller
             }
 
             match ($type) {
-                'text'   => $this->applyTextFilter($query, $key, $filter),
-                'select' => $this->applySelectFilter($query, $key, $filter),
-                'number' => $this->applyNumberFilter($query, $key, $filter),
-                'date'   => $this->applyDateFilter($query, $key, $filter),
-                default  => null,
+                'text'      => $this->applyTextFilter($query, $key, $filter),
+                'select'    => $this->applySelectFilter($query, $key, $filter),
+                'number'    => $this->applyNumberFilter($query, $key, $filter),
+                'date'      => $this->applyDateFilter($query, $key, $filter),
+                'values'    => $this->applyValuesFilter($query, $key, $filter),
+                'condition' => $this->applyConditionFilter($query, $key, $filter),
+                default     => null,
             };
         }
+    }
+
+    /**
+     * Spreadsheet style "Filter by values": keeps (include mode) or hides (exclude
+     * mode) the rows whose displayed value is one of the given values. An empty
+     * string stands for "(Blanks)". Exclude mode lets the dashboard express
+     * "everything except these" without sending thousands of checked values.
+     */
+    private function applyValuesFilter($query, string $key, array $filter): void
+    {
+        $mode   = ($filter['mode'] ?? 'include') === 'exclude' ? 'exclude' : 'include';
+        $values = array_values(array_unique(array_map(
+            fn ($v) => trim((string) $v),
+            array_filter((array) ($filter['values'] ?? []), fn ($v) => is_scalar($v) || $v === null)
+        )));
+
+        if (empty($values)) {
+            // Nothing excluded means no restriction; nothing included means no rows.
+            if ($mode === 'include') {
+                $query->whereRaw('1 = 0');
+            }
+
+            return;
+        }
+
+        $expression   = $this->columnExpression($key);
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+        $operator     = $mode === 'include' ? 'IN' : 'NOT IN';
+
+        $query->whereRaw("TRIM({$expression}) {$operator} ({$placeholders})", $values);
+    }
+
+    /**
+     * Spreadsheet style "Filter by condition", e.g. "Text contains", "Date is before"
+     * or "Is between". Conditions run against the displayed value of the column, so
+     * they behave the same as what the admin sees on screen.
+     */
+    private function applyConditionFilter($query, string $key, array $filter): void
+    {
+        $operator = (string) ($filter['operator'] ?? '');
+        $value    = trim((string) ($filter['value'] ?? ''));
+        $value_to = trim((string) ($filter['value_to'] ?? ''));
+
+        if (! in_array($operator, self::CONDITION_OPERATORS, true)) {
+            return;
+        }
+
+        $expression = $this->columnExpression($key);
+
+        if ($operator === 'is_empty') {
+            $query->whereRaw("TRIM({$expression}) = ''");
+
+            return;
+        }
+
+        if ($operator === 'is_not_empty') {
+            $query->whereRaw("TRIM({$expression}) <> ''");
+
+            return;
+        }
+
+        // Every remaining operator needs a value to compare against.
+        if ($value === '') {
+            return;
+        }
+
+        if (str_starts_with($operator, 'text_')) {
+            $lower_expression = "LOWER(TRIM({$expression}))";
+            $escaped_value    = $this->escapeLike(mb_strtolower($value));
+
+            match ($operator) {
+                'text_contains'     => $query->whereRaw("{$lower_expression} LIKE ? ESCAPE '!'", ['%' . $escaped_value . '%']),
+                'text_not_contains' => $query->whereRaw("{$lower_expression} NOT LIKE ? ESCAPE '!'", ['%' . $escaped_value . '%']),
+                'text_starts_with'  => $query->whereRaw("{$lower_expression} LIKE ? ESCAPE '!'", [$escaped_value . '%']),
+                'text_ends_with'    => $query->whereRaw("{$lower_expression} LIKE ? ESCAPE '!'", ['%' . $escaped_value]),
+                'text_is_exactly'   => $query->whereRaw("{$lower_expression} = ?", [mb_strtolower($value)]),
+            };
+
+            return;
+        }
+
+        if (str_starts_with($operator, 'date_')) {
+            $date = $this->parseFilterDate($value);
+
+            if ($date === null) {
+                return;
+            }
+
+            $sql_operator = match ($operator) {
+                'date_is'        => '=',
+                'date_is_before' => '<',
+                'date_is_after'  => '>',
+            };
+
+            $query->whereRaw("{$this->dateExpression($expression)} {$sql_operator} ?", [$date]);
+
+            return;
+        }
+
+        // Numeric operators: the value (and value_to for ranges) must be numeric.
+        if (! is_numeric($value)) {
+            return;
+        }
+
+        $numeric_expression = $this->numericExpression($expression);
+
+        if (in_array($operator, ['is_between', 'is_not_between'], true)) {
+            if (! is_numeric($value_to)) {
+                return;
+            }
+
+            $bounds = [min((float) $value, (float) $value_to), max((float) $value, (float) $value_to)];
+
+            $operator === 'is_between'
+                ? $query->whereRaw("{$numeric_expression} BETWEEN ? AND ?", $bounds)
+                : $query->whereRaw("{$numeric_expression} NOT BETWEEN ? AND ?", $bounds);
+
+            return;
+        }
+
+        $sql_operator = match ($operator) {
+            'greater_than'          => '>',
+            'greater_than_or_equal' => '>=',
+            'less_than'             => '<',
+            'less_than_or_equal'    => '<=',
+            'is_equal_to'           => '=',
+            'is_not_equal_to'       => '<>',
+        };
+
+        $query->whereRaw("{$numeric_expression} {$sql_operator} ?", [(float) $value]);
+    }
+
+    /**
+     * SQL expression that yields the value a column displays on the dashboard, the
+     * same fallbacks LinkBuildingOrderPlacement::toApiArray() applies in PHP, so the
+     * "Filter by values" list and the conditions match what the admin sees.
+     */
+    private function columnExpression(string $key): string
+    {
+        $column = $this->wrapPlacementColumn($key);
+
+        return match ($key) {
+            'client'      => $this->companyExpression(),
+            'order_id'    => "COALESCE(NULLIF({$column}, ''), CONCAT('BL-', UPPER(SUBSTR(REPLACE({$this->wrapPlacementColumn('id')}, '-', ''), 1, 10))))",
+            'exact_match' => "CASE WHEN {$column} = 1 THEN 'Yes' ELSE 'No' END",
+            'status'      => "COALESCE({$column}, 'New Request')",
+            'currency'    => "COALESCE({$column}, 'USD')",
+            default       => "COALESCE({$column}, '')",
+        };
+    }
+
+    /**
+     * Company shown on the dashboard: the raw `client` column, or, when it is empty,
+     * the company of the purchase order's user, then the directly assigned user.
+     */
+    private function companyExpression(): string
+    {
+        $grammar        = DB::connection()->getQueryGrammar();
+        $users          = $grammar->wrapTable((new User())->getTable());
+        $orders         = $grammar->wrapTable((new LinkBuildingOrder())->getTable());
+        $items          = $grammar->wrapTable((new LinkBuildingOrderItem())->getTable());
+        $client         = $this->wrapPlacementColumn('client');
+        $order_item_id  = $this->wrapPlacementColumn('order_item_id');
+        $user_id        = $this->wrapPlacementColumn('user_id');
+
+        $purchase_company = "(SELECT purchase_user.company FROM {$users} purchase_user"
+            . " INNER JOIN {$orders} purchase_order ON purchase_order.user_id = purchase_user.id"
+            . " INNER JOIN {$items} purchase_item ON purchase_item.order_id = purchase_order.id"
+            . " WHERE purchase_item.id = {$order_item_id} LIMIT 1)";
+
+        $assigned_company = "(SELECT assigned_user.company FROM {$users} assigned_user"
+            . " WHERE assigned_user.id = {$user_id} LIMIT 1)";
+
+        return "COALESCE(NULLIF({$client}, ''), NULLIF(TRIM({$purchase_company}), ''), NULLIF(TRIM({$assigned_company}), ''), '')";
+    }
+
+    /** Converts a displayed value to a number, ignoring currency symbols and thousands separators. */
+    private function numericExpression(string $expression): string
+    {
+        return "CAST(NULLIF(REPLACE(REPLACE(REPLACE(TRIM({$expression}), '$', ''), '€', ''), ',', ''), '') AS DECIMAL(20,4))";
+    }
+
+    /** Converts an MM/DD/YYYY displayed value to a comparable date. */
+    private function dateExpression(string $expression): string
+    {
+        return "STR_TO_DATE(NULLIF(TRIM({$expression}), ''), '%m/%d/%Y')";
+    }
+
+    /** ORDER BY clause for the wrapped filter_values subquery used by filterValues(). */
+    private function filterValueOrderExpression(string $key): string
+    {
+        if (in_array($key, self::DATE_COLUMNS, true)) {
+            return "{$this->dateExpression('filter_value')} ASC";
+        }
+
+        if (in_array($key, self::NUMERIC_COLUMNS, true)) {
+            return "{$this->numericExpression('filter_value')} ASC";
+        }
+
+        return 'LOWER(filter_value) ASC';
+    }
+
+    /** Accepts YYYY-MM-DD (native date input) or MM/DD/YYYY and returns YYYY-MM-DD. */
+    private function parseFilterDate(string $value): ?string
+    {
+        foreach (['!Y-m-d', '!m/d/Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $value);
+            } catch (\Exception) {
+                continue;
+            }
+
+            if ($date !== false && $date->format(ltrim($format, '!')) === $value) {
+                return $date->toDateString();
+            }
+        }
+
+        return null;
+    }
+
+    /** Escapes LIKE wildcards using "!" as the escape character, which is portable across drivers. */
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
+    }
+
+    private function wrapPlacementColumn(string $column): string
+    {
+        $table = (new LinkBuildingOrderPlacement())->getTable();
+
+        return DB::connection()->getQueryGrammar()->wrap("{$table}.{$column}");
     }
 
     private function applyTextFilter($query, string $key, array $filter): void

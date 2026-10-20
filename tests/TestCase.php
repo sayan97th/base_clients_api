@@ -40,6 +40,13 @@ abstract class TestCase extends BaseTestCase
                 2
             );
 
+            // CONCAT: SQLite only ships it from 3.44, register it so older builds behave like MySQL.
+            $pdo->sqliteCreateFunction(
+                'CONCAT',
+                fn (...$parts) => in_array(null, $parts, true) ? null : implode('', $parts),
+                -1
+            );
+
             // REGEXP_SUBSTR: extracts the first substring matching a pattern.
             // Used to pull the trailing numeric part from BL-{n} order IDs for natural sort.
             $pdo->sqliteCreateFunction(

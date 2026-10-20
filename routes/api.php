@@ -521,6 +521,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/batch-update',            [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);
             Route::post('/link-building-orders/batch-update-cells',      [LinkBuildingOrdersDashboardController::class, 'batchUpdateCells']);
             Route::post('/link-building-orders/column-values',           [LinkBuildingOrdersDashboardController::class, 'columnValues']);
+            Route::post('/link-building-orders/filter-values',           [LinkBuildingOrdersDashboardController::class, 'filterValues']);
             Route::post('/link-building-orders/import',                  [LinkBuildingOrdersDashboardController::class, 'import']);
             Route::post('/link-building-orders/metrics-import',          [LinkBuildingOrdersDashboardController::class, 'metricsImport']);
             Route::get('/link-building-orders/import-status/{import_id}',[LinkBuildingOrdersDashboardController::class, 'importStatus']);

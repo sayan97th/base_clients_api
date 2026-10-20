@@ -1365,4 +1365,192 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $ids = collect($response->json('data'))->pluck('id')->all();
         $this->assertContains($staff->id, $ids);
     }
+
+
+    // ─── Spreadsheet style column filters (values + condition) ───────────────
+
+    private function searchOrderIds(array $body): array
+    {
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', $body)
+            ->assertStatus(200);
+
+        $ids = collect($response->json('data'))->pluck('order_id')->all();
+        sort($ids);
+
+        return $ids;
+    }
+
+    public function test_values_filter_keeps_rows_matching_any_of_several_checked_values(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1001', 'landing_page' => 'https://mather.com/a']);
+        $this->adminPlacement(['order_id' => 'BL-1002', 'landing_page' => 'https://mather.com/b']);
+        $this->adminPlacement(['order_id' => 'BL-1003', 'landing_page' => 'https://other.com']);
+
+        $ids = $this->searchOrderIds([
+            'column_filters' => [[
+                'key'    => 'landing_page',
+                'type'   => 'values',
+                'mode'   => 'include',
+                'values' => ['https://mather.com/a', 'https://mather.com/b'],
+            ]],
+        ]);
+
+        $this->assertSame(['BL-1001', 'BL-1002'], $ids);
+    }
+
+    public function test_values_filter_exclude_mode_hides_only_unchecked_values_including_blanks(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1101', 'pen_name' => 'Alice']);
+        $this->adminPlacement(['order_id' => 'BL-1102', 'pen_name' => 'Bob']);
+        $this->adminPlacement(['order_id' => 'BL-1103', 'pen_name' => null]);
+
+        $ids = $this->searchOrderIds([
+            'column_filters' => [[
+                'key'    => 'pen_name',
+                'type'   => 'values',
+                'mode'   => 'exclude',
+                'values' => ['Bob', ''],
+            ]],
+        ]);
+
+        $this->assertSame(['BL-1101'], $ids);
+    }
+
+    public function test_values_filter_matches_the_derived_company_name(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1201', 'client' => 'Mather']);
+        LinkBuildingOrderPlacement::create([
+            'user_id'      => $this->client->id,
+            'order_id'     => 'BL-1202',
+            'keyword'      => 'derived company',
+            'landing_page' => 'https://acme.com',
+            'status'       => 'New Request',
+        ]);
+
+        $ids = $this->searchOrderIds([
+            'column_filters' => [['key' => 'client', 'type' => 'values', 'mode' => 'include', 'values' => ['Acme Corp']]],
+        ]);
+
+        $this->assertSame(['BL-1202'], $ids);
+    }
+
+    public function test_filters_on_different_columns_are_combined(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1301', 'client' => 'Mather', 'link_type' => 'DR 30+ External']);
+        $this->adminPlacement(['order_id' => 'BL-1302', 'client' => 'Mather', 'link_type' => 'DR 50+ External']);
+        $this->adminPlacement(['order_id' => 'BL-1303', 'client' => 'Other', 'link_type' => 'DR 30+ External']);
+
+        $ids = $this->searchOrderIds([
+            'column_filters' => [
+                ['key' => 'client', 'type' => 'values', 'mode' => 'include', 'values' => ['Mather']],
+                ['key' => 'link_type', 'type' => 'condition', 'operator' => 'text_contains', 'value' => '30+'],
+            ],
+        ]);
+
+        $this->assertSame(['BL-1301'], $ids);
+    }
+
+    public function test_condition_filter_supports_text_empty_number_and_date_operators(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1401', 'keyword' => 'Senior Living Guide', 'dr_lbs' => '45', 'live_link_date' => '01/15/2026']);
+        $this->adminPlacement(['order_id' => 'BL-1402', 'keyword' => 'assisted living', 'dr_lbs' => '72', 'live_link_date' => '03/10/2026']);
+        $this->adminPlacement(['order_id' => 'BL-1403', 'keyword' => 'memory care', 'dr_lbs' => null, 'live_link_date' => null]);
+
+        $condition = fn (string $key, string $operator, string $value = '', string $value_to = '') => [
+            'column_filters' => [compact('key', 'operator', 'value', 'value_to') + ['type' => 'condition']],
+        ];
+
+        $this->assertSame(['BL-1401', 'BL-1402'], $this->searchOrderIds($condition('keyword', 'text_contains', 'LIVING')));
+        $this->assertSame(['BL-1403'], $this->searchOrderIds($condition('keyword', 'text_starts_with', 'memory')));
+        $this->assertSame(['BL-1403'], $this->searchOrderIds($condition('dr_lbs', 'is_empty')));
+        $this->assertSame(['BL-1402'], $this->searchOrderIds($condition('dr_lbs', 'greater_than', '50')));
+        $this->assertSame(['BL-1401'], $this->searchOrderIds($condition('dr_lbs', 'is_between', '40', '50')));
+        $this->assertSame(['BL-1401'], $this->searchOrderIds($condition('live_link_date', 'date_is_before', '2026-02-01')));
+    }
+
+    public function test_filter_values_returns_distinct_values_with_counts_and_blanks_first(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1501', 'pen_name' => 'Zoe']);
+        $this->adminPlacement(['order_id' => 'BL-1502', 'pen_name' => 'Adam']);
+        $this->adminPlacement(['order_id' => 'BL-1503', 'pen_name' => 'Adam']);
+        $this->adminPlacement(['order_id' => 'BL-1504', 'pen_name' => null]);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', ['column' => 'pen_name'])
+            ->assertStatus(200)
+            ->assertJson([
+                'data' => [
+                    ['value' => '', 'count' => 1],
+                    ['value' => 'Adam', 'count' => 2],
+                    ['value' => 'Zoe', 'count' => 1],
+                ],
+                'total_distinct' => 3,
+                'has_more'       => false,
+            ]);
+    }
+
+    public function test_filter_values_ignores_its_own_column_filter_but_honors_other_columns(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1601', 'client' => 'Mather', 'pen_name' => 'Adam']);
+        $this->adminPlacement(['order_id' => 'BL-1602', 'client' => 'Mather', 'pen_name' => 'Zoe']);
+        $this->adminPlacement(['order_id' => 'BL-1603', 'client' => 'Other', 'pen_name' => 'Eve']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', [
+                'column'         => 'pen_name',
+                'column_filters' => [
+                    ['key' => 'pen_name', 'type' => 'values', 'mode' => 'include', 'values' => ['Adam']],
+                    ['key' => 'client', 'type' => 'values', 'mode' => 'include', 'values' => ['Mather']],
+                ],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(['Adam', 'Zoe'], collect($response->json('data'))->pluck('value')->all());
+    }
+
+    public function test_filter_values_value_search_and_limit(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1701', 'landing_page' => 'https://mather.com/a']);
+        $this->adminPlacement(['order_id' => 'BL-1702', 'landing_page' => 'https://mather.com/b']);
+        $this->adminPlacement(['order_id' => 'BL-1703', 'landing_page' => 'https://other.com']);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', [
+                'column'       => 'landing_page',
+                'value_search' => 'MATHER',
+                'limit'        => 1,
+            ])
+            ->assertStatus(200)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.value', 'https://mather.com/a')
+            ->assertJsonPath('total_distinct', 2)
+            ->assertJsonPath('has_more', true);
+    }
+
+    public function test_filter_values_maps_exact_match_to_yes_and_no(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1801', 'exact_match' => true]);
+        $this->adminPlacement(['order_id' => 'BL-1802', 'exact_match' => false]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', ['column' => 'exact_match'])
+            ->assertStatus(200);
+
+        $this->assertSame(['No', 'Yes'], collect($response->json('data'))->pluck('value')->all());
+    }
+
+    public function test_filter_values_rejects_unknown_column(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', ['column' => 'password'])
+            ->assertStatus(422);
+    }
+
+    public function test_filter_values_requires_admin(): void
+    {
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/filter-values', ['column' => 'pen_name'])
+            ->assertStatus(403);
+    }
 }

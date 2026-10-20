@@ -75,6 +75,24 @@ class LinkBuildingOrdersDashboardController extends Controller
         'is_equal_to', 'is_not_equal_to', 'is_between', 'is_not_between',
     ];
 
+    /**
+     * Extra operators the Advanced filters panel offers on top of CONDITION_OPERATORS.
+     * They match any (or none) of a list of values and are sent as "values" filters.
+     */
+    public const ADVANCED_VALUES_OPERATORS = ['is_any_of', 'is_none_of'];
+
+    /** How the rules of an advanced filter (or of one condition group) are combined. */
+    public const ADVANCED_JOIN_OPERATORS = ['and', 'or'];
+
+    /** Upper bounds for one advanced filter, so a crafted request cannot build a huge WHERE clause. */
+    public const ADVANCED_MAX_RULES  = 50;
+    public const ADVANCED_MAX_GROUPS = 20;
+
+    /** Limits of quickFilterValues(): columns per request and values per column. */
+    private const QUICK_FILTER_MAX_COLUMNS    = 15;
+    private const QUICK_FILTER_DEFAULT_LIMIT  = 50;
+    private const QUICK_FILTER_MAX_LIMIT      = 100;
+
     /** Default and maximum number of distinct values returned by filterValues(). */
     private const FILTER_VALUES_DEFAULT_LIMIT = 500;
     private const FILTER_VALUES_MAX_LIMIT     = 1000;
@@ -384,7 +402,66 @@ class LinkBuildingOrdersDashboardController extends Controller
         $value_search = trim((string) $request->input('value_search', ''));
         $limit        = (int) $request->input('limit', self::FILTER_VALUES_DEFAULT_LIMIT);
         $limit        = min(max($limit, 1), self::FILTER_VALUES_MAX_LIMIT);
-        $expression   = "TRIM({$this->columnExpression($column)})";
+
+        return response()->json($this->distinctColumnValues($request, $column, $value_search, $limit));
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/quick-filter-values
+     *
+     * Powers the monday style "Quick filters" panel: the distinct values of several
+     * columns at once, each with its row count, in a single request. Like
+     * filterValues(), every column's list honors all the other active filters but
+     * ignores its own, so several values of one column can be picked together.
+     * `assigned_admin_user_id` lists admin user ids ("" for unassigned rows).
+     *
+     * Request body:
+     *   columns : string[]  FILTERABLE_COLUMNS or "assigned_admin_user_id", up to 15
+     *   limit   : int       optional, values per column (default 50, max 100)
+     *   ...     : same filter parameters accepted by search()/export()
+     *
+     * Response:
+     *   data  : { [column]: { values: [{ value, count }], has_more: bool } }
+     *   total : int  every dashboard row, ignoring all filters ("Showing X of total")
+     */
+    public function quickFilterValues(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'columns'   => ['required', 'array', 'min:1', 'max:' . self::QUICK_FILTER_MAX_COLUMNS],
+            'columns.*' => ['string', Rule::in([...self::FILTERABLE_COLUMNS, 'assigned_admin_user_id'])],
+            'limit'     => ['sometimes', 'integer', 'min:1', 'max:' . self::QUICK_FILTER_MAX_LIMIT],
+        ]);
+
+        $limit = (int) ($validated['limit'] ?? self::QUICK_FILTER_DEFAULT_LIMIT);
+        $data  = [];
+
+        foreach (array_unique($validated['columns']) as $column) {
+            $result = $column === 'assigned_admin_user_id'
+                ? $this->assignedUserValues($request, $limit)
+                : $this->distinctColumnValues($request, $column, '', $limit);
+
+            $data[$column] = [
+                'values'   => $result['data'],
+                'has_more' => $result['has_more'],
+            ];
+        }
+
+        return response()->json([
+            'data'  => $data,
+            'total' => $this->dashboardQuery()->count(),
+        ]);
+    }
+
+    /**
+     * Distinct displayed values of one column with their row counts, honoring every
+     * request filter except the column's own column filters. Shared by filterValues()
+     * and quickFilterValues().
+     *
+     * @return array{data: \Illuminate\Support\Collection, total_distinct: int, has_more: bool}
+     */
+    private function distinctColumnValues(Request $request, string $column, string $value_search, int $limit): array
+    {
+        $expression = "TRIM({$this->columnExpression($column)})";
 
         $query = $this->dashboardQuery();
         $this->applyRequestFilters($query, $request, $column);
@@ -421,11 +498,44 @@ class LinkBuildingOrdersDashboardController extends Controller
             ])
             ->values();
 
-        return response()->json([
+        return [
             'data'           => $values,
             'total_distinct' => $total_distinct,
             'has_more'       => $total_distinct > $values->count(),
-        ]);
+        ];
+    }
+
+    /**
+     * "Assigned To" values for the Quick filters panel: admin user ids with their row
+     * counts ("" for unassigned rows), honoring every filter except the Assigned To one.
+     *
+     * @return array{data: \Illuminate\Support\Collection, total_distinct: int, has_more: bool}
+     */
+    private function assignedUserValues(Request $request, int $limit): array
+    {
+        $query = $this->dashboardQuery();
+        $this->applyRequestFilters($query, new Request($request->except('assigned_user_id')));
+
+        $grouped = $query->toBase()
+            ->selectRaw("COALESCE(CAST(assigned_admin_user_id AS CHAR), '') AS filter_value")
+            ->selectRaw('COUNT(*) AS row_count')
+            ->groupBy('filter_value')
+            ->orderByDesc('row_count')
+            ->get();
+
+        $values = $grouped
+            ->take($limit)
+            ->map(fn ($row) => [
+                'value' => (string) $row->filter_value,
+                'count' => (int) $row->row_count,
+            ])
+            ->values();
+
+        return [
+            'data'           => $values,
+            'total_distinct' => $grouped->count(),
+            'has_more'       => $grouped->count() > $values->count(),
+        ];
     }
 
     /**
@@ -1055,6 +1165,82 @@ class LinkBuildingOrdersDashboardController extends Controller
             filter_var($request->input('needs_lb_tl_approval', false), FILTER_VALIDATE_BOOLEAN)
         );
         $this->applyColumnFilters($query, $column_filters);
+        $this->applyAdvancedFilters($query, $request->input('advanced_filters'));
+    }
+
+    /**
+     * Applies the monday style "Advanced filters": a list of rules and condition
+     * groups joined by one top level operator (and / or), where each group joins its
+     * own rules with its own operator. Every rule has the same shape as a column
+     * filter, so it reuses the "condition" and "values" logic of applyColumnFilters().
+     * The whole block is wrapped in one nested WHERE, so an "or" never leaks out and
+     * the result is still ANDed with the search, quick filters and column filters.
+     *
+     * Request shape:
+     *   advanced_filters.operator         : "and" | "or"
+     *   advanced_filters.rules[]          : column filter payloads
+     *   advanced_filters.groups[].operator: "and" | "or"
+     *   advanced_filters.groups[].rules[] : column filter payloads
+     */
+    private function applyAdvancedFilters($query, mixed $advanced_filters): void
+    {
+        if (! is_array($advanced_filters)) {
+            return;
+        }
+
+        $clauses = array_map(
+            fn (array $rule) => fn ($q) => $this->applyColumnFilters($q, [$rule]),
+            $this->advancedFilterRules($advanced_filters['rules'] ?? null)
+        );
+
+        $groups = array_slice(array_filter((array) ($advanced_filters['groups'] ?? []), 'is_array'), 0, self::ADVANCED_MAX_GROUPS);
+
+        foreach ($groups as $group) {
+            $group_rules = $this->advancedFilterRules($group['rules'] ?? null);
+
+            if (empty($group_rules)) {
+                continue;
+            }
+
+            $group_operator = $this->advancedJoinOperator($group['operator'] ?? null);
+            $group_clauses  = array_map(
+                fn (array $rule) => fn ($q) => $this->applyColumnFilters($q, [$rule]),
+                $group_rules
+            );
+
+            $clauses[] = fn ($q) => $this->applyJoinedClauses($q, $group_clauses, $group_operator);
+        }
+
+        if (empty($clauses)) {
+            return;
+        }
+
+        $operator = $this->advancedJoinOperator($advanced_filters['operator'] ?? null);
+
+        $query->where(fn ($q) => $this->applyJoinedClauses($q, $clauses, $operator));
+    }
+
+    /** The valid rules of an advanced filter level, capped at ADVANCED_MAX_RULES. */
+    private function advancedFilterRules(mixed $rules): array
+    {
+        return array_slice(array_values(array_filter((array) $rules, 'is_array')), 0, self::ADVANCED_MAX_RULES);
+    }
+
+    private function advancedJoinOperator(mixed $operator): string
+    {
+        return in_array($operator, self::ADVANCED_JOIN_OPERATORS, true) ? $operator : 'and';
+    }
+
+    /**
+     * Adds each clause as its own nested WHERE, joined with AND or OR. A clause that
+     * ends up empty (e.g. an incomplete rule) is skipped by Laravel, so it neither
+     * matches every row nor blocks the others.
+     */
+    private function applyJoinedClauses($query, array $clauses, string $operator): void
+    {
+        foreach ($clauses as $clause) {
+            $operator === 'or' ? $query->orWhere($clause) : $query->where($clause);
+        }
     }
 
     private function applyGlobalSearch($query, ?string $search): void
@@ -1154,7 +1340,10 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (filled($assigned_user_id)) {
-            $query->where('assigned_admin_user_id', (int) $assigned_user_id);
+            // 0 stands for "Unassigned", picked from the Quick filters panel.
+            (int) $assigned_user_id === 0
+                ? $query->whereNull('assigned_admin_user_id')
+                : $query->where('assigned_admin_user_id', (int) $assigned_user_id);
         }
     }
 

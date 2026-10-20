@@ -181,6 +181,74 @@ class LinkBuildingOrderSavedFilterControllerTest extends TestCase
             ->assertJsonValidationErrors('filters.sheet_filters.dr_lbs.condition.operator');
     }
 
+    public function test_store_keeps_advanced_filters_with_rules_and_groups(): void
+    {
+        $advanced_filters = [
+            'operator' => 'or',
+            'rules'    => [
+                ['id' => 'rule_1', 'key' => 'status', 'operator' => 'is_any_of', 'value' => '', 'value_to' => '', 'values' => ['Live'], 'is_disabled' => false],
+                // A half built rule (no column yet) is kept as part of the view.
+                ['id' => 'rule_2', 'key' => null, 'operator' => null, 'value' => '', 'value_to' => '', 'values' => [], 'is_disabled' => false],
+            ],
+            'groups' => [
+                [
+                    'id'       => 'group_1',
+                    'operator' => 'and',
+                    'rules'    => [
+                        ['id' => 'rule_3', 'key' => 'dr_lbs', 'operator' => 'is_between', 'value' => '30', 'value_to' => '60', 'values' => [], 'is_disabled' => true],
+                    ],
+                ],
+            ],
+        ];
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL, [
+                'name'    => 'Live or mid DR',
+                'filters' => $this->filterState(['advanced_filters' => $advanced_filters]),
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.filters.advanced_filters.operator', 'or')
+            ->assertJsonPath('data.filters.advanced_filters.rules.0.values', ['Live'])
+            ->assertJsonPath('data.filters.advanced_filters.groups.0.rules.0.value_to', '60')
+            ->assertJsonPath('data.filters.advanced_filters.groups.0.rules.0.is_disabled', true);
+    }
+
+    public function test_store_rejects_invalid_advanced_filter_rules(): void
+    {
+        $rule = ['id' => 'rule_1', 'key' => 'status', 'operator' => 'is_any_of', 'values' => ['Live']];
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL, [
+                'name'    => 'Broken join',
+                'filters' => $this->filterState(['advanced_filters' => ['operator' => 'xor', 'rules' => [$rule]]]),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('filters.advanced_filters.operator');
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL, [
+                'name'    => 'Broken rule operator',
+                'filters' => $this->filterState([
+                    'advanced_filters' => [
+                        'operator' => 'and',
+                        'groups'   => [['operator' => 'and', 'rules' => [array_merge($rule, ['operator' => 'drop_table'])]]],
+                    ],
+                ]),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('filters.advanced_filters.groups.0.rules.0.operator');
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL, [
+                'name'    => 'Broken column key',
+                'filters' => $this->filterState([
+                    'advanced_filters' => ['operator' => 'and', 'rules' => [array_merge($rule, ['key' => 'status; DROP'])]],
+                ]),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('filters.advanced_filters.rules.0.key');
+    }
+
     public function test_store_enforces_the_per_user_limit(): void
     {
         for ($i = 0; $i < LinkBuildingOrderSavedFilter::MAX_PER_USER; $i++) {

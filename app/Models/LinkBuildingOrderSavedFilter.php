@@ -11,7 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * A named snapshot of the admin "Link Building Orders" table filters.
  *
  * `filters` holds the table state exactly as the frontend restores it: search,
- * toolbar filters, spreadsheet column filters, sort rules and hidden columns.
+ * toolbar filters, spreadsheet column filters, advanced filters, sort rules and
+ * hidden columns.
  * Shared filters are visible (read only) to every admin side user.
  */
 class LinkBuildingOrderSavedFilter extends Model

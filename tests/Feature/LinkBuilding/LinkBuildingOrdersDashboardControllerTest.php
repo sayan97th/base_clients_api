@@ -1696,4 +1696,176 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ->postJson('/api/admin/link-building-orders/filter-values', ['column' => 'pen_name'])
             ->assertStatus(403);
     }
+
+    // ─── Advanced filters ─────────────────────────────────────────────────────
+
+    /** Searches with the given advanced filters and returns the matching order ids, sorted. */
+    private function searchAdvancedOrderIds(array $advanced_filters, array $extra = []): array
+    {
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', array_merge([
+                'advanced_filters' => $advanced_filters,
+            ], $extra))
+            ->assertStatus(200);
+
+        $order_ids = collect($response->json('data'))->pluck('order_id')->all();
+        sort($order_ids);
+
+        return $order_ids;
+    }
+
+    private function seedAdvancedFilterRows(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-801', 'client' => 'Stark Industries', 'status' => 'Live', 'keyword' => 'cloud hosting']);
+        $this->adminPlacement(['order_id' => 'BL-802', 'client' => 'Stark Industries', 'status' => 'New Request', 'keyword' => 'web hosting']);
+        $this->adminPlacement(['order_id' => 'BL-803', 'client' => 'Wayne Enterprises', 'status' => 'Live', 'keyword' => 'bat gadgets']);
+        $this->adminPlacement(['order_id' => 'BL-804', 'client' => 'Wayne Enterprises', 'status' => 'Writing', 'keyword' => 'cloud storage']);
+    }
+
+    public function test_advanced_filters_combine_rules_with_and(): void
+    {
+        $this->seedAdvancedFilterRows();
+
+        $order_ids = $this->searchAdvancedOrderIds([
+            'operator' => 'and',
+            'rules'    => [
+                ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Live']],
+                ['key' => 'client', 'type' => 'condition', 'operator' => 'text_contains', 'value' => 'stark'],
+            ],
+        ]);
+
+        $this->assertSame(['BL-801'], $order_ids);
+    }
+
+    public function test_advanced_filters_combine_rules_with_or(): void
+    {
+        $this->seedAdvancedFilterRows();
+
+        $order_ids = $this->searchAdvancedOrderIds([
+            'operator' => 'or',
+            'rules'    => [
+                ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Writing']],
+                ['key' => 'keyword', 'type' => 'condition', 'operator' => 'text_starts_with', 'value' => 'web'],
+            ],
+        ]);
+
+        $this->assertSame(['BL-802', 'BL-804'], $order_ids);
+    }
+
+    public function test_advanced_filter_groups_use_their_own_operator(): void
+    {
+        $this->seedAdvancedFilterRows();
+
+        // Status is New Request OR (Company contains "wayne" AND Keyword contains "cloud").
+        $order_ids = $this->searchAdvancedOrderIds([
+            'operator' => 'or',
+            'rules'    => [
+                ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['New Request']],
+            ],
+            'groups' => [
+                [
+                    'operator' => 'and',
+                    'rules'    => [
+                        ['key' => 'client', 'type' => 'condition', 'operator' => 'text_contains', 'value' => 'wayne'],
+                        ['key' => 'keyword', 'type' => 'condition', 'operator' => 'text_contains', 'value' => 'cloud'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(['BL-802', 'BL-804'], $order_ids);
+    }
+
+    public function test_advanced_filters_are_anded_with_the_other_filters(): void
+    {
+        $this->seedAdvancedFilterRows();
+
+        // The "or" stays inside the advanced block, the quick Company filter still applies.
+        $order_ids = $this->searchAdvancedOrderIds([
+            'operator' => 'or',
+            'rules'    => [
+                ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Live']],
+                ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Writing']],
+            ],
+        ], ['client' => 'Wayne']);
+
+        $this->assertSame(['BL-803', 'BL-804'], $order_ids);
+    }
+
+    public function test_advanced_filters_ignore_unknown_columns_and_incomplete_rules(): void
+    {
+        $this->seedAdvancedFilterRows();
+
+        $order_ids = $this->searchAdvancedOrderIds([
+            'operator' => 'or',
+            'rules'    => [
+                ['key' => 'password', 'type' => 'condition', 'operator' => 'is_not_empty'],
+                ['key' => 'keyword', 'type' => 'condition', 'operator' => 'text_contains'],
+                ['key' => 'status', 'type' => 'values', 'mode' => 'exclude', 'values' => ['Live', 'New Request']],
+            ],
+            'groups' => [['operator' => 'and', 'rules' => []]],
+        ]);
+
+        $this->assertSame(['BL-804'], $order_ids);
+    }
+
+    // ─── Quick filter values ──────────────────────────────────────────────────
+
+    public function test_quick_filter_values_lists_several_columns_with_counts_in_one_request(): void
+    {
+        $this->seedAdvancedFilterRows();
+        $this->adminPlacement(['order_id' => 'BL-805', 'client' => 'Stark Industries', 'status' => 'Live', 'assigned_admin_user_id' => $this->admin->id]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', [
+                'columns' => ['status', 'client', 'assigned_admin_user_id'],
+                // A column's own filter is ignored, the other filters still apply.
+                'column_filters' => [
+                    ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Live']],
+                ],
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('total', 5);
+
+        $status_counts = collect($response->json('data.status.values'))->pluck('count', 'value')->all();
+        $this->assertSame(['Live' => 3, 'New Request' => 1, 'Writing' => 1], $this->sortedByKey($status_counts));
+
+        $client_counts = collect($response->json('data.client.values'))->pluck('count', 'value')->all();
+        $this->assertSame(['Stark Industries' => 2, 'Wayne Enterprises' => 1], $this->sortedByKey($client_counts));
+
+        $assigned_counts = collect($response->json('data.assigned_admin_user_id.values'))->pluck('count', 'value')->all();
+        $this->assertSame(['' => 2, (string) $this->admin->id => 1], $this->sortedByKey($assigned_counts));
+        $this->assertFalse($response->json('data.status.has_more'));
+    }
+
+    public function test_quick_filter_values_rejects_unknown_columns(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', ['columns' => ['password']])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('columns.0');
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', ['columns' => ['status']])
+            ->assertStatus(403);
+    }
+
+    public function test_assigned_user_filter_zero_matches_unassigned_rows(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-806', 'assigned_admin_user_id' => $this->admin->id]);
+        $this->adminPlacement(['order_id' => 'BL-807']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', ['assigned_user_id' => 0])
+            ->assertStatus(200);
+
+        $this->assertSame(['BL-807'], collect($response->json('data'))->pluck('order_id')->all());
+    }
+
+    private function sortedByKey(array $values): array
+    {
+        ksort($values, SORT_STRING);
+
+        return $values;
+    }
 }

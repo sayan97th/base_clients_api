@@ -12,8 +12,11 @@ class StoreLinkBuildingOrderSavedFilterRequest extends FormRequest
     /** Keys allowed inside the `filters` snapshot, anything else is rejected. */
     public const FILTER_STATE_KEYS = [
         'search', 'status', 'link_type', 'client', 'client_user_id', 'assigned_user_id',
-        'needs_lb_tl_approval', 'sort_rules', 'sheet_filters', 'hidden_columns',
+        'needs_lb_tl_approval', 'sort_rules', 'sheet_filters', 'hidden_columns', 'advanced_filters',
     ];
+
+    /** Keys allowed on one Advanced filters rule. */
+    private const ADVANCED_RULE_KEYS = ['id', 'key', 'operator', 'value', 'value_to', 'values', 'is_disabled'];
 
     public function authorize(): bool
     {
@@ -104,6 +107,43 @@ class StoreLinkBuildingOrderSavedFilterRequest extends FormRequest
 
             'filters.hidden_columns'   => ['nullable', 'array', 'max:100'],
             'filters.hidden_columns.*' => $column_key,
+
+            'filters.advanced_filters'          => ['nullable', 'array:operator,rules,groups'],
+            'filters.advanced_filters.operator' => ['sometimes', Rule::in(LinkBuildingOrdersDashboardController::ADVANCED_JOIN_OPERATORS)],
+            'filters.advanced_filters.rules'    => ['sometimes', 'array', 'max:' . LinkBuildingOrdersDashboardController::ADVANCED_MAX_RULES],
+            'filters.advanced_filters.groups'   => ['sometimes', 'array', 'max:' . LinkBuildingOrdersDashboardController::ADVANCED_MAX_GROUPS],
+            'filters.advanced_filters.groups.*'          => ['array:id,operator,rules'],
+            'filters.advanced_filters.groups.*.id'       => ['sometimes', 'string', 'max:64'],
+            'filters.advanced_filters.groups.*.operator' => ['sometimes', Rule::in(LinkBuildingOrdersDashboardController::ADVANCED_JOIN_OPERATORS)],
+            'filters.advanced_filters.groups.*.rules'    => ['sometimes', 'array', 'max:' . LinkBuildingOrdersDashboardController::ADVANCED_MAX_RULES],
+            ...self::advancedRuleRules('filters.advanced_filters.rules.*'),
+            ...self::advancedRuleRules('filters.advanced_filters.groups.*.rules.*'),
+        ];
+    }
+
+    /**
+     * Shape of one Advanced filters rule. A rule may be incomplete (no column or
+     * value picked yet), since the panel keeps half built rules in the saved view.
+     */
+    private static function advancedRuleRules(string $prefix): array
+    {
+        return [
+            $prefix                => ['array:' . implode(',', self::ADVANCED_RULE_KEYS)],
+            "{$prefix}.id"         => ['sometimes', 'string', 'max:64'],
+            "{$prefix}.key"        => ['nullable', 'string', 'max:64', 'regex:/^[a-z0-9_]+$/'],
+            "{$prefix}.operator"   => [
+                'nullable',
+                'string',
+                Rule::in([
+                    ...LinkBuildingOrdersDashboardController::CONDITION_OPERATORS,
+                    ...LinkBuildingOrdersDashboardController::ADVANCED_VALUES_OPERATORS,
+                ]),
+            ],
+            "{$prefix}.value"       => ['nullable', 'string', 'max:255'],
+            "{$prefix}.value_to"    => ['nullable', 'string', 'max:255'],
+            "{$prefix}.values"      => ['sometimes', 'array', 'max:1000'],
+            "{$prefix}.values.*"    => ['nullable', 'string', 'max:500'],
+            "{$prefix}.is_disabled" => ['sometimes', 'boolean'],
         ];
     }
 }

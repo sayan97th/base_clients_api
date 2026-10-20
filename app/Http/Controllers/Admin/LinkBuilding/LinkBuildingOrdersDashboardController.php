@@ -67,7 +67,7 @@ class LinkBuildingOrdersDashboardController extends Controller
     ];
 
     /** Operators accepted by the spreadsheet style "Filter by condition" column filter. */
-    private const CONDITION_OPERATORS = [
+    public const CONDITION_OPERATORS = [
         'is_empty', 'is_not_empty',
         'text_contains', 'text_not_contains', 'text_starts_with', 'text_ends_with', 'text_is_exactly',
         'date_is', 'date_is_before', 'date_is_after',

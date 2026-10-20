@@ -15,6 +15,7 @@ use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountCon
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSavedFilterController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
@@ -526,6 +527,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/metrics-import',          [LinkBuildingOrdersDashboardController::class, 'metricsImport']);
             Route::get('/link-building-orders/import-status/{import_id}',[LinkBuildingOrdersDashboardController::class, 'importStatus']);
             Route::post('/link-building-orders/resolve-assignments',     [LinkBuildingOrdersDashboardController::class, 'resolveAssignments']);
+            Route::get('/link-building-orders/saved-filters',            [LinkBuildingOrderSavedFilterController::class, 'index']);
+            Route::post('/link-building-orders/saved-filters',           [LinkBuildingOrderSavedFilterController::class, 'store']);
+            Route::put('/link-building-orders/saved-filters/{id}',       [LinkBuildingOrderSavedFilterController::class, 'update']);
+            Route::delete('/link-building-orders/saved-filters/{id}',    [LinkBuildingOrderSavedFilterController::class, 'destroy']);
             Route::post('/link-building-orders',                         [LinkBuildingOrdersDashboardController::class, 'store']);
             Route::put('/link-building-orders/{id}',                     [LinkBuildingOrdersDashboardController::class, 'update']);
             Route::delete('/link-building-orders/{id}',                  [LinkBuildingOrdersDashboardController::class, 'destroy']);

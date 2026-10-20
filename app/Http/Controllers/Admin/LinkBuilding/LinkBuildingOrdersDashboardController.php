@@ -492,6 +492,70 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
+     * GET /api/admin/link-building-orders/pen-names
+     *
+     * Distinct, non-empty pen names already used on any dashboard row, sorted
+     * alphabetically. Powers the Pen Name cell dropdown so admins can pick an
+     * existing writer name the same way they pick a Status, instead of retyping it.
+     * Unlike filterValues(), it ignores every active filter, so the full list is
+     * always offered while editing.
+     */
+    public function penNames(): JsonResponse
+    {
+        $pen_names = $this->dashboardQuery()
+            ->toBase()
+            ->selectRaw('TRIM(pen_name) AS pen_name')
+            ->whereNotNull('pen_name')
+            ->whereRaw("TRIM(pen_name) <> ''")
+            ->distinct()
+            ->pluck('pen_name')
+            ->map(fn ($pen_name) => (string) $pen_name)
+            // Sorted in PHP: MySQL rejects ORDER BY on an expression outside the
+            // SELECT DISTINCT list (error 3065).
+            ->sort(fn (string $a, string $b) => strcasecmp($a, $b))
+            ->values();
+
+        return response()->json(['data' => $pen_names]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/status-counts
+     *
+     * Row count per Status for the dashboard's status filter bar. Every active
+     * filter is applied except the ones that target Status itself (the Status quick
+     * filter, a Status column filter and the "Needs LB TL Approval" toggle, which
+     * implies Status = Live), so each count shows how many rows picking that status
+     * would return, the same way a spreadsheet filter checklist behaves.
+     *
+     * Response:
+     *   data  : [{ status: string, count: int }]  empty statuses are returned as ""
+     *   total : int  rows matching the other filters, i.e. the "All" count
+     */
+    public function statusCounts(Request $request): JsonResponse
+    {
+        $filter_request = new Request($request->except(['status', 'needs_lb_tl_approval']));
+
+        $query = $this->dashboardQuery();
+        $this->applyRequestFilters($query, $filter_request, 'status');
+
+        $status_counts = $query->toBase()
+            ->selectRaw("COALESCE(TRIM(status), '') AS status_value")
+            ->selectRaw('COUNT(*) AS row_count')
+            ->groupBy('status_value')
+            ->get()
+            ->map(fn ($row) => [
+                'status' => (string) $row->status_value,
+                'count'  => (int) $row->row_count,
+            ])
+            ->values();
+
+        return response()->json([
+            'data'  => $status_counts,
+            'total' => $status_counts->sum('count'),
+        ]);
+    }
+
+    /**
      * GET /api/admin/link-building-orders/needs-approval-count
      *
      * Lightweight count of "Live" orders that still have no LB TL Approval value.

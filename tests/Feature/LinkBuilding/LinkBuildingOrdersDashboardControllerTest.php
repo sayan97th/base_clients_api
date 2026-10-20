@@ -1393,6 +1393,122 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertContains($staff->id, $ids);
     }
 
+    // ─── Pen names (Pen Name cell dropdown options) ───────────────────────────
+
+    public function test_unauthenticated_pen_names_returns_401(): void
+    {
+        $this->getJson('/api/admin/link-building-orders/pen-names')
+            ->assertStatus(401);
+    }
+
+    public function test_client_role_cannot_access_pen_names(): void
+    {
+        $this->actingAs($this->client, 'api')
+            ->getJson('/api/admin/link-building-orders/pen-names')
+            ->assertStatus(403);
+    }
+
+    public function test_pen_names_returns_distinct_trimmed_names_sorted_alphabetically(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-2001', 'pen_name' => 'Sarah Miller']);
+        $this->adminPlacement(['order_id' => 'BL-2002', 'pen_name' => '  Sarah Miller ']);
+        $this->adminPlacement(['order_id' => 'BL-2003', 'pen_name' => 'adam Brooks']);
+        $this->adminPlacement(['order_id' => 'BL-2004', 'pen_name' => 'Kevin Lee']);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/pen-names')
+            ->assertStatus(200)
+            ->assertExactJson(['data' => ['adam Brooks', 'Kevin Lee', 'Sarah Miller']]);
+    }
+
+    public function test_pen_names_excludes_empty_and_null_values(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-2011', 'pen_name' => null]);
+        $this->adminPlacement(['order_id' => 'BL-2012', 'pen_name' => '']);
+        $this->adminPlacement(['order_id' => 'BL-2013', 'pen_name' => '   ']);
+        $this->adminPlacement(['order_id' => 'BL-2014', 'pen_name' => 'Kevin Lee']);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/pen-names')
+            ->assertStatus(200)
+            ->assertExactJson(['data' => ['Kevin Lee']]);
+    }
+
+    public function test_pen_names_excludes_placements_not_visible_on_the_dashboard(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-2021', 'pen_name' => 'Kevin Lee']);
+        LinkBuildingOrderPlacement::create([
+            'keyword'      => 'hidden keyword',
+            'landing_page' => 'https://example.com/hidden',
+            'pen_name'     => 'Hidden Writer',
+        ]);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/pen-names')
+            ->assertStatus(200)
+            ->assertExactJson(['data' => ['Kevin Lee']]);
+    }
+
+    // ─── Status counts ────────────────────────────────────────────────────────
+
+    private function statusCountsByStatus(array $body = []): array
+    {
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/status-counts', $body)
+            ->assertStatus(200);
+
+        return collect($response->json('data'))->pluck('count', 'status')->all();
+    }
+
+    public function test_unauthenticated_status_counts_returns_401(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/status-counts')
+            ->assertStatus(401);
+    }
+
+    public function test_client_role_cannot_access_status_counts(): void
+    {
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/status-counts')
+            ->assertStatus(403);
+    }
+
+    public function test_status_counts_groups_rows_by_status_and_returns_the_total(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-3001', 'status' => 'Live']);
+        $this->adminPlacement(['order_id' => 'BL-3002', 'status' => 'Live']);
+        $this->adminPlacement(['order_id' => 'BL-3003', 'status' => 'Pending']);
+        $this->adminPlacement(['order_id' => 'BL-3004', 'status' => null]);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/status-counts')
+            ->assertStatus(200)
+            ->assertJsonPath('total', 4);
+
+        $counts = collect($response->json('data'))->pluck('count', 'status')->all();
+        ksort($counts);
+
+        $this->assertSame(['' => 1, 'Live' => 2, 'Pending' => 1], $counts);
+    }
+
+    public function test_status_counts_applies_other_filters_but_ignores_the_status_filters(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-3011', 'status' => 'Live', 'link_type' => 'DR 50+ External']);
+        $this->adminPlacement(['order_id' => 'BL-3012', 'status' => 'Pending', 'link_type' => 'DR 50+ External']);
+        $this->adminPlacement(['order_id' => 'BL-3013', 'status' => 'Live', 'link_type' => 'DR 30+ External']);
+
+        $counts = $this->statusCountsByStatus([
+            'link_type'            => 'DR 50+ External',
+            'status'               => 'Pending',
+            'needs_lb_tl_approval' => true,
+            'column_filters'       => [
+                ['key' => 'status', 'type' => 'values', 'values' => ['Pending']],
+            ],
+        ]);
+        ksort($counts);
+
+        $this->assertSame(['Live' => 1, 'Pending' => 1], $counts);
+    }
 
     // ─── Spreadsheet style column filters (values + condition) ───────────────
 

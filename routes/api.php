@@ -516,7 +516,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->group(function () {
             Route::get('/link-building-orders/assignable-users',         [LinkBuildingOrdersDashboardController::class, 'assignableUsers']);
             Route::get('/link-building-orders/assignable-clients',       [LinkBuildingOrdersDashboardController::class, 'assignableClients']);
+            Route::get('/link-building-orders/pen-names',                [LinkBuildingOrdersDashboardController::class, 'penNames']);
             Route::get('/link-building-orders/needs-approval-count',     [LinkBuildingOrdersDashboardController::class, 'needsApprovalCount']);
+            Route::post('/link-building-orders/status-counts',           [LinkBuildingOrdersDashboardController::class, 'statusCounts']);
             Route::post('/link-building-orders/search',                  [LinkBuildingOrdersDashboardController::class, 'search']);
             Route::post('/link-building-orders/export',                  [LinkBuildingOrdersDashboardController::class, 'export']);
             Route::post('/link-building-orders/batch-update',            [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);

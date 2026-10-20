@@ -97,6 +97,16 @@ class LinkBuildingOrdersDashboardController extends Controller
     private const FILTER_VALUES_DEFAULT_LIMIT = 500;
     private const FILTER_VALUES_MAX_LIMIT     = 1000;
 
+    /** Limits of findPages(): terms per request and characters per term. */
+    public const FIND_MAX_TERMS       = 25;
+    public const FIND_MAX_TERM_LENGTH = 255;
+
+    /**
+     * Assignment columns the in-table find also looks through. They hold user ids,
+     * so they are matched against the names the dashboard shows, not the raw id.
+     */
+    private const FIND_ASSIGNMENT_COLUMNS = ['user_id', 'assigned_admin_user_id'];
+
     /**
      * Columns that may be written by the batch-update endpoints (batchUpdate and
      * batchUpdateCells). order_id is intentionally excluded — it must stay unique
@@ -146,6 +156,87 @@ class LinkBuildingOrdersDashboardController extends Controller
             'total'        => $paginated->total(),
             'from'         => $paginated->firstItem(),
             'to'           => $paginated->lastItem(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/find-pages
+     *
+     * Powers the dashboard's in-table "Find" (Ctrl/Cmd+F) bar. Unlike search(), it
+     * never narrows the result set: it walks every row matching the current filters,
+     * in the current sort order, and reports which pages hold a row with a cell that
+     * contains any of the find terms. The dashboard uses it to jump between matches
+     * on other pages while every other order stays visible around them, so orders
+     * can be compared side by side the way Cmd+F works in the spreadsheet.
+     *
+     * Request body:
+     *   find_terms   : string[]  required, matched case insensitively, a row matches when any term does
+     *   find_columns : string[]  optional, the visible columns to look through (defaults to all of them)
+     *   per_page     : int       page size used to resolve the page of each matching row
+     *   ...          : same filter and sort parameters accepted by search()
+     *
+     * Response:
+     *   pages             : [{ page: int, row_count: int }]  only pages with matches, ascending
+     *   matched_row_count : int  rows with at least one matching cell
+     *   total_rows        : int  rows matching the filters, matched or not
+     */
+    public function findPages(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'find_terms'     => ['required', 'array', 'min:1', 'max:' . self::FIND_MAX_TERMS],
+            'find_terms.*'   => ['required', 'string', 'max:' . self::FIND_MAX_TERM_LENGTH],
+            'find_columns'   => ['nullable', 'array'],
+            'find_columns.*' => ['string'],
+        ]);
+
+        $per_page = max(1, min((int) $request->input('per_page', 50), 500));
+        $terms    = $this->findTerms($validated['find_terms']);
+        $columns  = $this->findColumns($validated['find_columns'] ?? null);
+
+        $query = $this->dashboardQuery();
+        $this->applyRequestFilters($query, $request);
+
+        if (empty($terms) || empty($columns)) {
+            return response()->json([
+                'pages'             => [],
+                'matched_row_count' => 0,
+                'total_rows'        => $query->count(),
+            ]);
+        }
+
+        $this->applySortRules($query, (array) $request->input('sort_rules', []));
+
+        [$match_sql, $match_bindings] = $this->findMatchCondition($columns, $terms);
+
+        // Only a match flag per row is read, in display order, so a row's position
+        // (and with it its page) is simply its index in the stream.
+        $rows = $query->toBase()
+            ->selectRaw("CASE WHEN {$match_sql} THEN 1 ELSE 0 END AS is_find_match", $match_bindings)
+            ->cursor();
+
+        $page_row_counts   = [];
+        $matched_row_count = 0;
+        $position          = 0;
+
+        foreach ($rows as $row) {
+            if ((int) $row->is_find_match === 1) {
+                $page = intdiv($position, $per_page) + 1;
+                $page_row_counts[$page] = ($page_row_counts[$page] ?? 0) + 1;
+                $matched_row_count++;
+            }
+
+            $position++;
+        }
+
+        $pages = [];
+        foreach ($page_row_counts as $page => $row_count) {
+            $pages[] = ['page' => $page, 'row_count' => $row_count];
+        }
+
+        return response()->json([
+            'pages'             => $pages,
+            'matched_row_count' => $matched_row_count,
+            'total_rows'        => $position,
         ]);
     }
 
@@ -1591,6 +1682,73 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         return null;
+    }
+
+    /** Trimmed, lowercased and deduplicated find terms, empty ones dropped. */
+    private function findTerms(array $terms): array
+    {
+        return collect($terms)
+            ->map(fn ($term) => mb_strtolower(trim((string) $term)))
+            ->filter(fn (string $term) => $term !== '')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * The columns findPages() looks through: the requested ones that can be matched
+     * in SQL, or all of them when none are requested. Computed only columns such as
+     * days_left are left out, the dashboard still finds those on the loaded page.
+     */
+    private function findColumns(?array $requested_columns): array
+    {
+        $findable_columns = [...self::FILTERABLE_COLUMNS, ...self::FIND_ASSIGNMENT_COLUMNS];
+
+        if ($requested_columns === null) {
+            return $findable_columns;
+        }
+
+        return array_values(array_intersect($findable_columns, $requested_columns));
+    }
+
+    /**
+     * SQL condition (with its bindings) that is true when any of the columns shows a
+     * value containing any of the terms, mirroring the dashboard's per cell matching.
+     */
+    private function findMatchCondition(array $columns, array $terms): array
+    {
+        $conditions = [];
+        $bindings   = [];
+
+        foreach ($columns as $column) {
+            $expression = "LOWER({$this->findColumnExpression($column)})";
+
+            foreach ($terms as $term) {
+                $conditions[] = "{$expression} LIKE ? ESCAPE '!'";
+                $bindings[]   = '%' . $this->escapeLike($term) . '%';
+            }
+        }
+
+        return ['(' . implode(' OR ', $conditions) . ')', $bindings];
+    }
+
+    /**
+     * Value a column shows on the dashboard, for findPages(). The assignment columns
+     * resolve their user id to the text the cell displays: the client's company and
+     * name, or the team member's name and email.
+     */
+    private function findColumnExpression(string $key): string
+    {
+        $users   = DB::connection()->getQueryGrammar()->wrapTable((new User())->getTable());
+        $user_id = $this->wrapPlacementColumn($key);
+
+        return match ($key) {
+            'user_id' => "COALESCE((SELECT CONCAT(COALESCE(client_user.company, ''), ' ', COALESCE(client_user.first_name, ''), ' ', COALESCE(client_user.last_name, ''))"
+                . " FROM {$users} client_user WHERE client_user.id = {$user_id} LIMIT 1), '')",
+            'assigned_admin_user_id' => "COALESCE((SELECT CONCAT(COALESCE(admin_user.first_name, ''), ' ', COALESCE(admin_user.last_name, ''), ' ', COALESCE(admin_user.email, ''))"
+                . " FROM {$users} admin_user WHERE admin_user.id = {$user_id} LIMIT 1), '')",
+            default => $this->columnExpression($key),
+        };
     }
 
     /** Escapes LIKE wildcards using "!" as the escape character, which is portable across drivers. */

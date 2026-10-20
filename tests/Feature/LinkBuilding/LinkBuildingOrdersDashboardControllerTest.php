@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\LinkBuilding;
 
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
@@ -1860,6 +1861,144 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
             ->assertStatus(200);
 
         $this->assertSame(['BL-807'], collect($response->json('data'))->pluck('order_id')->all());
+    }
+
+    // ─── Find pages (in-table Ctrl/Cmd+F) ─────────────────────────────────────
+
+    public function test_unauthenticated_find_pages_returns_401(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => ['BL-1']])
+            ->assertStatus(401);
+    }
+
+    public function test_client_role_cannot_access_find_pages(): void
+    {
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => ['BL-1']])
+            ->assertStatus(403);
+    }
+
+    public function test_find_pages_requires_find_terms(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['find_terms']);
+    }
+
+    public function test_find_pages_rejects_too_many_terms(): void
+    {
+        $terms = array_map(fn (int $n) => "BL-{$n}", range(1, LinkBuildingOrdersDashboardController::FIND_MAX_TERMS + 1));
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => $terms])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['find_terms']);
+    }
+
+    public function test_find_pages_reports_the_page_of_every_matching_row_without_filtering(): void
+    {
+        foreach ([901, 902, 903, 904, 905] as $number) {
+            $this->adminPlacement(['order_id' => "BL-{$number}", 'keyword' => "keyword {$number}"]);
+        }
+
+        // Default sort is newest order first: page 1 = 905, 904 / page 2 = 903, 902 / page 3 = 901.
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', [
+                'find_terms' => ['bl-904', 'BL-901'],
+                'per_page'   => 2,
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame([
+            ['page' => 1, 'row_count' => 1],
+            ['page' => 3, 'row_count' => 1],
+        ], $response->json('pages'));
+        $this->assertSame(2, $response->json('matched_row_count'));
+        $this->assertSame(5, $response->json('total_rows'));
+    }
+
+    public function test_find_pages_follows_the_requested_sort_order(): void
+    {
+        foreach ([911, 912, 913] as $number) {
+            $this->adminPlacement(['order_id' => "BL-{$number}"]);
+        }
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', [
+                'find_terms' => ['BL-911'],
+                'per_page'   => 1,
+                'sort_rules' => [['key' => 'order_id', 'direction' => 'asc']],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame([['page' => 1, 'row_count' => 1]], $response->json('pages'));
+    }
+
+    public function test_find_pages_respects_the_active_filters(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-921', 'status' => 'Live', 'keyword' => 'shared term']);
+        $this->adminPlacement(['order_id' => 'BL-922', 'status' => 'New Request', 'keyword' => 'shared term']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', [
+                'find_terms' => ['shared term'],
+                'status'     => 'Live',
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('matched_row_count'));
+        $this->assertSame(1, $response->json('total_rows'));
+    }
+
+    public function test_find_pages_only_looks_through_the_requested_columns(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-931', 'keyword' => 'needle']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', [
+                'find_terms'   => ['needle'],
+                'find_columns' => ['order_id', 'client', 'days_left'],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame([], $response->json('pages'));
+        $this->assertSame(0, $response->json('matched_row_count'));
+        $this->assertSame(1, $response->json('total_rows'));
+    }
+
+    public function test_find_pages_matches_the_displayed_company_and_assignment_names(): void
+    {
+        $staff = User::factory()->create(['is_active' => true, 'first_name' => 'Natalie', 'last_name' => 'Winter']);
+        $staff->assignRole('staff');
+
+        $this->adminPlacement(['order_id' => 'BL-941', 'client' => null, 'user_id' => $this->client->id]);
+        $this->adminPlacement(['order_id' => 'BL-942', 'assigned_admin_user_id' => $staff->id]);
+        $this->adminPlacement(['order_id' => 'BL-943']);
+
+        $company_response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => ['acme corp']])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $company_response->json('matched_row_count'));
+
+        $assignee_response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => ['natalie winter']])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $assignee_response->json('matched_row_count'));
+    }
+
+    public function test_find_pages_treats_like_wildcards_as_plain_text(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-951', 'notes' => '100% organic']);
+        $this->adminPlacement(['order_id' => 'BL-952', 'notes' => 'no percent sign']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/find-pages', ['find_terms' => ['%']])
+            ->assertStatus(200);
+
+        $this->assertSame(1, $response->json('matched_row_count'));
     }
 
     private function sortedByKey(array $values): array

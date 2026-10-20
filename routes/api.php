@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardCo
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSavedFilterController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderFilterPreferenceController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
@@ -533,6 +534,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/saved-filters',           [LinkBuildingOrderSavedFilterController::class, 'store']);
             Route::put('/link-building-orders/saved-filters/{id}',       [LinkBuildingOrderSavedFilterController::class, 'update']);
             Route::delete('/link-building-orders/saved-filters/{id}',    [LinkBuildingOrderSavedFilterController::class, 'destroy']);
+            Route::get('/link-building-orders/filter-preference',        [LinkBuildingOrderFilterPreferenceController::class, 'show']);
+            Route::put('/link-building-orders/filter-preference',        [LinkBuildingOrderFilterPreferenceController::class, 'update']);
             Route::post('/link-building-orders',                         [LinkBuildingOrdersDashboardController::class, 'store']);
             Route::put('/link-building-orders/{id}',                     [LinkBuildingOrdersDashboardController::class, 'update']);
             Route::delete('/link-building-orders/{id}',                  [LinkBuildingOrdersDashboardController::class, 'destroy']);

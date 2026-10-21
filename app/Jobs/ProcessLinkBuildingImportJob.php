@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -436,6 +437,12 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             ['id', 'order_id', 'created_at']
         ));
 
+        // Imported values replace the spreadsheet formulas of the columns they write.
+        $remove_formulas = LinkBuildingOrderPlacement::removeCellFormulasExpression($update_columns);
+        if ($remove_formulas) {
+            $update_columns['cell_formulas'] = $remove_formulas;
+        }
+
         try {
             DB::table('link_building_order_placements')->upsert(
                 $rows,
@@ -462,9 +469,14 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                         ->first();
 
                     if ($existing) {
+                        $remove_formulas = LinkBuildingOrderPlacement::removeCellFormulasExpression(array_keys($row));
                         DB::table('link_building_order_placements')
                             ->where('order_id', $order_id)
-                            ->update(array_merge($row, ['updated_at' => $now]));
+                            ->update(array_merge(
+                                $row,
+                                ['updated_at' => $now],
+                                $remove_formulas ? ['cell_formulas' => $remove_formulas] : []
+                            ));
                         $chunk_updated++;
                     } else {
                         // Derive created_at from request_date for new records.

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Concerns\ParsesLinkBuildingCsvDates;
+use App\Models\LinkBuildingOrderPlacement;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -260,6 +261,11 @@ class ProcessLinkBuildingMetricsImportJob implements ShouldQueue
 
                 try {
                     $update_values['updated_at'] = $now;
+                    // Updated metrics replace the spreadsheet formulas of those cells.
+                    $remove_formulas = LinkBuildingOrderPlacement::removeCellFormulasExpression(array_keys($update_values));
+                    if ($remove_formulas) {
+                        $update_values['cell_formulas'] = $remove_formulas;
+                    }
                     DB::table('link_building_order_placements')
                         ->where('order_id', $order_id)
                         ->update($update_values);

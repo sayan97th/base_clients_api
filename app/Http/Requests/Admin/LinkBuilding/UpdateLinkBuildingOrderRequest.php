@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\LinkBuilding;
 
+use App\Models\LinkBuildingOrderPlacement;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateLinkBuildingOrderRequest extends FormRequest
@@ -44,6 +45,11 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             $normalized['order_id'] = $order_id === '' ? null : strtoupper($order_id);
         }
 
+        // A row whose last formula was removed sends an empty map, stored as null.
+        if ($this->has('cell_formulas') && empty($this->input('cell_formulas'))) {
+            $normalized['cell_formulas'] = null;
+        }
+
         if (! empty($normalized)) {
             $this->merge($normalized);
         }
@@ -53,6 +59,28 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
     {
         return [
             'order_id.regex' => 'The order id must follow the format BL-<number> (e.g. BL-25143).',
+            ...self::cellFormulaMessages(),
+        ];
+    }
+
+    /**
+     * Rules of the spreadsheet formulas map, shared by the store, update and
+     * batch-update-cells endpoints. Only FORMULA_COLUMNS may hold a formula, and
+     * every formula starts with "=" like in a spreadsheet.
+     */
+    public static function cellFormulaRules(string $attribute = 'cell_formulas'): array
+    {
+        return [
+            $attribute        => ['nullable', 'array:' . implode(',', LinkBuildingOrderPlacement::FORMULA_COLUMNS)],
+            "{$attribute}.*"  => ['string', 'max:' . LinkBuildingOrderPlacement::MAX_CELL_FORMULA_LENGTH, 'regex:/^=/'],
+        ];
+    }
+
+    public static function cellFormulaMessages(string $attribute = 'cell_formulas'): array
+    {
+        return [
+            "{$attribute}.array" => 'Formulas can only be used in text, number and date columns.',
+            "{$attribute}.*.regex" => 'A formula must start with "=".',
         ];
     }
 
@@ -110,6 +138,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'user_id'                   => 'nullable|integer|exists:users,id',
             'admin_team_id'             => 'nullable|uuid|exists:admin_teams,id',
             'assigned_admin_user_id'    => 'nullable|integer|exists:users,id',
+            ...self::cellFormulaRules(),
         ];
     }
 }

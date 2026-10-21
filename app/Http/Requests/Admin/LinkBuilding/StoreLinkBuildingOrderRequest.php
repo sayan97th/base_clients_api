@@ -37,6 +37,10 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             $normalized['exact_match'] = $this->input('exact_match') === 'Yes';
         }
 
+        if ($this->has('cell_formulas') && empty($this->input('cell_formulas'))) {
+            $normalized['cell_formulas'] = null;
+        }
+
         if (! empty($normalized)) {
             $this->merge($normalized);
         }
@@ -83,6 +87,12 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'user_id'                   => 'nullable|integer|exists:users,id',
             'admin_team_id'             => 'nullable|uuid|exists:admin_teams,id',
             'assigned_admin_user_id'    => 'nullable|integer|exists:users,id',
+            ...UpdateLinkBuildingOrderRequest::cellFormulaRules(),
         ];
+    }
+
+    public function messages(): array
+    {
+        return UpdateLinkBuildingOrderRequest::cellFormulaMessages();
     }
 }

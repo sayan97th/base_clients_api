@@ -21,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -362,7 +363,12 @@ class LinkBuildingOrdersDashboardController extends Controller
      * (one field applied to many rows), this is addressed per row.
      *
      * Request body:
-     *   updates : Array<{ id: string, fields: Record<string, string|null> }>
+     *   updates : Array<{ id: string, fields: Record<string, string|null>, cell_formulas?: Record<string, string>|null }>
+     *
+     * When a row sends cell_formulas, it replaces that row's whole formulas map
+     * (an empty map or null removes every formula). Formulas of every row are
+     * validated before any row is written, so a bad formula never leaves a paste
+     * half applied.
      */
     public function batchUpdateCells(Request $request): JsonResponse
     {
@@ -372,14 +378,31 @@ class LinkBuildingOrdersDashboardController extends Controller
             return response()->json(['message' => 'Nothing to update.'], 422);
         }
 
+        $formula_rules    = [];
+        $formula_messages = [];
+        $formula_data     = [];
+        foreach ($updates as $index => $update) {
+            if (is_array($update) && array_key_exists('cell_formulas', $update)) {
+                $attribute        = "updates.{$index}.cell_formulas";
+                $formula_rules    = [...$formula_rules, ...UpdateLinkBuildingOrderRequest::cellFormulaRules($attribute)];
+                $formula_messages = [...$formula_messages, ...UpdateLinkBuildingOrderRequest::cellFormulaMessages($attribute)];
+
+                $formula_data['updates'][$index]['cell_formulas'] = $update['cell_formulas'];
+            }
+        }
+        if (! empty($formula_rules)) {
+            Validator::make($formula_data, $formula_rules, $formula_messages)->validate();
+        }
+
         $session_id          = $request->header('X-Session-ID');
         $updated_placements  = [];
 
         foreach ($updates as $update) {
-            $id     = $update['id'] ?? null;
-            $fields = (array) ($update['fields'] ?? []);
+            $id           = $update['id'] ?? null;
+            $fields       = (array) ($update['fields'] ?? []);
+            $has_formulas = is_array($update) && array_key_exists('cell_formulas', $update);
 
-            if (! $id || empty($fields)) {
+            if (! $id || (empty($fields) && ! $has_formulas)) {
                 continue;
             }
 
@@ -388,6 +411,10 @@ class LinkBuildingOrdersDashboardController extends Controller
                 fn ($key) => in_array($key, self::ALLOWED_BATCH_FIELDS, true),
                 ARRAY_FILTER_USE_KEY
             );
+
+            if ($has_formulas) {
+                $safe_fields['cell_formulas'] = empty($update['cell_formulas']) ? null : $update['cell_formulas'];
+            }
 
             if (empty($safe_fields)) {
                 continue;

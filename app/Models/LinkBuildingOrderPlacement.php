@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Query\Expression;
+use Illuminate\Support\Facades\DB;
 
 class LinkBuildingOrderPlacement extends Model
 {
@@ -58,7 +60,43 @@ class LinkBuildingOrderPlacement extends Model
         'assigned_admin_user_id',
         // Currency for pricing fields
         'currency',
+        // Spreadsheet formulas typed into cells, keyed by column (see FORMULA_COLUMNS)
+        'cell_formulas',
     ];
+
+    /**
+     * Columns whose dashboard cells may hold a spreadsheet formula. The column keeps
+     * the computed value, the formula is kept in cell_formulas. Status, Exact Match,
+     * Currency, Order ID and the URL columns are left out on purpose: a recalculated
+     * status would send client emails, and the others only accept fixed values.
+     */
+    public const FORMULA_COLUMNS = [
+        'team_specific_link_id', 'client', 'keyword', 'notes', 'internal_notes',
+        'request_date', 'estimated_delivery_date', 'article_title', 'live_link_date',
+        'dr_lbs', 'posting_fee_lbs', 'current_traffic', 'dr_formula', 'current_poc',
+        'current_price', 'lb_tl_approval', 'approval_date', 'final_price',
+    ];
+
+    public const MAX_CELL_FORMULA_LENGTH = 2000;
+
+    /**
+     * SQL that drops the formulas of the given columns from cell_formulas, for bulk
+     * writes (imports) that bypass the model: a value written over a formula cell
+     * replaces the formula, like pasting values in a spreadsheet. Null when none of
+     * the columns can hold a formula. JSON_REMOVE works on MySQL and SQLite alike.
+     */
+    public static function removeCellFormulasExpression(array $columns): ?Expression
+    {
+        $formula_columns = array_values(array_intersect(self::FORMULA_COLUMNS, $columns));
+        if (empty($formula_columns)) {
+            return null;
+        }
+
+        // Safe to inline: the paths come from the FORMULA_COLUMNS constant, never from input.
+        $paths = implode(', ', array_map(fn (string $column) => "'$.{$column}'", $formula_columns));
+
+        return DB::raw("JSON_REMOVE(cell_formulas, {$paths})");
+    }
 
     protected function casts(): array
     {
@@ -67,6 +105,7 @@ class LinkBuildingOrderPlacement extends Model
             'exact_match'    => 'boolean',
             'dr'             => 'integer',
             'completed_date' => 'datetime',
+            'cell_formulas'  => 'array',
         ];
     }
 
@@ -182,6 +221,7 @@ class LinkBuildingOrderPlacement extends Model
             'approval_date'             => $this->approval_date ?? '',
             'final_price'               => $this->final_price ?? '',
             'currency'                  => $this->currency ?? 'USD',
+            'cell_formulas'             => empty($this->cell_formulas) ? null : $this->cell_formulas,
             'user_id'                       => $this->user_id,
             'admin_team_id'                 => $this->admin_team_id,
             'admin_team_name'               => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,

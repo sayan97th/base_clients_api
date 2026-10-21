@@ -85,6 +85,30 @@ class LinkBuildingMetricsImportTest extends TestCase
         $this->assertSame('do-not-touch', $fresh->notes);
     }
 
+    public function test_imported_metrics_replace_the_formulas_of_the_updated_cells_only(): void
+    {
+        $placement = $this->placement([
+            'order_id'      => 'BL-1002',
+            'cell_formulas' => [
+                'current_traffic' => '=[dr_lbs:~0]*100',
+                'final_price'     => '=[current_price:~0]*1.15',
+            ],
+        ]);
+
+        $csv = "Order ID,Request Date,Current Traffic\n"
+            . "BL-1002,{$placement->request_date},7000\n";
+
+        $this->actingAs($this->admin)->postJson('/api/admin/link-building-orders/metrics-import', [
+            'file'           => $this->csvUpload($csv),
+            'target_columns' => ['current_traffic'],
+        ])->assertStatus(202);
+
+        $fresh = $placement->fresh();
+        $this->assertSame('7000', $fresh->current_traffic);
+        // The imported cell is a plain value now, the other formula is kept.
+        $this->assertSame(['final_price' => '=[current_price:~0]*1.15'], $fresh->cell_formulas);
+    }
+
     public function test_unmatched_order_id_is_skipped_and_never_creates_a_row(): void
     {
         $csv = "Order ID,Request Date,Current Traffic\n"

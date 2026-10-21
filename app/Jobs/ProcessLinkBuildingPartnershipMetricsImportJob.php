@@ -243,7 +243,9 @@ class ProcessLinkBuildingPartnershipMetricsImportJob implements ShouldQueue
     /**
      * Saves the file domains to the reference list. Only the columns the file
      * provides are written, so a metrics file never clears the POC and price
-     * of a domain, and a partner file never clears its DR and traffic.
+     * of a domain, and a partner file never clears its DR and traffic. A row
+     * whose DR and traffic cells are both blank keeps the metrics saved before,
+     * so a gap in the metrics export never wipes the DR of live orders.
      *
      * @param array<string, array<string, string|null>> $entries
      * @param string[] $file_columns
@@ -251,18 +253,42 @@ class ProcessLinkBuildingPartnershipMetricsImportJob implements ShouldQueue
     private function syncReferenceList(array $entries, array $file_columns): void
     {
         $now              = now()->toDateTimeString();
-        $has_metrics      = ! empty(array_intersect(['dr', 'traffic'], $file_columns));
-        $has_partner_data = ! empty(array_intersect(['current_poc', 'current_price'], $file_columns));
+        $metric_columns   = array_values(array_intersect(['dr', 'traffic'], $file_columns));
+        $partner_columns  = array_values(array_intersect(['current_poc', 'current_price'], $file_columns));
+        $has_partner_data = ! empty($partner_columns);
 
-        $update_columns = ['domain', ...$file_columns, 'updated_at'];
-        if ($has_metrics) {
-            $update_columns[] = 'metrics_synced_at';
-        }
-        if ($has_partner_data) {
-            $update_columns[] = 'partner_synced_at';
+        // Rows are grouped by the columns they write, since one upsert writes the same columns on every row.
+        $groups = [];
+
+        foreach ($entries as $domain_key => $entry) {
+            $row = ['domain_key' => $domain_key, 'domain' => $entry['domain']];
+
+            if ($has_partner_data) {
+                foreach ($partner_columns as $column) {
+                    $row[$column] = $entry[$column];
+                }
+                $row['partner_synced_at'] = $now;
+            }
+
+            $has_metric_values = ! empty(array_filter(
+                array_intersect_key($entry, array_flip($metric_columns)),
+                fn ($value) => $value !== null
+            ));
+
+            if ($has_metric_values) {
+                foreach ($metric_columns as $column) {
+                    $row[$column] = $entry[$column];
+                }
+                $row['metrics_synced_at'] = $now;
+            }
+
+            $row['created_at'] = $now;
+            $row['updated_at'] = $now;
+
+            $groups[implode(',', array_keys($row))][] = $row;
         }
 
-        DB::transaction(function () use ($entries, $now, $has_metrics, $has_partner_data, $update_columns) {
+        DB::transaction(function () use ($groups, $now, $has_partner_data) {
             // The file is the complete partner list: domains missing from it were removed
             // (low metrics or the publisher lost access), so their orders show SITE REMOVED.
             // Every domain leaves the list first, and the upsert below puts back the ones
@@ -278,23 +304,12 @@ class ProcessLinkBuildingPartnershipMetricsImportJob implements ShouldQueue
                     ]);
             }
 
-            foreach (array_chunk($entries, self::CHUNK_SIZE, true) as $chunk) {
-                $rows = [];
+            foreach ($groups as $rows) {
+                $update_columns = array_values(array_diff(array_keys($rows[0]), ['domain_key', 'created_at']));
 
-                foreach ($chunk as $domain_key => $entry) {
-                    $row = ['domain_key' => $domain_key, ...$entry, 'created_at' => $now, 'updated_at' => $now];
-
-                    if ($has_metrics) {
-                        $row['metrics_synced_at'] = $now;
-                    }
-                    if ($has_partner_data) {
-                        $row['partner_synced_at'] = $now;
-                    }
-
-                    $rows[] = $row;
+                foreach (array_chunk($rows, self::CHUNK_SIZE) as $chunk) {
+                    DB::table('link_building_partner_metrics')->upsert($chunk, ['domain_key'], $update_columns);
                 }
-
-                DB::table('link_building_partner_metrics')->upsert($rows, ['domain_key'], $update_columns);
             }
         });
     }

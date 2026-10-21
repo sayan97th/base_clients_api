@@ -6,6 +6,7 @@ use App\Models\LinkBuildingOrderPlacement;
 use App\Models\LinkBuildingPartnerMetric;
 use App\Models\Role;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -265,5 +266,253 @@ class LinkBuildingPartnershipMetricsImportTest extends TestCase
             'file'           => UploadedFile::fake()->createWithContent('metrics.csv', "Partnership,DR\na.com,1\n"),
             'target_columns' => ['dr_formula'],
         ])->assertStatus(403);
+    }
+
+    public function test_exported_partner_database_headers_are_recognised(): void
+    {
+        $placement = $this->placement();
+
+        $status = $this->importMetrics(
+            "Website,Ahrefs Domain Rating,Ahrefs Organic Traffic,Publisher,Posting Fee,Notes\n"
+            . "techkaya.com,52,1800,David,20,ignored column\n"
+        );
+
+        $this->assertSame(['dr', 'traffic', 'current_poc', 'current_price'], $status['reference_columns']);
+        $fresh = $placement->fresh();
+        $this->assertSame('52', $fresh->dr_formula);
+        $this->assertSame('1800', $fresh->current_traffic);
+        $this->assertSame('David', $fresh->current_poc);
+        $this->assertSame('20', $fresh->current_price);
+        $this->assertSame('do-not-touch', $fresh->notes);
+    }
+
+    public function test_the_leftmost_matching_column_is_used(): void
+    {
+        $this->importMetrics("Partnership,DR,DR Formula\ntechkaya.com,74,99\n");
+
+        $this->assertSame('74', LinkBuildingPartnerMetric::where('domain_key', 'techkaya.com')->value('dr'));
+    }
+
+    public function test_file_with_a_utf8_bom_is_read(): void
+    {
+        $placement = $this->placement();
+
+        $status = $this->importMetrics("\xEF\xBB\xBFPartnership,DR\ntechkaya.com,61\n", ['target_columns' => ['dr_formula']]);
+
+        $this->assertSame('completed', $status['status']);
+        $this->assertSame('61', $placement->fresh()->dr_formula);
+    }
+
+    public function test_a_domain_listed_twice_keeps_its_last_row(): void
+    {
+        $status = $this->importMetrics("Partnership,DR\ntechkaya.com,40\nhttps://www.techkaya.com/,45\n");
+
+        $this->assertSame(1, $status['reference_rows']);
+        $this->assertSame('45', LinkBuildingPartnerMetric::where('domain_key', 'techkaya.com')->value('dr'));
+    }
+
+    public function test_file_rows_without_a_domain_are_ignored(): void
+    {
+        $status = $this->importMetrics("Partnership,DR\n,40\n   ,41\ntechkaya.com,45\n\n");
+
+        $this->assertSame(1, $status['reference_rows']);
+        $this->assertSame(1, LinkBuildingPartnerMetric::count());
+    }
+
+    public function test_running_the_same_file_twice_reports_rows_as_already_up_to_date(): void
+    {
+        $this->placement();
+        $csv = "Partnership,DR,Traffic,POC,Price\ntechkaya.com,74,2300,David,20\n";
+
+        $this->importMetrics($csv);
+        $status = $this->importMetrics($csv);
+
+        $this->assertSame(0, $status['updated']);
+        $this->assertSame(1, $status['unchanged']);
+    }
+
+    public function test_rows_without_a_partnership_are_never_touched(): void
+    {
+        $empty = $this->placement(['partnership' => null]);
+
+        $status = $this->importMetrics("Partnership,DR,Traffic,POC,Price\ntechkaya.com,74,2300,David,20\n");
+
+        $this->assertSame(0, $status['total']);
+        $this->assertSame('stale-poc', $empty->fresh()->current_poc);
+    }
+
+    public function test_rows_after_the_end_date_keep_their_values(): void
+    {
+        $future = $this->placement(['request_date' => now()->addMonth()->format('m/d/Y')]);
+
+        $status = $this->importMetrics("Partnership,POC,Price\ntechkaya.com,David,20\n", [
+            'date_to' => now()->format('m/d/Y'),
+        ]);
+
+        $this->assertSame(1, $status['out_of_range']);
+        $this->assertSame('stale-poc', $future->fresh()->current_poc);
+    }
+
+    public function test_default_window_covers_the_last_two_months(): void
+    {
+        $recent = $this->placement(['request_date' => now()->subMonths(2)->addDay()->format('m/d/Y')]);
+        $old    = $this->placement(['request_date' => now()->subMonths(2)->subDays(2)->format('m/d/Y')]);
+
+        $this->importMetrics("Partnership,POC,Price\ntechkaya.com,David,20\n");
+
+        $this->assertSame('David', $recent->fresh()->current_poc);
+        $this->assertSame('stale-poc', $old->fresh()->current_poc);
+    }
+
+    public function test_rows_without_a_request_date_are_updated(): void
+    {
+        $undated = $this->placement(['request_date' => null]);
+
+        $this->importMetrics("Partnership,POC,Price\ntechkaya.com,David,20\n");
+
+        $this->assertSame('David', $undated->fresh()->current_poc);
+    }
+
+    public function test_metrics_only_first_upload_never_flags_rows_as_site_removed(): void
+    {
+        $placement = $this->placement(['partnership' => 'https://not-in-file.com']);
+
+        $status = $this->importMetrics("Partnership,DR,Traffic\ntechkaya.com,74,2300\n");
+
+        $this->assertSame(0, $status['site_removed']);
+        $this->assertSame('stale-poc', $placement->fresh()->current_poc);
+    }
+
+    public function test_domain_without_metrics_keeps_its_dr_and_is_listed_for_review(): void
+    {
+        $placement = $this->placement(['order_id' => 'BL-7001', 'partnership' => 'https://no-metrics.com']);
+
+        $status = $this->importMetrics("Partnership,DR,Traffic,POC,Price\ntechkaya.com,74,2300,David,20\nno-metrics.com,,,Areeba,15\n");
+
+        $this->assertSame('stale-dr', $placement->fresh()->dr_formula);
+        $this->assertSame('Areeba', $placement->fresh()->current_poc);
+        $this->assertSame('BL-7001', $status['skipped_records'][0]['order_id']);
+        $this->assertStringContainsString('no-metrics.com', $status['skipped_records'][0]['reason']);
+    }
+
+    public function test_blank_metric_cells_keep_the_metrics_saved_before(): void
+    {
+        $placement = $this->placement();
+
+        $this->importMetrics("Partnership,DR,Traffic\ntechkaya.com,74,2300\n");
+        $this->importMetrics("Partnership,DR,Traffic\ntechkaya.com,,\n");
+
+        $reference = LinkBuildingPartnerMetric::where('domain_key', 'techkaya.com')->first();
+        $this->assertSame('74', $reference->dr);
+        $this->assertSame('2300', $reference->traffic);
+        $this->assertSame('74', $placement->fresh()->dr_formula);
+    }
+
+    public function test_site_that_returns_to_the_partner_list_is_restored(): void
+    {
+        $placement = $this->placement();
+
+        $this->importMetrics("Partnership,POC,Price\nother.com,Muhammad,80\n");
+        $this->assertSame(LinkBuildingPartnerMetric::SITE_REMOVED, $placement->fresh()->current_poc);
+
+        $this->importMetrics("Partnership,POC,Price\ntechkaya.com,David,20\n");
+        $this->assertSame('David', $placement->fresh()->current_poc);
+    }
+
+    public function test_uploaded_file_is_deleted_after_the_update(): void
+    {
+        $this->importMetrics("Partnership,DR\ntechkaya.com,74\n");
+
+        $this->assertSame([], Storage::disk('local')->allFiles('imports/link-building'));
+    }
+
+    public function test_uploaded_file_is_deleted_when_the_update_fails(): void
+    {
+        $status = $this->importMetrics("Order ID,DR\nBL-1,50\n");
+
+        $this->assertSame('failed', $status['status']);
+        $this->assertSame([], Storage::disk('local')->allFiles('imports/link-building'));
+    }
+
+    public function test_file_without_value_columns_fails(): void
+    {
+        $status = $this->importMetrics("Partnership,Notes\ntechkaya.com,hello\n");
+
+        $this->assertSame('failed', $status['status']);
+        $this->assertStringContainsString('at least one of these columns', $status['errors'][0]['message']);
+    }
+
+    public function test_file_with_headers_only_fails(): void
+    {
+        $status = $this->importMetrics("Partnership,DR\n");
+
+        $this->assertSame('failed', $status['status']);
+        $this->assertStringContainsString('no rows', $status['errors'][0]['message']);
+    }
+
+    public function test_long_values_are_cut_to_the_column_length(): void
+    {
+        $this->importMetrics('Partnership,POC' . "\n" . 'techkaya.com,' . str_repeat('x', 400) . "\n");
+
+        $this->assertSame(255, mb_strlen(LinkBuildingPartnerMetric::where('domain_key', 'techkaya.com')->value('current_poc')));
+    }
+
+    public function test_rejects_requests_without_a_file_or_columns(): void
+    {
+        $this->actingAs($this->admin)
+            ->postJson('/api/admin/link-building-orders/partnership-metrics-import', [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['file', 'target_columns']);
+    }
+
+    public function test_rejects_dates_that_are_not_mm_dd_yyyy(): void
+    {
+        $this->actingAs($this->admin)->postJson('/api/admin/link-building-orders/partnership-metrics-import', [
+            'file'           => UploadedFile::fake()->createWithContent('metrics.csv', "Partnership,DR\na.com,1\n"),
+            'target_columns' => ['dr_formula'],
+            'date_from'      => '2026-10-01',
+        ])->assertStatus(422)->assertJsonValidationErrors(['date_from']);
+    }
+
+    public function test_rejects_files_that_are_not_csv(): void
+    {
+        $this->actingAs($this->admin)->postJson('/api/admin/link-building-orders/partnership-metrics-import', [
+            'file'           => UploadedFile::fake()->create('metrics.pdf', 10, 'application/pdf'),
+            'target_columns' => ['dr_formula'],
+        ])->assertStatus(422)->assertJsonValidationErrors(['file']);
+    }
+
+    public function test_summary_of_an_empty_reference_list(): void
+    {
+        $this->actingAs($this->admin)
+            ->getJson('/api/admin/link-building-orders/partnership-metrics/summary')
+            ->assertOk()
+            ->assertExactJson(['data' => [
+                'total_domains'     => 0,
+                'metrics_domains'   => 0,
+                'listed_partners'   => 0,
+                'last_metrics_sync' => null,
+                'last_partner_sync' => null,
+            ]]);
+    }
+
+    public function test_summary_reports_the_last_sync_dates(): void
+    {
+        Carbon::setTestNow('2026-10-01 09:00:00');
+        $this->importMetrics("Partnership,DR\na.com,10\n");
+        Carbon::setTestNow('2026-10-15 09:00:00');
+        $this->importMetrics("Partnership,POC\na.com,David\n");
+        Carbon::setTestNow();
+
+        $response = $this->actingAs($this->admin)->getJson('/api/admin/link-building-orders/partnership-metrics/summary');
+
+        $this->assertStringStartsWith('2026-10-01', $response->json('data.last_metrics_sync'));
+        $this->assertStringStartsWith('2026-10-15', $response->json('data.last_partner_sync'));
+    }
+
+    public function test_guests_cannot_use_the_partnership_metrics_endpoints(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/partnership-metrics-import', [])->assertStatus(401);
+        $this->getJson('/api/admin/link-building-orders/partnership-metrics/summary')->assertStatus(401);
     }
 }

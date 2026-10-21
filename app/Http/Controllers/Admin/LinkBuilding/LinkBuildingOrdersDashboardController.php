@@ -15,6 +15,7 @@ use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
+use App\Services\LinkBuildingPartnerMetricsService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +29,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LinkBuildingOrdersDashboardController extends Controller
 {
+    /** Fills DR, traffic, POC and price from the partner metrics list when a row's Partnership changes. */
+    public function __construct(
+        private readonly LinkBuildingPartnerMetricsService $partner_metrics,
+    ) {}
+
     /**
      * DB columns that may appear as a sort_rules key.
      * Computed-only fields (days_left, projected_health) are intentionally excluded.
@@ -266,6 +272,8 @@ class LinkBuildingOrdersDashboardController extends Controller
             $data['estimated_delivery_date'] = $base_date->addDays(30)->format('m/d/Y');
         }
 
+        $data = $this->partner_metrics->withPartnershipLookup(new LinkBuildingOrderPlacement(), $data);
+
         $placement  = LinkBuildingOrderPlacement::create($data);
         $session_id = $request->header('X-Session-ID');
 
@@ -293,7 +301,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         $old_status = $placement->status;
-        $placement->update($request->validated());
+        $placement->update($this->partner_metrics->withPartnershipLookup($placement, $request->validated()));
 
         /** @var LinkBuildingOrderPlacement $fresh */
         $fresh      = $placement->fresh();
@@ -344,7 +352,7 @@ class LinkBuildingOrdersDashboardController extends Controller
         $session_id = $request->header('X-Session-ID');
 
         foreach ($placements as $placement) {
-            $placement->update($safe_updates);
+            $placement->update($this->partner_metrics->withPartnershipLookup($placement, $safe_updates, keep_given_values: true));
             broadcast(new LinkBuildingOrderUpdated($placement->fresh(), $session_id));
         }
 
@@ -433,7 +441,7 @@ class LinkBuildingOrdersDashboardController extends Controller
                 continue;
             }
 
-            $placement->update($safe_fields);
+            $placement->update($this->partner_metrics->withPartnershipLookup($placement, $safe_fields, keep_given_values: true));
             $fresh = $placement->fresh();
             broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
             $updated_placements[] = $fresh->toApiArray();

@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardControlle
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSavedFilterController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderFilterPreferenceController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSheetFormulaController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingPartnerMetricsController;
 use App\Http\Controllers\Admin\News\NewsController as AdminNewsController;
 use App\Http\Controllers\Admin\Resource\AdminResourceController;
 use App\Http\Controllers\Admin\Resource\AdminResourceFileController;
@@ -532,6 +533,8 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/import',                  [LinkBuildingOrdersDashboardController::class, 'import']);
             Route::post('/link-building-orders/metrics-import',          [LinkBuildingOrdersDashboardController::class, 'metricsImport']);
             Route::get('/link-building-orders/import-status/{import_id}',[LinkBuildingOrdersDashboardController::class, 'importStatus']);
+            Route::post('/link-building-orders/partnership-metrics-import',      [LinkBuildingPartnerMetricsController::class, 'import']);
+            Route::get('/link-building-orders/partnership-metrics/summary',      [LinkBuildingPartnerMetricsController::class, 'summary']);
             Route::post('/link-building-orders/resolve-assignments',     [LinkBuildingOrdersDashboardController::class, 'resolveAssignments']);
             Route::get('/link-building-orders/saved-filters',            [LinkBuildingOrderSavedFilterController::class, 'index']);
             Route::post('/link-building-orders/saved-filters',           [LinkBuildingOrderSavedFilterController::class, 'store']);

@@ -162,4 +162,84 @@ class LinkBuildingOrderCellFormulasTest extends TestCase
 
         $this->assertSame('old', $first->fresh()->keyword, 'No row may be written when another row is invalid');
     }
+
+    public function test_a_vlookup_formula_is_stored_exactly_as_sent(): void
+    {
+        $placement = $this->placement();
+        $formula   = '=IFERROR(VLOOKUP([partnership:~0], [$partnership:$1]:[$current_price:$500], 11, FALSE), "New partner")';
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'current_price' => '150',
+                'cell_formulas' => ['current_price' => $formula],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.current_price', '150')
+            ->assertJsonPath('data.cell_formulas.current_price', $formula);
+
+        $this->assertSame(['current_price' => $formula], $placement->fresh()->cell_formulas);
+    }
+
+    public function test_every_formula_column_accepts_a_formula(): void
+    {
+        $placement = $this->placement();
+        $formulas  = array_fill_keys(LinkBuildingOrderPlacement::FORMULA_COLUMNS, '=VLOOKUP("x", {"x",1}, 2, FALSE)');
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", ['cell_formulas' => $formulas])
+            ->assertOk();
+
+        $this->assertSame($formulas, $placement->fresh()->cell_formulas);
+    }
+
+    public function test_formulas_are_rejected_on_every_fixed_value_column(): void
+    {
+        $placement = $this->placement();
+
+        foreach (['status', 'exact_match', 'currency', 'order_id', 'landing_page', 'live_link', 'link_type'] as $column) {
+            $this->actingAs($this->admin, 'api')
+                ->putJson("/api/admin/link-building-orders/{$placement->id}", ['cell_formulas' => [$column => '=1']])
+                ->assertStatus(422)
+                ->assertJsonValidationErrors(['cell_formulas']);
+        }
+
+        $this->assertNull($placement->fresh()->cell_formulas);
+    }
+
+    public function test_a_cell_formula_longer_than_the_limit_is_rejected(): void
+    {
+        $placement = $this->placement();
+        $limit     = LinkBuildingOrderPlacement::MAX_CELL_FORMULA_LENGTH;
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'cell_formulas' => ['notes' => '=' . str_repeat('1', $limit - 1)],
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'cell_formulas' => ['notes' => '=' . str_repeat('1', $limit)],
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['cell_formulas.notes']);
+    }
+
+    public function test_a_lookup_result_recalculated_in_the_table_is_saved_by_the_batch_endpoint(): void
+    {
+        $formula   = '=VLOOKUP([order_id:~0], [order_id]:[final_price], 24, FALSE)';
+        $placement = $this->placement(['final_price' => '100', 'cell_formulas' => ['current_price' => $formula]]);
+
+        // The table recalculates the lookup after Final Price changed and saves only the new value.
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/batch-update-cells', [
+                'updates' => [['id' => $placement->id, 'fields' => ['current_price' => '125']]],
+            ])
+            ->assertOk()
+            ->assertJsonPath('updated_count', 1);
+
+        $fresh = $placement->fresh();
+        $this->assertSame('125', $fresh->current_price);
+        $this->assertSame(['current_price' => $formula], $fresh->cell_formulas, 'Saving a value alone keeps the formula');
+    }
 }

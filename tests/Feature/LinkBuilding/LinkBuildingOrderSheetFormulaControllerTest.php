@@ -214,4 +214,179 @@ class LinkBuildingOrderSheetFormulaControllerTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors(['target_key']);
     }
+
+    public function test_summary_cell_can_sit_under_a_formula_column(): void
+    {
+        $column = $this->column();
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson(self::BASE_URL . '/summary', [
+                'target_key' => $column->columnKey(),
+                'formula'    => '=SUM([' . $column->columnKey() . ']:[' . $column->columnKey() . '])',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.summary.0.key', $column->columnKey())
+            ->assertJsonPath('data.columns.0.id', $column->id);
+    }
+
+    public function test_summary_rejects_a_formula_without_equals_sign(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->putJson(self::BASE_URL . '/summary', ['target_key' => 'final_price', 'formula' => 'SUM(1,2)'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['formula'])
+            ->assertJsonPath('errors.formula.0', 'A formula must start with "=".');
+
+        $this->assertDatabaseCount('link_building_order_sheet_formulas', 0);
+    }
+
+    // ─── Lookup formulas ──────────────────────────────────────────────────────
+
+    public function test_a_vlookup_formula_is_stored_and_returned_exactly_as_sent(): void
+    {
+        // Quotes, commas, "$" anchors, braces and non ASCII text must survive the round trip untouched.
+        $formula = '=IFERROR(VLOOKUP([link_type:~0], {"DA 30+ External",30;"Express Link",7}, 2, FALSE)'
+            . ' + VLOOKUP([partnership:~0], [$partnership:$1]:[$current_price:$500], 11, FALSE), "Verify Capacity w/ Teams, ñ é")';
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL . '/columns', ['name' => 'Partner price', 'formula' => $formula])
+            ->assertStatus(201)
+            ->assertJsonPath('data.formula', $formula);
+
+        $this->assertSame($formula, LinkBuildingOrderSheetFormula::find($response->json('data.id'))->formula);
+
+        $this->actingAs($this->staff, 'api')
+            ->getJson(self::BASE_URL)
+            ->assertOk()
+            ->assertJsonPath('data.columns.0.formula', $formula);
+    }
+
+    public function test_store_accepts_a_formula_at_the_length_limit_and_rejects_a_longer_one(): void
+    {
+        $limit = LinkBuildingOrderSheetFormula::MAX_FORMULA_LENGTH;
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL . '/columns', ['name' => 'Long', 'formula' => '=' . str_repeat('1', $limit - 1)])
+            ->assertStatus(201);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL . '/columns', ['name' => 'Too long', 'formula' => '=' . str_repeat('1', $limit)])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['formula']);
+    }
+
+    // ─── Column details ───────────────────────────────────────────────────────
+
+    public function test_store_uses_the_given_position_and_defaults_the_format_to_auto(): void
+    {
+        $this->column(['position' => 1]);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL . '/columns', ['name' => 'First', 'formula' => '=1', 'position' => 0])
+            ->assertStatus(201)
+            ->assertJsonPath('data.position', 0)
+            ->assertJsonPath('data.format', 'auto');
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson(self::BASE_URL)
+            ->assertJsonPath('data.columns.0.name', 'First')
+            ->assertJsonPath('data.columns.1.name', 'Margin');
+    }
+
+    public function test_store_rejects_a_name_or_position_out_of_bounds(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson(self::BASE_URL . '/columns', [
+                'name'     => str_repeat('a', 101),
+                'formula'  => '=1',
+                'position' => -1,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['name', 'position']);
+    }
+
+    public function test_update_rejects_an_empty_name_and_a_formula_without_equals_sign(): void
+    {
+        $column = $this->column();
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson(self::BASE_URL . "/columns/{$column->id}", ['name' => '   ', 'formula' => 'VLOOKUP(1, A:B, 2)'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['name', 'formula']);
+
+        $this->assertSame('Margin', $column->fresh()->name);
+    }
+
+    public function test_update_and_delete_return_404_for_an_unknown_column(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->putJson(self::BASE_URL . '/columns/999999', ['name' => 'Ghost'])
+            ->assertStatus(404);
+
+        $this->actingAs($this->admin, 'api')
+            ->deleteJson(self::BASE_URL . '/columns/999999')
+            ->assertStatus(404);
+
+        Event::assertNotDispatched(LinkBuildingOrderSheetFormulasChanged::class);
+    }
+
+    public function test_deleting_a_column_keeps_the_other_totals_cells(): void
+    {
+        $column = $this->column();
+        LinkBuildingOrderSheetFormula::create([
+            'kind'       => LinkBuildingOrderSheetFormula::KIND_SUMMARY,
+            'target_key' => 'final_price',
+            'formula'    => '=SUM([final_price]:[final_price])',
+        ]);
+
+        $this->actingAs($this->admin, 'api')
+            ->deleteJson(self::BASE_URL . "/columns/{$column->id}")
+            ->assertOk();
+
+        $this->assertDatabaseHas('link_building_order_sheet_formulas', ['target_key' => 'final_price']);
+    }
+
+    // ─── Authorization and broadcasting ───────────────────────────────────────
+
+    public function test_unauthenticated_requests_cannot_change_formulas(): void
+    {
+        $column = $this->column();
+
+        $this->postJson(self::BASE_URL . '/columns', ['name' => 'X', 'formula' => '=1'])->assertStatus(401);
+        $this->putJson(self::BASE_URL . "/columns/{$column->id}", ['name' => 'X'])->assertStatus(401);
+        $this->deleteJson(self::BASE_URL . "/columns/{$column->id}")->assertStatus(401);
+        $this->putJson(self::BASE_URL . '/summary', ['target_key' => 'dr_lbs', 'formula' => '=1'])->assertStatus(401);
+
+        $this->assertDatabaseCount('link_building_order_sheet_formulas', 1);
+    }
+
+    public function test_every_change_is_broadcast_with_the_session_of_the_editor(): void
+    {
+        $headers = ['X-Session-ID' => 'session-abc'];
+
+        $created = $this->actingAs($this->admin, 'api')
+            ->withHeaders($headers)
+            ->postJson(self::BASE_URL . '/columns', ['name' => 'Days', 'formula' => '=1'])
+            ->assertStatus(201);
+        $id = $created->json('data.id');
+
+        $this->withHeaders($headers)->putJson(self::BASE_URL . "/columns/{$id}", ['name' => 'Days left'])->assertOk();
+        $this->withHeaders($headers)
+            ->putJson(self::BASE_URL . '/summary', ['target_key' => 'dr_lbs', 'formula' => '=1'])
+            ->assertOk();
+        $this->withHeaders($headers)->deleteJson(self::BASE_URL . "/columns/{$id}")->assertOk();
+
+        Event::assertDispatchedTimes(LinkBuildingOrderSheetFormulasChanged::class, 4);
+        Event::assertDispatched(
+            LinkBuildingOrderSheetFormulasChanged::class,
+            fn (LinkBuildingOrderSheetFormulasChanged $event) => $event->changed_by_session_id === 'session-abc'
+        );
+    }
+
+    public function test_reading_formulas_is_not_broadcast(): void
+    {
+        $this->actingAs($this->admin, 'api')->getJson(self::BASE_URL)->assertOk();
+
+        Event::assertNotDispatched(LinkBuildingOrderSheetFormulasChanged::class);
+    }
 }

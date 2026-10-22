@@ -79,6 +79,72 @@ class LinkBuildingOrderPlacement extends Model
 
     public const MAX_CELL_FORMULA_LENGTH = 2000;
 
+    /** Pricing columns stored as money text, such as "$1,250.00", see formatPrice(). */
+    public const PRICE_COLUMNS = ['posting_fee_lbs', 'current_price', 'final_price'];
+
+    /** Symbol each dashboard currency is shown with. */
+    public const CURRENCY_SYMBOLS = ['USD' => '$', 'EUR' => '€'];
+
+    /**
+     * Price text the way the BASE link sheet shows it: "150", "1250.5" or "$1,250.5"
+     * become "$150.00" and "$1,250.50", using the symbol of the given currency. With
+     * no currency, a symbol typed with the amount is kept and "$" is used otherwise.
+     * Text that is not a plain amount ("TBD", "$50 to $100", "10%") is kept as typed.
+     */
+    public static function formatPrice(?string $value, ?string $currency = null): ?string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return $value;
+        }
+
+        $is_negative = false;
+        if ($text[0] === '-' || $text[0] === '+') {
+            $is_negative = $text[0] === '-';
+            $text        = ltrim(substr($text, 1));
+        }
+
+        $typed_symbol = null;
+        if (preg_match('/^([$€£])\s*/u', $text, $match)) {
+            $typed_symbol = $match[1];
+            $text         = substr($text, strlen($match[0]));
+        }
+
+        if (! $is_negative && str_starts_with($text, '-')) {
+            $is_negative = true;
+            $text        = ltrim(substr($text, 1));
+        }
+
+        // Thousands separators only count when they group digits by three.
+        if (preg_match('/^\d{1,3}(,\d{3})+(\.\d*)?$/', $text)) {
+            $text = str_replace(',', '', $text);
+        }
+
+        if (! preg_match('/^(\d+\.?\d*|\.\d+)$/', $text)) {
+            return $value;
+        }
+
+        $amount = round((float) $text, 2);
+        $symbol = self::CURRENCY_SYMBOLS[strtoupper((string) $currency)] ?? $typed_symbol ?? '$';
+
+        return ($is_negative && $amount > 0 ? '-' : '') . $symbol . number_format($amount, 2);
+    }
+
+    protected static function booted(): void
+    {
+        // Prices are saved with the symbol of the row's currency, so a typed "150"
+        // is stored as "$150.00", and switching the currency updates every price.
+        static::saving(function (self $placement) {
+            $columns = $placement->isDirty('currency')
+                ? self::PRICE_COLUMNS
+                : array_filter(self::PRICE_COLUMNS, fn (string $column) => $placement->isDirty($column));
+
+            foreach ($columns as $column) {
+                $placement->{$column} = self::formatPrice($placement->{$column}, $placement->currency ?? 'USD');
+            }
+        });
+    }
+
     /** Bounds of the Estimated Turnaround Time (Days) an admin may enter on the dashboard. */
     public const MIN_TURNAROUND_DAYS = 1;
     public const MAX_TURNAROUND_DAYS = 365;

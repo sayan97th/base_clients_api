@@ -223,20 +223,20 @@ class ProcessLinkBuildingMetricsImportJob implements ShouldQueue
 
         $chunk_order_ids = array_filter(array_column($chunk, 'order_id'), fn ($v) => $v !== '');
 
-        $existing_set = DB::table('link_building_order_placements')
+        // order_id => currency, so imported prices get the symbol of their row's currency.
+        $existing_currencies = DB::table('link_building_order_placements')
             ->whereIn('order_id', $chunk_order_ids)
-            ->pluck('order_id')
-            ->flip()
+            ->pluck('currency', 'order_id')
             ->all();
 
         $chunk_updated = 0;
         $chunk_skipped = 0;
 
-        DB::transaction(function () use ($chunk, $target_columns, $existing_set, $now, &$chunk_updated, &$chunk_skipped, &$errors, &$skipped_records) {
+        DB::transaction(function () use ($chunk, $target_columns, $existing_currencies, $now, &$chunk_updated, &$chunk_skipped, &$errors, &$skipped_records) {
             foreach ($chunk as $row) {
                 $order_id = $row['order_id'];
 
-                if (! isset($existing_set[$order_id])) {
+                if (! array_key_exists($order_id, $existing_currencies)) {
                     $chunk_skipped++;
                     if (count($skipped_records) < 100) {
                         $skipped_records[] = [
@@ -250,7 +250,12 @@ class ProcessLinkBuildingMetricsImportJob implements ShouldQueue
                 $update_values = [];
                 foreach ($target_columns as $col) {
                     if (array_key_exists($col, $row)) {
-                        $update_values[$col] = $row[$col] === '' ? null : $row[$col];
+                        $update_values[$col] = match (true) {
+                            $row[$col] === '' => null,
+                            in_array($col, LinkBuildingOrderPlacement::PRICE_COLUMNS, true)
+                                => LinkBuildingOrderPlacement::formatPrice($row[$col], $existing_currencies[$order_id] ?? 'USD'),
+                            default => $row[$col],
+                        };
                     }
                 }
 

@@ -51,7 +51,7 @@ class LinkBuildingOrderCellFormulasTest extends TestCase
                 'cell_formulas' => ['final_price' => '=[current_price:~0]*1.15'],
             ])
             ->assertOk()
-            ->assertJsonPath('data.final_price', '115')
+            ->assertJsonPath('data.final_price', '$115.00')
             ->assertJsonPath('data.cell_formulas.final_price', '=[current_price:~0]*1.15');
 
         $this->assertSame(['final_price' => '=[current_price:~0]*1.15'], $placement->fresh()->cell_formulas);
@@ -127,7 +127,7 @@ class LinkBuildingOrderCellFormulasTest extends TestCase
             ->assertJsonPath('updated_count', 2);
 
         $this->assertSame(['dr_lbs' => '=2'], $with_formula->fresh()->cell_formulas);
-        $this->assertSame('5', $with_formula->fresh()->final_price);
+        $this->assertSame('$5.00', $with_formula->fresh()->final_price);
         $this->assertSame(['dr_lbs' => '=30*2'], $without_formula->fresh()->cell_formulas);
     }
 
@@ -174,7 +174,7 @@ class LinkBuildingOrderCellFormulasTest extends TestCase
                 'cell_formulas' => ['current_price' => $formula],
             ])
             ->assertOk()
-            ->assertJsonPath('data.current_price', '150')
+            ->assertJsonPath('data.current_price', '$150.00')
             ->assertJsonPath('data.cell_formulas.current_price', $formula);
 
         $this->assertSame(['current_price' => $formula], $placement->fresh()->cell_formulas);
@@ -239,7 +239,7 @@ class LinkBuildingOrderCellFormulasTest extends TestCase
             ->assertJsonPath('updated_count', 1);
 
         $fresh = $placement->fresh();
-        $this->assertSame('125', $fresh->current_price);
+        $this->assertSame('$125.00', $fresh->current_price);
         $this->assertSame(['current_price' => $formula], $fresh->cell_formulas, 'Saving a value alone keeps the formula');
     }
 }

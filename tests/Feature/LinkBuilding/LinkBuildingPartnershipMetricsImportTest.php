@@ -196,7 +196,7 @@ class LinkBuildingPartnershipMetricsImportTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('David', $response->json('data.0.current_poc'));
-        $this->assertSame('$20', $response->json('data.0.current_price'));
+        $this->assertSame('$20.00', $response->json('data.0.current_price'));
         $this->assertSame('74', $response->json('data.0.dr_formula'));
 
         // A listed site without metrics clears the old site's DR and traffic.
@@ -228,7 +228,7 @@ class LinkBuildingPartnershipMetricsImportTest extends TestCase
 
         $fresh = $placement->fresh();
         $this->assertSame('David', $fresh->current_poc);
-        $this->assertSame('99', $fresh->current_price);
+        $this->assertSame('$99.00', $fresh->current_price);
     }
 
     public function test_editing_a_row_without_changing_the_partnership_keeps_its_metrics(): void

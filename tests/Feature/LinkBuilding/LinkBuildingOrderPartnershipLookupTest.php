@@ -91,7 +91,7 @@ class LinkBuildingOrderPartnershipLookupTest extends TestCase
             ->assertJsonPath('data.dr_formula', '74')
             ->assertJsonPath('data.current_traffic', '2300')
             ->assertJsonPath('data.current_poc', 'David')
-            ->assertJsonPath('data.current_price', '$20');
+            ->assertJsonPath('data.current_price', '$20.00');
     }
 
     public function test_single_row_save_of_an_unrelated_cell_keeps_manual_metrics(): void
@@ -146,7 +146,7 @@ class LinkBuildingOrderPartnershipLookupTest extends TestCase
         foreach ([$first, $second] as $placement) {
             $fresh = $placement->fresh();
             $this->assertSame('David', $fresh->current_poc);
-            $this->assertSame('$20', $fresh->current_price);
+            $this->assertSame('$20.00', $fresh->current_price);
             $this->assertSame('2300', $fresh->current_traffic);
         }
     }
@@ -173,7 +173,7 @@ class LinkBuildingOrderPartnershipLookupTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.0.current_poc', 'David')
             ->assertJsonPath('data.1.current_poc', 'Muhammad')
-            ->assertJsonPath('data.1.current_price', '$80');
+            ->assertJsonPath('data.1.current_price', '$80.00');
     }
 
     public function test_cleared_partnership_keeps_the_metrics_of_the_row(): void

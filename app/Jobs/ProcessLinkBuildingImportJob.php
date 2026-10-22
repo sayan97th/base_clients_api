@@ -294,6 +294,11 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             return 'https://' . mb_substr($value, 0, 1993); // 1993 + 7 = 2000
         }
 
+        // The sheet has no currency column, so the symbol typed in the sheet is kept.
+        if (in_array($db_col, LinkBuildingOrderPlacement::PRICE_COLUMNS, true)) {
+            return $value === '' ? null : LinkBuildingOrderPlacement::formatPrice($value);
+        }
+
         return $value === '' ? null : $value;
     }
 

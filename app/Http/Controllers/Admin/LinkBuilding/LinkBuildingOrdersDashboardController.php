@@ -105,7 +105,16 @@ class LinkBuildingOrdersDashboardController extends Controller
     /** Limits of quickFilterValues(): columns per request and values per column. */
     private const QUICK_FILTER_MAX_COLUMNS    = 15;
     private const QUICK_FILTER_DEFAULT_LIMIT  = 50;
-    private const QUICK_FILTER_MAX_LIMIT      = 100;
+    private const QUICK_FILTER_MAX_LIMIT      = 250;
+
+    /**
+     * Quick filters columns that list user ids instead of displayed values, mapped to
+     * the request parameter that filters by them (0 picks the rows without a user).
+     */
+    private const QUICK_FILTER_USER_COLUMNS = [
+        'assigned_admin_user_id' => 'assigned_user_id',
+        'user_id'                => 'client_user_id',
+    ];
 
     /** Default and maximum number of distinct values returned by filterValues(). */
     private const FILTER_VALUES_DEFAULT_LIMIT = 500;
@@ -581,12 +590,16 @@ class LinkBuildingOrdersDashboardController extends Controller
      * columns at once, each with its row count, in a single request. Like
      * filterValues(), every column's list honors all the other active filters but
      * ignores its own, so several values of one column can be picked together.
-     * `assigned_admin_user_id` lists admin user ids ("" for unassigned rows).
+     * `assigned_admin_user_id` lists admin user ids and `user_id` client account ids
+     * ("" for rows without one).
      *
      * Request body:
-     *   columns : string[]  FILTERABLE_COLUMNS or "assigned_admin_user_id", up to 15
-     *   limit   : int       optional, values per column (default 50, max 100)
-     *   ...     : same filter parameters accepted by search()/export()
+     *   columns      : string[]  FILTERABLE_COLUMNS, "assigned_admin_user_id" or "user_id", up to 15
+     *   limit        : int       optional, values per column (default 50, max 250)
+     *   value_search : string    optional, narrows each value column to values containing it,
+     *                            so a value past the limit (e.g. one of many client names)
+     *                            can still be found. User id columns ignore it.
+     *   ...          : same filter parameters accepted by search()/export()
      *
      * Response:
      *   data  : { [column]: { values: [{ value, count }], has_more: bool } }
@@ -596,17 +609,19 @@ class LinkBuildingOrdersDashboardController extends Controller
     {
         $validated = $request->validate([
             'columns'   => ['required', 'array', 'min:1', 'max:' . self::QUICK_FILTER_MAX_COLUMNS],
-            'columns.*' => ['string', Rule::in([...self::FILTERABLE_COLUMNS, 'assigned_admin_user_id'])],
-            'limit'     => ['sometimes', 'integer', 'min:1', 'max:' . self::QUICK_FILTER_MAX_LIMIT],
+            'columns.*'    => ['string', Rule::in([...self::FILTERABLE_COLUMNS, ...array_keys(self::QUICK_FILTER_USER_COLUMNS)])],
+            'limit'        => ['sometimes', 'integer', 'min:1', 'max:' . self::QUICK_FILTER_MAX_LIMIT],
+            'value_search' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
-        $limit = (int) ($validated['limit'] ?? self::QUICK_FILTER_DEFAULT_LIMIT);
-        $data  = [];
+        $limit        = (int) ($validated['limit'] ?? self::QUICK_FILTER_DEFAULT_LIMIT);
+        $value_search = trim((string) ($validated['value_search'] ?? ''));
+        $data         = [];
 
         foreach (array_unique($validated['columns']) as $column) {
-            $result = $column === 'assigned_admin_user_id'
-                ? $this->assignedUserValues($request, $limit)
-                : $this->distinctColumnValues($request, $column, '', $limit);
+            $result = array_key_exists($column, self::QUICK_FILTER_USER_COLUMNS)
+                ? $this->userColumnValues($request, $column, $limit)
+                : $this->distinctColumnValues($request, $column, $value_search, $limit);
 
             $data[$column] = [
                 'values'   => $result['data'],
@@ -674,18 +689,20 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     /**
-     * "Assigned To" values for the Quick filters panel: admin user ids with their row
-     * counts ("" for unassigned rows), honoring every filter except the Assigned To one.
+     * "Assigned To" (admin) or "Client Account" (client) values for the Quick filters
+     * panel: user ids with their row counts ("" for rows without a user), honoring
+     * every filter except the column's own one.
      *
+     * @param  string  $column  A key of QUICK_FILTER_USER_COLUMNS, never user input.
      * @return array{data: \Illuminate\Support\Collection, total_distinct: int, has_more: bool}
      */
-    private function assignedUserValues(Request $request, int $limit): array
+    private function userColumnValues(Request $request, string $column, int $limit): array
     {
         $query = $this->dashboardQuery();
-        $this->applyRequestFilters($query, new Request($request->except('assigned_user_id')));
+        $this->applyRequestFilters($query, new Request($request->except(self::QUICK_FILTER_USER_COLUMNS[$column])));
 
         $grouped = $query->toBase()
-            ->selectRaw("COALESCE(CAST(assigned_admin_user_id AS CHAR), '') AS filter_value")
+            ->selectRaw("COALESCE(CAST({$this->wrapPlacementColumn($column)} AS CHAR), '') AS filter_value")
             ->selectRaw('COUNT(*) AS row_count')
             ->groupBy('filter_value')
             ->orderByDesc('row_count')
@@ -1504,7 +1521,10 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         if (filled($client_user_id)) {
-            $query->where('user_id', (int) $client_user_id);
+            // 0 stands for "No client account", picked from the Quick filters panel.
+            (int) $client_user_id === 0
+                ? $query->whereNull('user_id')
+                : $query->where('user_id', (int) $client_user_id);
         }
 
         if (filled($assigned_user_id)) {

@@ -2023,6 +2023,63 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertSame(['BL-807'], collect($response->json('data'))->pluck('order_id')->all());
     }
 
+    public function test_quick_filter_values_value_search_finds_client_names_past_the_limit(): void
+    {
+        $this->seedAdvancedFilterRows();
+        $this->adminPlacement(['order_id' => 'BL-808', 'client' => 'Acme Logistics']);
+
+        // Alphabetically, a limit of 1 only lists "Acme Logistics".
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', ['columns' => ['client'], 'limit' => 1])
+            ->assertStatus(200)
+            ->assertJsonPath('data.client.values.0.value', 'Acme Logistics')
+            ->assertJsonPath('data.client.has_more', true);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', [
+                'columns'      => ['client'],
+                'limit'        => 1,
+                'value_search' => 'WAYNE',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.client.has_more', false);
+
+        $this->assertSame([['value' => 'Wayne Enterprises', 'count' => 2]], $response->json('data.client.values'));
+    }
+
+    public function test_quick_filter_values_lists_client_accounts_with_counts(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-809', 'user_id' => $this->client->id, 'status' => 'Live']);
+        $this->adminPlacement(['order_id' => 'BL-810', 'user_id' => $this->client->id]);
+        $this->adminPlacement(['order_id' => 'BL-811']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/quick-filter-values', [
+                'columns'        => ['user_id'],
+                // The column's own filter is ignored, the other filters still apply.
+                'client_user_id' => $this->client->id,
+                'status'         => 'Live',
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(
+            [(string) $this->client->id => 1],
+            collect($response->json('data.user_id.values'))->pluck('count', 'value')->all()
+        );
+    }
+
+    public function test_client_account_filter_zero_matches_rows_without_a_client_account(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-812', 'user_id' => $this->client->id]);
+        $this->adminPlacement(['order_id' => 'BL-813']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', ['client_user_id' => 0])
+            ->assertStatus(200);
+
+        $this->assertSame(['BL-813'], collect($response->json('data'))->pluck('order_id')->all());
+    }
+
     // ─── Find pages (in-table Ctrl/Cmd+F) ─────────────────────────────────────
 
     public function test_unauthenticated_find_pages_returns_401(): void

@@ -76,9 +76,9 @@ class LinkBuildingOrdersDashboardController extends Controller
 
     /**
      * Columns sorted by their numeric value, so a turnaround of 100 days sorts after
-     * 30 instead of before it as plain text would.
+     * 30 instead of before it as plain text would, and "$1,250.00" after "$90.00".
      */
-    private const NUMERIC_SORT_COLUMNS = ['estimated_turnaround_days'];
+    private const NUMERIC_SORT_COLUMNS = ['estimated_turnaround_days', ...LinkBuildingOrderPlacement::PRICE_COLUMNS];
 
     /** Operators accepted by the spreadsheet style "Filter by condition" column filter. */
     public const CONDITION_OPERATORS = [

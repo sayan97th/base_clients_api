@@ -4,6 +4,8 @@ namespace App\Http\Requests\Admin\LinkBuilding;
 
 use App\Models\LinkBuildingOrderPlacement;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Fluent;
+use Illuminate\Validation\Rule;
 
 class UpdateLinkBuildingOrderRequest extends FormRequest
 {
@@ -84,6 +86,31 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
         ];
     }
 
+    /**
+     * Rules of the Estimated Turnaround Time (Days), shared with the store request.
+     * The dashboard sends the whole row on every cell edit, and rows imported from
+     * the BASE link sheet may hold a turnaround that is not a whole number, so an
+     * unchanged value is accepted as is. A new value must be a whole number of days.
+     */
+    public static function turnaroundDaysRules(?string $placement_id = null): array
+    {
+        $whole_days_rules = [
+            'integer',
+            'min:' . LinkBuildingOrderPlacement::MIN_TURNAROUND_DAYS,
+            'max:' . LinkBuildingOrderPlacement::MAX_TURNAROUND_DAYS,
+        ];
+
+        return [
+            'nullable',
+            Rule::when(
+                fn (Fluent $input) => $placement_id === null
+                    || (string) $input->get('estimated_turnaround_days')
+                        !== (string) LinkBuildingOrderPlacement::whereKey($placement_id)->value('estimated_turnaround_days'),
+                $whole_days_rules,
+            ),
+        ];
+    }
+
     public function rules(): array
     {
         $id = $this->route('id');
@@ -111,7 +138,7 @@ class UpdateLinkBuildingOrderRequest extends FormRequest
             'internal_notes'            => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
             'estimated_delivery_date'   => 'nullable|string|max:20',
-            'estimated_turnaround_days' => 'nullable|string|max:20',
+            'estimated_turnaround_days' => $this->turnaroundDaysRules($id),
             'link_builder_user_id'      => 'nullable|integer|exists:users,id',
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',

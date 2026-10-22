@@ -16,6 +16,7 @@ use App\Models\LinkBuildingOrderItem;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
 use App\Services\LinkBuildingPartnerMetricsService;
+use App\Services\OrderDetailsService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,6 +73,12 @@ class LinkBuildingOrdersDashboardController extends Controller
         'estimated_turnaround_days', 'dr_lbs', 'posting_fee_lbs', 'current_traffic',
         'dr_formula', 'current_price', 'final_price',
     ];
+
+    /**
+     * Columns sorted by their numeric value, so a turnaround of 100 days sorts after
+     * 30 instead of before it as plain text would.
+     */
+    private const NUMERIC_SORT_COLUMNS = ['estimated_turnaround_days'];
 
     /** Operators accepted by the spreadsheet style "Filter by condition" column filter. */
     public const CONDITION_OPERATORS = [
@@ -263,13 +270,15 @@ class LinkBuildingOrdersDashboardController extends Controller
             $data['request_date'] = Carbon::today()->format('m/d/Y');
         }
 
+        if (blank($data['estimated_turnaround_days'] ?? null)) {
+            $data['estimated_turnaround_days'] = (string) OrderDetailsService::LINK_BUILDING_TURNAROUND_DAYS;
+        }
+
         if (empty($data['estimated_delivery_date'])) {
-            try {
-                $base_date = Carbon::createFromFormat('m/d/Y', $data['request_date']);
-            } catch (\Exception) {
-                $base_date = Carbon::today();
-            }
-            $data['estimated_delivery_date'] = $base_date->addDays(30)->format('m/d/Y');
+            $data['estimated_delivery_date'] = LinkBuildingOrderPlacement::deliveryDateFor(
+                $data['request_date'],
+                $data['estimated_turnaround_days'],
+            ) ?? Carbon::today()->addDays((int) $data['estimated_turnaround_days'])->format('m/d/Y');
         }
 
         $data = $this->partner_metrics->withPartnershipLookup(new LinkBuildingOrderPlacement(), $data);
@@ -301,7 +310,8 @@ class LinkBuildingOrdersDashboardController extends Controller
         }
 
         $old_status = $placement->status;
-        $placement->update($this->partner_metrics->withPartnershipLookup($placement, $request->validated()));
+        $data       = $this->withRecalculatedDeliveryDate($placement, $request->validated());
+        $placement->update($this->partner_metrics->withPartnershipLookup($placement, $data));
 
         /** @var LinkBuildingOrderPlacement $fresh */
         $fresh      = $placement->fresh();
@@ -321,6 +331,38 @@ class LinkBuildingOrdersDashboardController extends Controller
             'message' => 'Link building order updated successfully.',
             'data'    => $fresh->toApiArray(),
         ]);
+    }
+
+    /**
+     * Keeps the Delivery Date in step with the Request Date and the Estimated
+     * Turnaround Time (Days), like the BASE link sheet does. When the update changes
+     * either of them, the delivery date is recalculated, unless the same update also
+     * sets a delivery date of its own (an admin's manual override wins).
+     */
+    private function withRecalculatedDeliveryDate(LinkBuildingOrderPlacement $placement, array $data): array
+    {
+        $request_date    = array_key_exists('request_date', $data) ? $data['request_date'] : $placement->request_date;
+        $turnaround_days = array_key_exists('estimated_turnaround_days', $data)
+            ? $data['estimated_turnaround_days']
+            : $placement->estimated_turnaround_days;
+
+        $schedule_changed = (string) $request_date !== (string) $placement->request_date
+            || (string) $turnaround_days !== (string) $placement->estimated_turnaround_days;
+
+        $delivery_date_overridden = array_key_exists('estimated_delivery_date', $data)
+            && (string) $data['estimated_delivery_date'] !== (string) $placement->estimated_delivery_date;
+
+        if (! $schedule_changed || $delivery_date_overridden) {
+            return $data;
+        }
+
+        $delivery_date = LinkBuildingOrderPlacement::deliveryDateFor($request_date, $turnaround_days);
+
+        if ($delivery_date !== null) {
+            $data['estimated_delivery_date'] = $delivery_date;
+        }
+
+        return $data;
     }
 
     /**
@@ -2007,6 +2049,13 @@ class LinkBuildingOrdersDashboardController extends Controller
                 // compares actual calendar values instead of doing an alphabetical sort.
                 $query->orderByRaw(
                     "STR_TO_DATE(NULLIF(`{$key}`, ''), '%m/%d/%Y') {$dir}"
+                );
+            } elseif (in_array($key, self::NUMERIC_SORT_COLUMNS, true)) {
+                $numeric_expression = $this->numericExpression("`{$key}`");
+                $query->orderByRaw(
+                    $nulls_last
+                        ? "({$numeric_expression} IS NULL), {$numeric_expression} {$dir}"
+                        : "{$numeric_expression} {$dir}"
                 );
             } elseif ($nulls_last) {
                 $query->orderByRaw("(`{$key}` IS NULL OR `{$key}` = ''), `{$key}` {$dir}");

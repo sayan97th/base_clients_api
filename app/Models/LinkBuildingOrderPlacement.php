@@ -79,6 +79,33 @@ class LinkBuildingOrderPlacement extends Model
 
     public const MAX_CELL_FORMULA_LENGTH = 2000;
 
+    /** Bounds of the Estimated Turnaround Time (Days) an admin may enter on the dashboard. */
+    public const MIN_TURNAROUND_DAYS = 1;
+    public const MAX_TURNAROUND_DAYS = 365;
+
+    /**
+     * Estimated delivery date (MM/DD/YYYY) for a request date and a turnaround, the
+     * same rule as the BASE link sheet: Delivery Date = Request Date + Turnaround Days.
+     * Null when the request date is not a valid date or the turnaround is not a
+     * positive whole number of days.
+     */
+    public static function deliveryDateFor(?string $request_date, mixed $turnaround_days): ?string
+    {
+        $turnaround_days = trim((string) $turnaround_days);
+
+        if (blank($request_date) || ! ctype_digit($turnaround_days) || (int) $turnaround_days <= 0) {
+            return null;
+        }
+
+        try {
+            $base_date = Carbon::createFromFormat('!m/d/Y', trim($request_date));
+        } catch (\Exception) {
+            return null;
+        }
+
+        return $base_date->addDays((int) $turnaround_days)->format('m/d/Y');
+    }
+
     /**
      * SQL that drops the formulas of the given columns from cell_formulas, for bulk
      * writes (imports) that bypass the model: a value written over a formula cell

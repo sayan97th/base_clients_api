@@ -464,6 +464,166 @@ class LinkBuildingOrdersDashboardControllerTest extends TestCase
         $this->assertSame('30', $placement->fresh()->dr_lbs);
     }
 
+    // ─── Estimated Turnaround Time (Days) ─────────────────────────────────────
+
+    public function test_store_defaults_the_turnaround_and_derives_the_delivery_date_from_it(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders', [
+                'link_type'    => 'DR 40+ External',
+                'client'       => 'Turnaround Corp',
+                'keyword'      => 'turnaround',
+                'landing_page' => 'https://turnaround.com',
+                'request_date' => '01/10/2026',
+            ])
+            ->assertStatus(201)
+            ->assertJsonPath('data.estimated_turnaround_days', '30')
+            ->assertJsonPath('data.estimated_delivery_date', '02/09/2026');
+    }
+
+    public function test_store_derives_the_delivery_date_from_a_given_turnaround(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders', [
+                'link_type'                 => 'DR 40+ External',
+                'client'                    => 'Turnaround Corp',
+                'keyword'                   => 'turnaround',
+                'landing_page'              => 'https://turnaround.com',
+                'request_date'              => '01/10/2026',
+                'estimated_turnaround_days' => '25',
+            ])
+            ->assertStatus(201)
+            ->assertJsonPath('data.estimated_turnaround_days', '25')
+            ->assertJsonPath('data.estimated_delivery_date', '02/04/2026');
+    }
+
+    public function test_update_of_the_turnaround_recalculates_the_delivery_date(): void
+    {
+        $placement = $this->adminPlacement([
+            'request_date'              => '01/10/2026',
+            'estimated_delivery_date'   => '02/09/2026',
+            'estimated_turnaround_days' => '30',
+        ]);
+
+        // The dashboard sends the whole row, so the old delivery date comes along unchanged.
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'request_date'              => '01/10/2026',
+                'estimated_delivery_date'   => '02/09/2026',
+                'estimated_turnaround_days' => '40',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.estimated_turnaround_days', '40')
+            ->assertJsonPath('data.estimated_delivery_date', '02/19/2026');
+    }
+
+    public function test_update_of_the_request_date_recalculates_the_delivery_date(): void
+    {
+        $placement = $this->adminPlacement([
+            'request_date'              => '01/10/2026',
+            'estimated_delivery_date'   => '02/09/2026',
+            'estimated_turnaround_days' => '30',
+        ]);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'request_date'              => '01/20/2026',
+                'estimated_delivery_date'   => '02/09/2026',
+                'estimated_turnaround_days' => '30',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.estimated_delivery_date', '02/19/2026');
+    }
+
+    public function test_update_keeps_a_delivery_date_the_admin_set_in_the_same_request(): void
+    {
+        $placement = $this->adminPlacement([
+            'request_date'              => '01/10/2026',
+            'estimated_delivery_date'   => '02/09/2026',
+            'estimated_turnaround_days' => '30',
+        ]);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'estimated_delivery_date'   => '03/01/2026',
+                'estimated_turnaround_days' => '40',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.estimated_delivery_date', '03/01/2026');
+    }
+
+    public function test_update_of_another_field_leaves_the_delivery_date_alone(): void
+    {
+        $placement = $this->adminPlacement([
+            'request_date'              => '01/10/2026',
+            'estimated_delivery_date'   => '03/01/2026',
+            'estimated_turnaround_days' => '30',
+        ]);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'keyword'                   => 'new keyword',
+                'request_date'              => '01/10/2026',
+                'estimated_delivery_date'   => '03/01/2026',
+                'estimated_turnaround_days' => '30',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.estimated_delivery_date', '03/01/2026');
+    }
+
+    public static function invalidTurnaroundProvider(): array
+    {
+        return [
+            'text'          => ['soon'],
+            'zero'          => ['0'],
+            'fraction'      => ['12.5'],
+            'over one year' => ['366'],
+        ];
+    }
+
+    #[DataProvider('invalidTurnaroundProvider')]
+    public function test_update_rejects_a_new_turnaround_that_is_not_a_whole_number_of_days(string $turnaround_days): void
+    {
+        $placement = $this->adminPlacement(['estimated_turnaround_days' => '30']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'estimated_turnaround_days' => $turnaround_days,
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('estimated_turnaround_days');
+
+        $this->assertSame('30', $placement->fresh()->estimated_turnaround_days);
+    }
+
+    public function test_update_accepts_an_unchanged_imported_turnaround_that_is_not_a_whole_number(): void
+    {
+        $placement = $this->adminPlacement(['estimated_turnaround_days' => '#N/A']);
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson("/api/admin/link-building-orders/{$placement->id}", [
+                'keyword'                   => 'edited keyword',
+                'estimated_turnaround_days' => '#N/A',
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('data.keyword', 'edited keyword');
+    }
+
+    public function test_search_sorts_the_turnaround_numerically(): void
+    {
+        $this->adminPlacement(['order_id' => 'BL-1', 'estimated_turnaround_days' => '100']);
+        $this->adminPlacement(['order_id' => 'BL-2', 'estimated_turnaround_days' => '30']);
+        $this->adminPlacement(['order_id' => 'BL-3', 'estimated_turnaround_days' => '5']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search', [
+                'sort_rules' => [['key' => 'estimated_turnaround_days', 'direction' => 'asc']],
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(['5', '30', '100'], array_column($response->json('data'), 'estimated_turnaround_days'));
+    }
+
     public function test_update_returns_404_for_unknown_placement(): void
     {
         $this->actingAs($this->admin, 'api')

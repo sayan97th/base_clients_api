@@ -60,7 +60,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'internal_notes'            => 'nullable|string',
             'request_date'              => 'nullable|string|max:20',
             'estimated_delivery_date'   => 'nullable|string|max:20',
-            'estimated_turnaround_days' => 'nullable|string|max:20',
+            'estimated_turnaround_days' => UpdateLinkBuildingOrderRequest::turnaroundDaysRules(),
             'link_builder_user_id'      => 'nullable|integer|exists:users,id',
             'link_builder'              => 'nullable|string|max:255',
             'pen_name'                  => 'nullable|string|max:255',

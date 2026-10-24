@@ -2,18 +2,17 @@
 
 namespace Tests\Feature\LinkBuilding;
 
-use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 /**
- * The dashboard loads every matching order into the spreadsheet: search() with
- * include_row_index paints the first rows and lists the ids of the rest, which
- * are then loaded in batches through rows().
+ * search() with include_row_index: the dashboard paints the first rows and gets
+ * the ordered ids (and versions) of every matching row, then loads the rest by id
+ * through rows(), see LinkBuildingOrderRowsByIdsTest.
  */
 class LinkBuildingOrderRowIndexTest extends TestCase
 {
@@ -48,13 +47,63 @@ class LinkBuildingOrderRowIndexTest extends TestCase
         ], $overrides));
     }
 
-    private function searchWithIndex(array $body = []): \Illuminate\Testing\TestResponse
+    private function searchWithIndex(array $body = []): TestResponse
     {
         return $this->actingAs($this->admin, 'api')
             ->postJson('/api/admin/link-building-orders/search', array_merge(['include_row_index' => true], $body));
     }
 
-    // ─── search() with include_row_index ──────────────────────────────────────
+    // ─── Authorization ────────────────────────────────────────────────────────
+
+    public function test_the_row_index_is_admin_only(): void
+    {
+        $this->postJson('/api/admin/link-building-orders/search', ['include_row_index' => true])
+            ->assertStatus(401);
+
+        $this->actingAs($this->client, 'api')
+            ->postJson('/api/admin/link-building-orders/search', ['include_row_index' => true])
+            ->assertStatus(403);
+    }
+
+    // ─── Response shape ───────────────────────────────────────────────────────
+
+    public function test_search_with_the_flag_keeps_the_paginated_shape_and_adds_the_index(): void
+    {
+        $this->placement();
+
+        $this->searchWithIndex()
+            ->assertOk()
+            ->assertJsonStructure([
+                'data', 'current_page', 'last_page', 'per_page', 'total', 'from', 'to',
+                'row_index' => ['ids', 'versions'],
+            ]);
+    }
+
+    public function test_search_without_the_flag_keeps_the_plain_paginated_shape(): void
+    {
+        $this->placement();
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/search')
+            ->assertOk();
+
+        $this->assertArrayNotHasKey('row_index', $response->json());
+    }
+
+    public function test_an_empty_result_set_has_an_empty_index(): void
+    {
+        $this->searchWithIndex()
+            ->assertOk()
+            ->assertJsonPath('data', [])
+            ->assertJsonPath('total', 0)
+            ->assertJsonPath('from', null)
+            ->assertJsonPath('to', null)
+            ->assertJsonPath('last_page', 1)
+            ->assertJsonPath('row_index.ids', [])
+            ->assertJsonPath('row_index.versions', []);
+    }
+
+    // ─── Order ────────────────────────────────────────────────────────────────
 
     public function test_search_lists_every_matching_row_id_in_display_order(): void
     {
@@ -78,6 +127,35 @@ class LinkBuildingOrderRowIndexTest extends TestCase
         $this->assertSame(2, $response->json('last_page'));
     }
 
+    public function test_the_default_order_puts_the_newest_order_id_first_numerically(): void
+    {
+        $nine        = $this->placement(['order_id' => 'BL-9']);
+        $one_hundred = $this->placement(['order_id' => 'BL-100']);
+        $ten         = $this->placement(['order_id' => 'BL-10']);
+
+        $this->searchWithIndex()
+            ->assertOk()
+            ->assertJsonPath('row_index.ids', [$one_hundred->id, $ten->id, $nine->id]);
+    }
+
+    public function test_the_first_rows_are_the_first_ids_of_the_index_in_the_same_order(): void
+    {
+        foreach (['delta', 'alpha', 'echo', 'bravo', 'charlie'] as $keyword) {
+            $this->placement(['keyword' => $keyword]);
+        }
+
+        $response = $this->searchWithIndex([
+            'per_page'   => 3,
+            'sort_rules' => [['key' => 'keyword', 'direction' => 'desc']],
+        ])->assertOk();
+
+        $this->assertSame(
+            array_slice($response->json('row_index.ids'), 0, 3),
+            array_column($response->json('data'), 'id')
+        );
+        $this->assertSame(['echo', 'delta', 'charlie'], array_column($response->json('data'), 'keyword'));
+    }
+
     public function test_search_returns_the_requested_page_sliced_from_the_index(): void
     {
         $this->placement(['keyword' => 'alpha']);
@@ -91,39 +169,38 @@ class LinkBuildingOrderRowIndexTest extends TestCase
         ])->assertOk();
 
         $this->assertSame(['charlie'], array_column($response->json('data'), 'keyword'));
+        $this->assertSame(2, $response->json('current_page'));
         $this->assertSame(3, $response->json('from'));
         $this->assertSame(3, $response->json('to'));
     }
 
-    public function test_search_index_follows_the_active_filters(): void
+    public function test_a_page_past_the_end_has_no_rows_but_still_the_full_index(): void
     {
-        $live = $this->placement(['status' => 'Live']);
-        $this->placement(['status' => 'New Request']);
+        $this->placement();
+        $this->placement();
 
-        $this->searchWithIndex(['status' => 'Live'])
-            ->assertOk()
-            ->assertJsonPath('row_index.ids', [$live->id])
-            ->assertJsonPath('total', 1);
-    }
+        $response = $this->searchWithIndex(['page' => 5, 'per_page' => 2])->assertOk();
 
-    public function test_search_index_version_changes_when_a_row_is_updated(): void
-    {
-        $placement = $this->placement();
-
-        $version_before = $this->searchWithIndex()->json('row_index.versions.0');
-
-        $this->travel(5)->minutes();
-        $placement->update(['keyword' => 'changed']);
-
-        $version_after = $this->searchWithIndex()->json('row_index.versions.0');
-
-        $this->assertGreaterThan($version_before, $version_after);
+        $this->assertSame([], $response->json('data'));
+        $this->assertNull($response->json('from'));
+        $this->assertCount(2, $response->json('row_index.ids'));
     }
 
     public function test_rows_that_tie_on_every_sort_rule_keep_a_stable_order(): void
     {
-        foreach (range(1, 6) as $n) {
-            $this->placement(['keyword' => 'same keyword']);
+        // Ids inserted in descending order, so the insertion order the database
+        // would fall back to differs from the id order the tie-breaker enforces.
+        foreach (['f', 'd', 'b', 'e', 'c', 'a'] as $prefix) {
+            $placement = new LinkBuildingOrderPlacement([
+                'order_id'     => 'BL-' . random_int(1000, 999999),
+                'client'       => 'Default Client',
+                'keyword'      => 'same keyword',
+                'landing_page' => 'https://example.com',
+                'link_type'    => 'DR 30+ External',
+                'status'       => 'New Request',
+            ]);
+            $placement->id = str_repeat($prefix, 8) . '-0000-4000-8000-000000000000';
+            $placement->save();
         }
 
         $body = ['sort_rules' => [['key' => 'keyword', 'direction' => 'asc']]];
@@ -138,79 +215,134 @@ class LinkBuildingOrderRowIndexTest extends TestCase
         $this->assertSame($sorted, $first, 'Ties are broken by id');
     }
 
-    public function test_search_without_the_flag_keeps_the_plain_paginated_shape(): void
+    public function test_plain_pages_never_repeat_or_skip_rows_that_tie_on_the_sort(): void
+    {
+        foreach (range(1, 7) as $n) {
+            $this->placement(['status' => 'Live']);
+        }
+
+        $seen = [];
+        foreach ([1, 2, 3] as $page) {
+            $page_ids = array_column($this->actingAs($this->admin, 'api')
+                ->postJson('/api/admin/link-building-orders/search', [
+                    'page'       => $page,
+                    'per_page'   => 3,
+                    'sort_rules' => [['key' => 'status', 'direction' => 'asc']],
+                ])
+                ->json('data'), 'id');
+            $seen = array_merge($seen, $page_ids);
+        }
+
+        $this->assertCount(7, $seen);
+        $this->assertCount(7, array_unique($seen));
+    }
+
+    // ─── Page size ────────────────────────────────────────────────────────────
+
+    public function test_the_page_size_is_kept_between_one_and_five_hundred(): void
     {
         $this->placement();
 
-        $response = $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/search')
-            ->assertOk();
-
-        $this->assertArrayNotHasKey('row_index', $response->json());
-    }
-
-    // ─── rows() ───────────────────────────────────────────────────────────────
-
-    public function test_rows_returns_the_rows_in_the_order_of_the_given_ids(): void
-    {
-        $first  = $this->placement(['order_id' => 'BL-10']);
-        $second = $this->placement(['order_id' => 'BL-20']);
-        $third  = $this->placement(['order_id' => 'BL-30']);
-
-        $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', ['ids' => [$third->id, $first->id, $second->id]])
+        $this->searchWithIndex(['per_page' => 0])
             ->assertOk()
-            ->assertJsonPath('data.*.order_id', ['BL-30', 'BL-10', 'BL-20']);
-    }
+            ->assertJsonPath('per_page', 1)
+            ->assertJsonCount(1, 'data');
 
-    public function test_rows_skips_ids_that_no_longer_exist(): void
-    {
-        $placement = $this->placement(['order_id' => 'BL-10']);
-
-        $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', ['ids' => [(string) Str::uuid(), $placement->id]])
+        $this->searchWithIndex(['per_page' => 100000])
             ->assertOk()
-            ->assertJsonCount(1, 'data')
-            ->assertJsonPath('data.0.order_id', 'BL-10');
+            ->assertJsonPath('per_page', 500);
     }
 
-    public function test_rows_returns_the_same_fields_as_search(): void
+    // ─── Filters ──────────────────────────────────────────────────────────────
+
+    public function test_search_index_follows_the_quick_filters(): void
+    {
+        $live = $this->placement(['status' => 'Live']);
+        $this->placement(['status' => 'New Request']);
+
+        $this->searchWithIndex(['status' => 'Live'])
+            ->assertOk()
+            ->assertJsonPath('row_index.ids', [$live->id])
+            ->assertJsonPath('total', 1);
+    }
+
+    public function test_search_index_follows_the_global_search(): void
+    {
+        $match = $this->placement(['keyword' => 'best seo tools']);
+        $this->placement(['keyword' => 'cheap flights']);
+
+        $this->searchWithIndex(['search' => 'seo tools'])
+            ->assertOk()
+            ->assertJsonPath('row_index.ids', [$match->id]);
+    }
+
+    public function test_search_index_follows_the_column_filters(): void
+    {
+        $match = $this->placement(['link_type' => 'DR 50+ External']);
+        $this->placement(['link_type' => 'DR 30+ External']);
+
+        $this->searchWithIndex([
+            'column_filters' => [
+                ['key' => 'link_type', 'type' => 'values', 'mode' => 'include', 'values' => ['DR 50+ External']],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonPath('row_index.ids', [$match->id]);
+    }
+
+    public function test_search_index_follows_the_advanced_filters(): void
+    {
+        $live    = $this->placement(['status' => 'Live']);
+        $pending = $this->placement(['status' => 'Pending']);
+        $this->placement(['status' => 'New Request']);
+
+        $response = $this->searchWithIndex([
+            'advanced_filters' => [
+                'operator' => 'or',
+                'rules'    => [
+                    ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Live']],
+                    ['key' => 'status', 'type' => 'values', 'mode' => 'include', 'values' => ['Pending']],
+                ],
+                'groups' => [],
+            ],
+        ])->assertOk();
+
+        $this->assertEqualsCanonicalizing([$live->id, $pending->id], $response->json('row_index.ids'));
+    }
+
+    public function test_the_index_only_lists_rows_shown_on_the_dashboard(): void
+    {
+        $shown = $this->placement();
+        // Neither an admin order id, a purchase nor a client: not a dashboard row.
+        LinkBuildingOrderPlacement::create(['keyword' => 'orphan', 'status' => 'New Request']);
+
+        $this->searchWithIndex()
+            ->assertOk()
+            ->assertJsonPath('row_index.ids', [$shown->id]);
+    }
+
+    // ─── Versions ─────────────────────────────────────────────────────────────
+
+    public function test_versions_are_the_unix_timestamp_of_each_row_update(): void
     {
         $placement = $this->placement();
 
-        $search_row = $this->searchWithIndex()->json('data.0');
-        $rows_row   = $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', ['ids' => [$placement->id]])
-            ->json('data.0');
-
-        $this->assertSame(array_keys($search_row), array_keys($rows_row));
+        $this->searchWithIndex()
+            ->assertOk()
+            ->assertJsonPath('row_index.versions', [$placement->fresh()->updated_at->getTimestamp()]);
     }
 
-    public function test_rows_requires_ids(): void
+    public function test_search_index_version_changes_when_a_row_is_updated(): void
     {
-        $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', [])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('ids');
-    }
+        $placement = $this->placement();
 
-    public function test_rows_rejects_more_ids_than_one_batch_allows(): void
-    {
-        $ids = array_map(fn () => (string) Str::uuid(), range(1, LinkBuildingOrdersDashboardController::ROWS_MAX_IDS + 1));
+        $version_before = $this->searchWithIndex()->json('row_index.versions.0');
 
-        $this->actingAs($this->admin, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', ['ids' => $ids])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('ids');
-    }
+        $this->travel(5)->minutes();
+        $placement->update(['keyword' => 'changed']);
 
-    public function test_rows_is_admin_only(): void
-    {
-        $this->postJson('/api/admin/link-building-orders/rows', ['ids' => [(string) Str::uuid()]])
-            ->assertStatus(401);
+        $version_after = $this->searchWithIndex()->json('row_index.versions.0');
 
-        $this->actingAs($this->client, 'api')
-            ->postJson('/api/admin/link-building-orders/rows', ['ids' => [(string) Str::uuid()]])
-            ->assertStatus(403);
+        $this->assertGreaterThan($version_before, $version_after);
     }
 }

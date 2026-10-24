@@ -88,4 +88,10 @@ class LinkBuildingOrder extends Model
     {
         return $this->hasOne(OrderReport::class, 'order_id');
     }
+
+    /** Read only copies of the order as the client submitted it, oldest first. */
+    public function snapshots(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderSnapshot::class, 'order_id')->orderBy('created_at');
+    }
 }

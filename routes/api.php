@@ -15,6 +15,7 @@ use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountCon
 use App\Http\Controllers\Admin\Dashboard\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\AdminLinkBuildingTierController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingArticleDocController;
+use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderHistoryController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrdersDashboardController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderSavedFilterController;
 use App\Http\Controllers\Admin\LinkBuilding\LinkBuildingOrderFilterPreferenceController;
@@ -35,6 +36,7 @@ use App\Http\Controllers\Admin\NewContent\AdminNewContentTierController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentOrderController;
 use App\Http\Controllers\Admin\NewContent\AdminNewContentIntakeRowController;
 use App\Http\Controllers\Admin\Order\OrderController as AdminOrderController;
+use App\Http\Controllers\Admin\Order\OriginalOrderController as AdminOriginalOrderController;
 use App\Http\Controllers\Admin\Order\OrderReportController as AdminOrderReportController;
 use App\Http\Controllers\Admin\Order\ReportTableController as AdminReportTableController;
 use App\Http\Controllers\Admin\Order\ReportRowController as AdminReportRowController;
@@ -539,6 +541,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/partnership-metrics-import',      [LinkBuildingPartnerMetricsController::class, 'import']);
             Route::get('/link-building-orders/partnership-metrics/summary',      [LinkBuildingPartnerMetricsController::class, 'summary']);
             Route::post('/link-building-orders/resolve-assignments',     [LinkBuildingOrdersDashboardController::class, 'resolveAssignments']);
+            Route::get('/link-building-orders/history',                       [LinkBuildingOrderHistoryController::class, 'index']);
+            Route::get('/link-building-orders/history/batches/{batch_id}',    [LinkBuildingOrderHistoryController::class, 'batch']);
+            Route::post('/link-building-orders/history/restore',              [LinkBuildingOrderHistoryController::class, 'restore']);
+            Route::get('/link-building-orders/{id}/history',                  [LinkBuildingOrderHistoryController::class, 'placement']);
             Route::get('/link-building-orders/saved-filters',            [LinkBuildingOrderSavedFilterController::class, 'index']);
             Route::post('/link-building-orders/saved-filters',           [LinkBuildingOrderSavedFilterController::class, 'store']);
             Route::put('/link-building-orders/saved-filters/{id}',       [LinkBuildingOrderSavedFilterController::class, 'update']);
@@ -666,6 +672,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('organizations/{id}/assets', [AdminOrganizationController::class, 'uploadAsset']);
             Route::get('orders',              [AdminOrderController::class, 'index']);
             Route::get('orders/{order_id}',   [AdminOrderController::class, 'show']);
+            Route::get('orders/{order_id}/original', [AdminOriginalOrderController::class, 'show']);
             Route::get('invoices', [AdminInvoiceController::class, 'index']);
             Route::post('invoices', [AdminInvoiceController::class, 'store']);
             Route::get('invoices/{invoice_id}/history', [AdminInvoiceController::class, 'history']);

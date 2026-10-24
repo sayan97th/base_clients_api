@@ -40,7 +40,7 @@ class OrderDetailsController extends Controller
             'placements.*.exact_match'  => ['nullable', 'boolean'],
         ]);
 
-        $this->orderDetailsService->submitLinkBuildingDetails($order, $data['placements']);
+        $this->orderDetailsService->submitLinkBuildingDetails($order, $data['placements'], 'admin_details');
 
         return $this->detailsResponse($order->fresh());
     }

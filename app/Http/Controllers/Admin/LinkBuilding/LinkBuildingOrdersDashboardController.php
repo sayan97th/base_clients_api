@@ -14,8 +14,11 @@ use App\Mail\OrderStatusChangeMail;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
 use App\Models\LinkBuildingOrderPlacement;
+use App\Models\LinkBuildingOrderPlacementRevision;
 use App\Models\User;
 use App\Services\LinkBuildingDomainUsageService;
+use App\Services\LinkBuildingOrderHistoryRecorder;
+use App\Services\LinkBuildingParentOrderStatusService;
 use App\Services\LinkBuildingPartnerMetricsService;
 use App\Services\OrderDetailsService;
 use Carbon\Carbon;
@@ -34,11 +37,14 @@ class LinkBuildingOrdersDashboardController extends Controller
     /**
      * partner_metrics fills DR, traffic, POC and price from the partner metrics list
      * when a row's Partnership changes. domain_usage flags the rows whose domain was
-     * already used for the same landing page in the last months.
+     * already used for the same landing page in the last months. history groups
+     * the changes of each request into one restorable entry of the edit history.
      */
     public function __construct(
         private readonly LinkBuildingPartnerMetricsService $partner_metrics,
         private readonly LinkBuildingDomainUsageService $domain_usage,
+        private readonly LinkBuildingOrderHistoryRecorder $history,
+        private readonly LinkBuildingParentOrderStatusService $parent_order_status,
     ) {}
 
     /**
@@ -387,6 +393,8 @@ class LinkBuildingOrdersDashboardController extends Controller
     {
         $data = $request->validated();
 
+        $this->history->begin('create');
+
         // Always generate a server-side BL-{n} order_id regardless of any client value.
         $data['order_id'] = $this->generateNextOrderId();
 
@@ -435,6 +443,8 @@ class LinkBuildingOrdersDashboardController extends Controller
             return response()->json(['message' => 'Link building order not found.'], 404);
         }
 
+        $this->history->begin('edit');
+
         $old_status = $placement->status;
         $data       = $this->withRecalculatedDeliveryDate($placement, $request->validated());
         $placement->update($this->partner_metrics->withPartnershipLookup($placement, $data));
@@ -447,7 +457,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         if ($fresh->status !== $old_status) {
             if ($fresh->order_item_id) {
-                $this->syncParentOrderStatus($fresh);
+                $this->parent_order_status->sync($fresh);
             } elseif ($fresh->user_id) {
                 $this->notifyAssignedUser($fresh, $old_status);
             }
@@ -500,8 +510,10 @@ class LinkBuildingOrdersDashboardController extends Controller
      * Only explicitly whitelisted columns are accepted to prevent mass-assignment abuse.
      *
      * Request body:
-     *   row_ids : string[]                     — IDs of placements to update
-     *   updates : Record<string, string|null>  — field → value map
+     *   row_ids       : string[], IDs of placements to update
+     *   updates       : Record<string, string|null>, field → value map
+     *   change_source : string|null, what the edit history calls the change
+     *                   ("fill", "paste"), see changeSource()
      *
      * Responds with the updated rows, so the table can refresh what the server
      * derives from the new values, such as the recent domain usage flag.
@@ -520,6 +532,8 @@ class LinkBuildingOrdersDashboardController extends Controller
         if (empty($row_ids) || empty($safe_updates)) {
             return response()->json(['message' => 'Nothing to update.'], 422);
         }
+
+        $this->history->begin($this->changeSource($request, 'fill'));
 
         $placements = LinkBuildingOrderPlacement::whereIn('id', $row_ids)->get();
         $session_id = $request->header('X-Session-ID');
@@ -550,7 +564,9 @@ class LinkBuildingOrdersDashboardController extends Controller
      * (one field applied to many rows), this is addressed per row.
      *
      * Request body:
-     *   updates : Array<{ id: string, fields: Record<string, string|null>, cell_formulas?: Record<string, string>|null }>
+     *   updates       : Array<{ id: string, fields: Record<string, string|null>, cell_formulas?: Record<string, string>|null }>
+     *   change_source : string|null, what the edit history calls the change
+     *                   ("paste", "undo", "fill", ...), see changeSource()
      *
      * When a row sends cell_formulas, it replaces that row's whole formulas map
      * (an empty map or null removes every formula). Formulas of every row are
@@ -580,6 +596,8 @@ class LinkBuildingOrdersDashboardController extends Controller
         if (! empty($formula_rules)) {
             Validator::make($formula_data, $formula_rules, $formula_messages)->validate();
         }
+
+        $this->history->begin($this->changeSource($request, 'paste'));
 
         $session_id          = $request->header('X-Session-ID');
         $updated_placements  = [];
@@ -864,7 +882,9 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function clearAll(): JsonResponse
     {
-        $deleted_count = LinkBuildingOrderPlacement::whereNotNull('order_id')->delete();
+        // Deleted in chunks with a revision per row, so the whole clear can be restored.
+        $this->history->begin('clear_all');
+        $deleted_count = $this->history->deleteWithHistory(LinkBuildingOrderPlacement::whereNotNull('order_id'));
 
         return response()->json([
             'message'       => "Cleared {$deleted_count} link building order(s) successfully.",
@@ -887,6 +907,7 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $session_id = $request->header('X-Session-ID');
 
+        $this->history->begin('delete');
         $placement->delete();
 
         broadcast(new LinkBuildingOrderDeleted($id, $session_id));
@@ -1094,7 +1115,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'errors'    => [],
         ], now()->addHours(2));
 
-        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows, $date_from, $date_to, $link_type_filter, $only_new_records);
+        ProcessLinkBuildingImportJob::dispatch($import_id, $stored_path, $total_rows, $date_from, $date_to, $link_type_filter, $only_new_records, $request->user()?->id);
 
         return response()->json([
             'message'   => 'Import queued successfully.',
@@ -1174,7 +1195,7 @@ class LinkBuildingOrdersDashboardController extends Controller
             'errors'    => [],
         ], now()->addHours(2));
 
-        ProcessLinkBuildingMetricsImportJob::dispatch($import_id, $stored_path, $total_rows, $target_columns, $date_from, $date_to);
+        ProcessLinkBuildingMetricsImportJob::dispatch($import_id, $stored_path, $total_rows, $target_columns, $date_from, $date_to, $request->user()?->id);
 
         return response()->json([
             'message'   => 'Metrics update queued successfully.',
@@ -1255,6 +1276,8 @@ class LinkBuildingOrdersDashboardController extends Controller
      */
     public function resolveAssignments(): JsonResponse
     {
+        $this->history->begin('auto_assign');
+
         $admin_user_name_map = $this->buildAdminUserNameMap();
 
         $resolved  = 0;
@@ -1286,75 +1309,6 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     // ── Order status sync & notifications ────────────────────────────────────
-
-    /**
-     * Syncs the parent LinkBuildingOrder status after a placement status change.
-     *
-     * Rules:
-     *   - All placements "Live"  → order becomes "completed"
-     *   - Any other combination  → order becomes "processing"
-     *
-     * An email is queued to the client only when the order status actually changes.
-     */
-    private function syncParentOrderStatus(LinkBuildingOrderPlacement $placement): void
-    {
-        $placement->loadMissing('orderItem.order.user');
-
-        $order_item   = $placement->orderItem;
-        $parent_order = $order_item?->order;
-
-        if (! $parent_order) {
-            return;
-        }
-
-        $placement_statuses = LinkBuildingOrderPlacement::whereHas('orderItem', function ($q) use ($parent_order) {
-            $q->where('order_id', $parent_order->id);
-        })->pluck('status');
-
-        $new_order_status = $placement_statuses->every(fn ($s) => $s === 'Live')
-            ? 'completed'
-            : 'processing';
-
-        if ($parent_order->status === $new_order_status) {
-            return;
-        }
-
-        $parent_order->update(['status' => $new_order_status]);
-
-        $user = $parent_order->user;
-
-        if ($user) {
-            Mail::to($user->email)->queue(
-                new OrderStatusChangeMail(
-                    user: $user,
-                    status: $new_order_status,
-                    order_id: $parent_order->id,
-                    order_title: $parent_order->order_title,
-                    purchased_at: $parent_order->created_at,
-                    link_count: $placement_statuses->count(),
-                    dr_tier_summary: $this->buildDrTierSummary($parent_order),
-                )
-            );
-        }
-    }
-
-    /**
-     * Builds a comma-separated summary of the DR tier(s) purchased on an order
-     * (e.g. "DR 30-49, DR 50-59"), so the client-facing email can identify not just
-     * which order this is, but what was actually purchased.
-     */
-    private function buildDrTierSummary(LinkBuildingOrder $parent_order): ?string
-    {
-        $parent_order->loadMissing('items.drTier');
-
-        $labels = $parent_order->items
-            ->pluck('drTier.label')
-            ->filter()
-            ->unique()
-            ->values();
-
-        return $labels->isEmpty() ? null : $labels->implode(', ');
-    }
 
     /**
      * Sends a status-change notification email to the user directly assigned to a standalone
@@ -1400,6 +1354,20 @@ class LinkBuildingOrdersDashboardController extends Controller
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Source the edit history records for a batch update: the change_source the
+     * dashboard sends ("paste", "undo", "fill", ...), or the given default when
+     * it sends none or one the dashboard may not set.
+     */
+    private function changeSource(Request $request, string $default): string
+    {
+        $source = $request->input('change_source');
+
+        return is_string($source) && in_array($source, LinkBuildingOrderPlacementRevision::CLIENT_SOURCES, true)
+            ? $source
+            : $default;
+    }
 
     /**
      * Generates the next sequential order ID in the BL-{n} format.

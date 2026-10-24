@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\LinkBuildingOrderHistoryRecorder;
 use App\Support\FrontendUrl;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Gate;
@@ -12,7 +13,8 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // One edit history batch per request or queued job, see LinkBuildingOrderHistoryRecorder.
+        $this->app->scoped(LinkBuildingOrderHistoryRecorder::class);
     }
 
     public function boot(): void

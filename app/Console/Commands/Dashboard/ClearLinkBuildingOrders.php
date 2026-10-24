@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Dashboard;
 
 use App\Models\LinkBuildingOrderPlacement;
+use App\Services\LinkBuildingOrderHistoryRecorder;
 use Illuminate\Console\Command;
 
 class ClearLinkBuildingOrders extends Command
@@ -104,7 +105,11 @@ class ClearLinkBuildingOrders extends Command
     {
         $this->line('  Deleting all link building dashboard records…');
 
-        $deleted = LinkBuildingOrderPlacement::query()->delete();
+        // Every deleted row is kept in the edit history, so the clear can be restored
+        // from the Version history panel of the Link Building Orders table.
+        $history = app(LinkBuildingOrderHistoryRecorder::class);
+        $history->begin('clear_all');
+        $deleted = $history->deleteWithHistory(LinkBuildingOrderPlacement::query());
 
         $this->newLine();
         $this->info("  Done. {$deleted} of {$expected_count} record(s) deleted successfully.");

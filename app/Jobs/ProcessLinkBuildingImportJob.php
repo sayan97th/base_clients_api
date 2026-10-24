@@ -9,6 +9,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use App\Models\LinkBuildingOrderPlacement;
+use App\Services\LinkBuildingOrderHistoryRecorder;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -79,10 +80,13 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         private readonly ?string $date_to   = null,
         private readonly string  $link_type_filter = 'external_only',
         private readonly bool    $only_new_records = false,
+        private readonly ?int    $user_id = null,
     ) {}
 
     public function handle(): void
     {
+        app(LinkBuildingOrderHistoryRecorder::class)->begin('import', $this->import_id, $this->user_id);
+
         $this->saveProgress('processing', 0);
 
         // Pre-load company name → user_id map for client auto-assignment.
@@ -184,7 +188,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 $chunk[] = $mapped;
 
                 if (count($chunk) >= self::CHUNK_SIZE) {
-                    [$c, $u, $a, $s] = $this->processChunk($chunk, $errors, $skipped_records);
+                    [$c, $u, $a, $s] = $this->processChunkWithHistory($chunk, $errors, $skipped_records);
                     $created   += $c;
                     $updated   += $u;
                     $assigned  += $a;
@@ -197,7 +201,7 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
             }
 
             if (!empty($chunk)) {
-                [$c, $u, $a, $s] = $this->processChunk($chunk, $errors, $skipped_records);
+                [$c, $u, $a, $s] = $this->processChunkWithHistory($chunk, $errors, $skipped_records);
                 $created   += $c;
                 $updated   += $u;
                 $assigned  += $a;
@@ -322,6 +326,20 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
         if (str_contains($lower, 'scheduled'))     return 'Scheduled';
 
         return 'New Request';
+    }
+
+    /**
+     * processChunk() with every change it makes kept in the Link Building Orders edit
+     * history, so an import that overwrote the wrong rows can be restored.
+     */
+    private function processChunkWithHistory(array $chunk, array &$errors, array &$skipped_records): array
+    {
+        return app(LinkBuildingOrderHistoryRecorder::class)->captureBulkWrite(
+            array_map(fn ($order_id) => trim((string) $order_id), array_column($chunk, 'order_id')),
+            function () use ($chunk, &$errors, &$skipped_records) {
+                return $this->processChunk($chunk, $errors, $skipped_records);
+            },
+        );
     }
 
     /**

@@ -9,9 +9,12 @@ use App\Http\Traits\BuildsAppliedDiscounts;
 use App\Models\Coupon;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderSnapshot;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
+use App\Services\LinkBuildingOrderHistoryRecorder;
+use App\Services\LinkBuildingOrderSnapshotService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,7 +30,9 @@ class OrderController extends Controller
     public function __construct(
         protected InvoiceService $invoiceService,
         protected CouponService $couponService,
-        protected StripeService $stripeService
+        protected StripeService $stripeService,
+        protected LinkBuildingOrderSnapshotService $order_snapshots,
+        protected LinkBuildingOrderHistoryRecorder $history,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -180,6 +185,8 @@ class OrderController extends Controller
             ], 422);
         }
 
+        $this->history->begin('checkout');
+
         $order = DB::transaction(function () use ($request, $user, $subtotal, $calculated_total, $applied_coupons, $payment_intent_id, $dr_tiers_map) {
             $order = LinkBuildingOrder::create([
                 'user_id'                  => $user->id,
@@ -236,6 +243,8 @@ class OrderController extends Controller
                 'country'     => $request->billing['country'] ?: null,
                 'postal_code' => $request->billing['postal_code'] ?: null,
             ]);
+
+            $this->order_snapshots->capturePlaced($order, LinkBuildingOrderSnapshot::PAYMENT_CREDIT_CARD);
 
             return $order;
         });

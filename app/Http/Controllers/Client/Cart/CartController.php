@@ -18,10 +18,13 @@ use App\Models\Transaction;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderPlacement;
+use App\Models\LinkBuildingOrderSnapshot;
 use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\InvoiceService;
+use App\Services\LinkBuildingOrderHistoryRecorder;
+use App\Services\LinkBuildingOrderSnapshotService;
 use App\Services\OrderDetailsService;
 use App\Services\StripeService;
 use App\Services\TierPricingService;
@@ -44,6 +47,8 @@ class CartController extends Controller
         protected InvoiceService $invoiceService,
         protected OrderDetailsService $orderDetailsService,
         protected TierPricingService $tierPricingService,
+        protected LinkBuildingOrderSnapshotService $order_snapshots,
+        protected LinkBuildingOrderHistoryRecorder $history,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -244,6 +249,13 @@ class CartController extends Controller
         // replaced with credits_<tx_id> inside the transaction for atomic credits.
         $effective_payment_method_id = $payment_method_id;
 
+        // Payment method kept with the read only copy of a Link Building order.
+        $snapshot_payment_method = $is_credits_payment
+            ? LinkBuildingOrderSnapshot::PAYMENT_ACCOUNT_BALANCE
+            : ($is_hybrid_payment ? LinkBuildingOrderSnapshot::PAYMENT_CARD_AND_BALANCE : LinkBuildingOrderSnapshot::PAYMENT_CREDIT_CARD);
+
+        $this->history->begin('checkout');
+
         try {
             DB::transaction(function () use (
                 $user, $billing, $order_title, $order_notes,
@@ -252,6 +264,7 @@ class CartController extends Controller
                 $is_hybrid_payment, $hybrid_credits_amount, $skip_discounts,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items, $defer_details,
+                $snapshot_payment_method,
                 &$effective_payment_method_id,
                 &$created_orders
             ) {
@@ -303,12 +316,16 @@ class CartController extends Controller
                 }
 
                 if (! empty($link_building_items)) {
-                    $created_orders[] = $this->createLinkBuildingOrder(
+                    $link_building_entry = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
                         $skip_discounts, $defer_details
                     );
+                    $created_orders[] = $link_building_entry;
+
+                    // Saved in the same transaction, so a placed order always has its original copy.
+                    $this->order_snapshots->capturePlaced($link_building_entry['model'], $snapshot_payment_method);
                 }
 
                 if (! empty($content_optimization_items)) {

@@ -24,6 +24,11 @@ class OrderDetailsService
     /** Default turnaround window (in days) applied to Link Building placements. */
     public const LINK_BUILDING_TURNAROUND_DAYS = 30;
 
+    public function __construct(
+        private readonly LinkBuildingOrderHistoryRecorder $history,
+        private readonly LinkBuildingOrderSnapshotService $order_snapshots,
+    ) {}
+
     // ── Completeness ─────────────────────────────────────────────────────────
 
     /**
@@ -151,10 +156,16 @@ class OrderDetailsService
      * the fill-in-later form. Placements are matched by id and updated in place
      * so their BL- identifiers and any admin fulfillment data are preserved.
      *
+     * The submitted details are kept as a read only copy of the order, and the
+     * placement changes in the Link Building Orders edit history under
+     * $history_source ("client_details" or "admin_details").
+     *
      * @param  array<int, array<string, mixed>>  $placements  [{id, keyword, landing_page, exact_match}]
      */
-    public function submitLinkBuildingDetails(LinkBuildingOrder $order, array $placements): void
+    public function submitLinkBuildingDetails(LinkBuildingOrder $order, array $placements, string $history_source = 'client_details'): void
     {
+        $this->history->begin($history_source);
+
         DB::transaction(function () use ($order, $placements) {
             $order->loadMissing('items.placements');
             $by_id = $order->items->flatMap->placements->keyBy('id');
@@ -174,6 +185,8 @@ class OrderDetailsService
 
             $order->refresh();
             $this->finalizeAfterDetails($order);
+
+            $this->order_snapshots->captureDetailsSubmitted($order);
         });
     }
 

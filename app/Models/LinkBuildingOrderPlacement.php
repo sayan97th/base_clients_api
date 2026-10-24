@@ -2,14 +2,21 @@
 
 namespace App\Models;
 
+use App\Observers\LinkBuildingOrderPlacementObserver;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Every change to a row is kept in its edit history, see LinkBuildingOrderPlacementObserver.
+ */
+#[ObservedBy(LinkBuildingOrderPlacementObserver::class)]
 class LinkBuildingOrderPlacement extends Model
 {
     use HasUuids;
@@ -276,6 +283,11 @@ class LinkBuildingOrderPlacement extends Model
     public function reportRow(): HasOne
     {
         return $this->hasOne(OrderReportRow::class, 'order_placement_id');
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(LinkBuildingOrderPlacementRevision::class, 'placement_id');
     }
 
     public function linkBuilderUser(): BelongsTo

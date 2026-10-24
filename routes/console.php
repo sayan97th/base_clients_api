@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\LinkBuildingOrderHistoryBatch;
 use App\Models\LinkBuildingOrderPlacementRevision;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -11,5 +12,8 @@ Artisan::command('inspire', function () {
 
 Schedule::command('notifications:unsnooze')->everyFiveMinutes();
 
-// Link Building Orders edit history older than its retention window, see LinkBuildingOrderPlacementRevision.
-Schedule::command('model:prune', ['--model' => [LinkBuildingOrderPlacementRevision::class]])->daily();
+// Link Building Orders edit history older than config('link_building.history_retention_days').
+Schedule::command('model:prune', ['--model' => [
+    LinkBuildingOrderPlacementRevision::class,
+    LinkBuildingOrderHistoryBatch::class,
+]])->daily();

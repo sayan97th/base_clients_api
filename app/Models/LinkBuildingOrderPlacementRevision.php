@@ -31,9 +31,6 @@ class LinkBuildingOrderPlacementRevision extends Model
     /** Sources the dashboard may send with a batch update, the rest are set by the server. */
     public const CLIENT_SOURCES = ['edit', 'paste', 'clear', 'fill', 'undo', 'redo', 'formula'];
 
-    /** Days a revision is kept before `php artisan model:prune` removes it. */
-    public const RETENTION_DAYS = 365;
-
     protected $fillable = [
         'batch_id',
         'placement_id',
@@ -61,7 +58,7 @@ class LinkBuildingOrderPlacementRevision extends Model
 
     public function prunable(): Builder
     {
-        return static::where('created_at', '<', now()->subDays(self::RETENTION_DAYS));
+        return static::where('created_at', '<', now()->subDays(config('link_building.history_retention_days')));
     }
 
     /** API shape used by the version history panel. */
@@ -91,13 +88,6 @@ class LinkBuildingOrderPlacementRevision extends Model
     /** @return array{id: int, name: string}|null */
     public function userSummary(): ?array
     {
-        if (! $this->relationLoaded('user') || ! $this->user) {
-            return null;
-        }
-
-        return [
-            'id'   => $this->user->id,
-            'name' => trim(($this->user->first_name ?? '') . ' ' . ($this->user->last_name ?? '')) ?: $this->user->email,
-        ];
+        return LinkBuildingOrderHistoryBatch::userSummary($this->relationLoaded('user') ? $this->user : null);
     }
 }

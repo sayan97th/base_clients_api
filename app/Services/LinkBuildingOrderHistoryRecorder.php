@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\LinkBuildingOrderHistoryBatch;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\LinkBuildingOrderPlacementRevision;
 use Carbon\Carbon;
@@ -22,11 +23,22 @@ use Illuminate\Support\Str;
  * Changes made through Eloquent are recorded by LinkBuildingOrderPlacementObserver.
  * Bulk writes that bypass the model (imports, "clear all") go through
  * captureBulkWrite() and deleteWithHistory() instead.
+ *
+ * Each write also updates the action's LinkBuildingOrderHistoryBatch summary, so
+ * the Version history list never has to aggregate the revisions themselves.
  */
 class LinkBuildingOrderHistoryRecorder
 {
     /** Rows written per INSERT when recording many revisions at once. */
     private const INSERT_CHUNK_SIZE = 500;
+
+    /**
+     * Sources that are not recorded. "formula" is the dashboard saving values a
+     * formula recalculated: nobody typed them, the change that caused them (the
+     * edited input cell, the formula itself) is already in the history, and a
+     * formula column over thousands of rows would flood the history otherwise.
+     */
+    private const UNRECORDED_SOURCES = ['formula'];
 
     private string $source = 'system';
 
@@ -38,6 +50,17 @@ class LinkBuildingOrderHistoryRecorder
     /** Batch being restored, when the current action is a restore. */
     private ?string $restored_batch_id = null;
 
+    /** Summary row of the current batch, once it exists. */
+    private ?int $summary_id = null;
+
+    /** Placements already counted in the current batch's rows_count, keyed by id. */
+    private array $counted_placement_ids = [];
+
+    /** @var list<string> */
+    private array $order_ids_preview = [];
+
+    private bool $restore_marked = false;
+
     /**
      * Starts a new action. Returns its batch id.
      */
@@ -47,6 +70,11 @@ class LinkBuildingOrderHistoryRecorder
         $this->batch_id          = $batch_id ?? (string) Str::uuid();
         $this->user_id           = $user_id;
         $this->restored_batch_id = $restored_batch_id;
+
+        $this->summary_id            = null;
+        $this->counted_placement_ids = [];
+        $this->order_ids_preview     = [];
+        $this->restore_marked        = false;
 
         return $this->batch_id;
     }
@@ -225,8 +253,8 @@ class LinkBuildingOrderHistoryRecorder
             'order_id'          => $order_id,
             'event'             => $event,
             'source'            => $this->source,
-            'cell_changes'      => $changes === null ? null : json_encode($changes),
-            'snapshot'          => $snapshot === null ? null : json_encode($snapshot),
+            'cell_changes'      => $changes,
+            'snapshot'          => $snapshot,
             'restored_batch_id' => $this->restored_batch_id,
             'user_id'           => $this->user_id ?? auth()->id(),
             'created_at'        => now(),
@@ -235,9 +263,97 @@ class LinkBuildingOrderHistoryRecorder
 
     private function write(array $rows): void
     {
-        foreach (array_chunk($rows, self::INSERT_CHUNK_SIZE) as $chunk) {
-            LinkBuildingOrderPlacementRevision::insert($chunk);
+        if (empty($rows) || in_array($this->source, self::UNRECORDED_SOURCES, true)) {
+            return;
         }
+
+        foreach (array_chunk($rows, self::INSERT_CHUNK_SIZE) as $chunk) {
+            LinkBuildingOrderPlacementRevision::insert(array_map(fn (array $row) => [
+                ...$row,
+                'cell_changes' => $row['cell_changes'] === null ? null : json_encode($row['cell_changes']),
+                'snapshot'     => $row['snapshot'] === null ? null : json_encode($row['snapshot']),
+            ], $chunk));
+        }
+
+        $this->updateSummary($rows);
+        $this->markRestoredBatch();
+    }
+
+    /** Adds the given revisions to the counters of the current batch's summary row. */
+    private function updateSummary(array $rows): void
+    {
+        $new_rows = 0;
+        foreach ($rows as $row) {
+            if (! isset($this->counted_placement_ids[$row['placement_id']])) {
+                $this->counted_placement_ids[$row['placement_id']] = true;
+                $new_rows++;
+            }
+        }
+
+        $events = array_count_values(array_column($rows, 'event'));
+        $counts = [
+            'revisions_count' => count($rows),
+            'rows_count'      => $new_rows,
+            'cells_count'     => array_sum(array_map(fn (array $row) => count($row['cell_changes'] ?? []), $rows)),
+            'created_count'   => $events[LinkBuildingOrderPlacementRevision::EVENT_CREATED] ?? 0,
+            'updated_count'   => $events[LinkBuildingOrderPlacementRevision::EVENT_UPDATED] ?? 0,
+            'deleted_count'   => $events[LinkBuildingOrderPlacementRevision::EVENT_DELETED] ?? 0,
+        ];
+
+        $previous_preview = $this->order_ids_preview;
+        foreach (array_column($rows, 'order_id') as $order_id) {
+            if (count($this->order_ids_preview) >= LinkBuildingOrderHistoryBatch::ORDER_IDS_PREVIEW_SIZE) {
+                break;
+            }
+            if ($order_id !== null && ! in_array($order_id, $this->order_ids_preview, true)) {
+                $this->order_ids_preview[] = $order_id;
+            }
+        }
+
+        $now = now();
+
+        if ($this->summary_id === null) {
+            $summary = LinkBuildingOrderHistoryBatch::create([
+                'batch_id'          => $this->batchId(),
+                'source'            => $this->source,
+                'user_id'           => $this->user_id ?? auth()->id(),
+                'restored_batch_id' => $this->restored_batch_id,
+                ...$counts,
+                'order_ids_preview' => $this->order_ids_preview,
+                'started_at'        => $now,
+                'last_change_at'    => $now,
+            ]);
+            $this->summary_id = $summary->id;
+
+            return;
+        }
+
+        $increments = [];
+        foreach ($counts as $column => $amount) {
+            if ($amount > 0) {
+                $increments[$column] = DB::raw("{$column} + {$amount}");
+            }
+        }
+
+        LinkBuildingOrderHistoryBatch::whereKey($this->summary_id)->update([
+            ...$increments,
+            'last_change_at' => $now,
+            ...($this->order_ids_preview !== $previous_preview ? ['order_ids_preview' => json_encode($this->order_ids_preview)] : []),
+        ]);
+    }
+
+    /** Flags the batch being restored, the first time this restore writes anything. */
+    private function markRestoredBatch(): void
+    {
+        if ($this->restored_batch_id === null || $this->restore_marked) {
+            return;
+        }
+
+        LinkBuildingOrderHistoryBatch::where('batch_id', $this->restored_batch_id)
+            ->whereNull('restored_at')
+            ->update(['restored_at' => now(), 'restored_by_id' => $this->user_id ?? auth()->id()]);
+
+        $this->restore_marked = true;
     }
 
     private static function normalize(mixed $value): mixed

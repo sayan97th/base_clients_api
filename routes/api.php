@@ -544,6 +544,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/link-building-orders/history',                       [LinkBuildingOrderHistoryController::class, 'index']);
             Route::get('/link-building-orders/history/batches/{batch_id}',    [LinkBuildingOrderHistoryController::class, 'batch']);
             Route::post('/link-building-orders/history/restore',              [LinkBuildingOrderHistoryController::class, 'restore']);
+            Route::get('/link-building-orders/history/restores/{restore_id}', [LinkBuildingOrderHistoryController::class, 'restoreStatus']);
             Route::get('/link-building-orders/{id}/history',                  [LinkBuildingOrderHistoryController::class, 'placement']);
             Route::get('/link-building-orders/saved-filters',            [LinkBuildingOrderSavedFilterController::class, 'index']);
             Route::post('/link-building-orders/saved-filters',           [LinkBuildingOrderSavedFilterController::class, 'store']);

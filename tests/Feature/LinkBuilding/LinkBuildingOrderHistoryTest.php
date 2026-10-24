@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\LinkBuilding;
 
+use App\Events\LinkBuildingOrdersBulkChanged;
+use App\Events\LinkBuildingOrderUpdated;
 use App\Models\DrTier;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderHistoryBatch;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\LinkBuildingOrderPlacementRevision;
 use App\Models\Role;
@@ -11,6 +14,7 @@ use App\Models\User;
 use App\Services\LinkBuildingOrderHistoryRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -179,7 +183,9 @@ class LinkBuildingOrderHistoryTest extends TestCase
             ->assertJsonPath('data.0.batch_id', $paste_batch_id)
             ->assertJsonPath('data.0.rows_count', 2)
             ->assertJsonPath('data.0.user.name', 'Krista B')
-            ->assertJsonPath('data.0.restored.user_id', $this->admin->id);
+            ->assertJsonPath('data.0.cells_count', 8)
+            ->assertJsonPath('data.0.restored.user.id', $this->admin->id)
+            ->assertJsonPath('data.0.restored.restored_at', fn (string $at) => str_ends_with($at, '+00:00'));
     }
 
     public function test_restore_stops_when_a_restored_cell_was_edited_again(): void
@@ -357,5 +363,173 @@ class LinkBuildingOrderHistoryTest extends TestCase
         $this->actingAs($client, 'api')
             ->postJson('/api/admin/link-building-orders/history/restore', ['batch_id' => 'x'])
             ->assertForbidden();
+    }
+
+    // ─── Scale ────────────────────────────────────────────────────────────────
+
+    public function test_each_action_keeps_a_summary_so_the_list_never_aggregates_revisions(): void
+    {
+        $first  = $this->placement(['order_id' => 'BL-25730']);
+        $second = $this->placement(['order_id' => 'BL-25732']);
+
+        $this->pasteOver([
+            $first->id  => ['client' => 'Mather', 'keyword' => 'a'],
+            $second->id => ['client' => 'Mather'],
+        ]);
+
+        $summary = LinkBuildingOrderHistoryBatch::where('batch_id', $this->lastBatchId())->sole();
+        $this->assertSame('paste', $summary->source);
+        $this->assertSame($this->admin->id, $summary->user_id);
+        $this->assertSame(2, $summary->revisions_count);
+        $this->assertSame(2, $summary->rows_count);
+        $this->assertSame(3, $summary->cells_count);
+        $this->assertSame(2, $summary->updated_count);
+        $this->assertSame(['BL-25730', 'BL-25732'], $summary->order_ids_preview);
+    }
+
+    public function test_a_bulk_write_adds_to_the_summary_of_its_import(): void
+    {
+        $placement = $this->placement(['dr_lbs' => '40']);
+        $recorder  = app(LinkBuildingOrderHistoryRecorder::class);
+        $recorder->begin('import', 'import-7', $this->admin->id);
+
+        foreach (['50', '60'] as $value) {
+            $recorder->captureBulkWrite([$placement->order_id], fn () => DB::table('link_building_order_placements')
+                ->where('id', $placement->id)
+                ->update(['dr_lbs' => $value]));
+        }
+
+        $summary = LinkBuildingOrderHistoryBatch::where('batch_id', 'import-7')->sole();
+        $this->assertSame(2, $summary->revisions_count);
+        $this->assertSame(1, $summary->rows_count, 'A row changed by two chunks of one import counts once.');
+    }
+
+    public function test_the_list_pages_with_a_cursor(): void
+    {
+        $placement = $this->placement();
+        foreach (['a', 'b', 'c'] as $keyword) {
+            $this->pasteOver([$placement->id => ['keyword' => $keyword]]);
+        }
+
+        $first_page = $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/history?source=paste&per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.has_more', true);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/history?source=paste&per_page=2&before_id=' . $first_page->json('meta.next_before_id'))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('meta.has_more', false)
+            ->assertJsonPath('meta.next_before_id', null);
+    }
+
+    public function test_the_list_finds_actions_by_the_start_of_an_order_id(): void
+    {
+        $weave  = $this->placement(['order_id' => 'BL-25730']);
+        $mather = $this->placement(['order_id' => 'BL-31000']);
+        $this->pasteOver([$weave->id => ['keyword' => 'x']]);
+        $this->pasteOver([$mather->id => ['keyword' => 'y']]);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/history?source=paste&order_id=2573')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_ids_preview.0', 'BL-25730');
+    }
+
+    public function test_the_revisions_of_a_large_action_load_a_page_at_a_time(): void
+    {
+        $updates = [];
+        foreach (range(1, 3) as $i) {
+            $updates[$this->placement()->id] = ['keyword' => "pasted {$i}"];
+        }
+        $this->pasteOver($updates);
+
+        $first_page = $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/history/batches/' . $this->lastBatchId() . '?per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.has_more', true);
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson('/api/admin/link-building-orders/history/batches/' . $this->lastBatchId() . '?per_page=2&after_id=' . $first_page->json('meta.next_after_id'))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.changes.0.new', 'pasted 3');
+    }
+
+    public function test_values_recalculated_by_formulas_are_not_recorded(): void
+    {
+        $placement = $this->placement(['final_price' => '$10.00']);
+
+        $this->pasteOver([$placement->id => ['final_price' => '$20.00']], source: 'formula');
+
+        $this->assertSame('$20.00', $placement->fresh()->final_price);
+        $this->assertDatabaseMissing('link_building_order_placement_revisions', ['event' => 'updated']);
+        $this->assertDatabaseMissing('link_building_order_history_batches', ['source' => 'formula']);
+    }
+
+    public function test_a_large_action_is_restored_on_the_queue(): void
+    {
+        config(['link_building.history_sync_restore_max_revisions' => 1]);
+        $first  = $this->placement(['keyword' => 'one']);
+        $second = $this->placement(['keyword' => 'two']);
+        $this->pasteOver([$first->id => ['keyword' => 'x'], $second->id => ['keyword' => 'y']]);
+
+        $restore_id = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/history/restore', ['batch_id' => $this->lastBatchId()])
+            ->assertStatus(202)
+            ->assertJsonPath('queued', true)
+            ->json('restore_id');
+
+        // The test queue runs jobs right away.
+        $this->actingAs($this->admin, 'api')
+            ->getJson("/api/admin/link-building-orders/history/restores/{$restore_id}")
+            ->assertOk()
+            ->assertJsonPath('status', 'completed')
+            ->assertJsonPath('result.applied', true)
+            ->assertJsonPath('result.restored_cells', 2);
+
+        $this->assertSame('one', $first->fresh()->keyword);
+        $this->assertSame('two', $second->fresh()->keyword);
+    }
+
+    public function test_only_the_admin_who_started_a_queued_restore_can_read_it(): void
+    {
+        config(['link_building.history_sync_restore_max_revisions' => 0]);
+        $placement = $this->placement();
+        $this->pasteOver([$placement->id => ['keyword' => 'x']]);
+
+        $restore_id = $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/history/restore', ['batch_id' => $this->lastBatchId()])
+            ->json('restore_id');
+
+        $other_admin = User::factory()->create(['is_active' => true]);
+        $other_admin->assignRole('admin');
+
+        $this->actingAs($other_admin, 'api')
+            ->getJson("/api/admin/link-building-orders/history/restores/{$restore_id}")
+            ->assertNotFound();
+    }
+
+    public function test_a_large_restore_asks_open_tables_to_reload_instead_of_sending_every_row(): void
+    {
+        config(['link_building.history_restore_row_events_max' => 1]);
+        $first  = $this->placement();
+        $second = $this->placement();
+        $this->pasteOver([$first->id => ['keyword' => 'x'], $second->id => ['keyword' => 'y']]);
+
+        Event::fake([LinkBuildingOrdersBulkChanged::class, LinkBuildingOrderUpdated::class]);
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson('/api/admin/link-building-orders/history/restore', ['batch_id' => $this->lastBatchId()])
+            ->assertOk()
+            ->assertJsonPath('reload_required', true)
+            ->assertJsonCount(0, 'data');
+
+        Event::assertDispatched(LinkBuildingOrdersBulkChanged::class, fn ($event) => $event->row_count === 2);
+        Event::assertNotDispatched(LinkBuildingOrderUpdated::class);
     }
 }

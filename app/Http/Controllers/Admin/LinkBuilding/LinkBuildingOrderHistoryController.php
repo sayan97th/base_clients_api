@@ -3,121 +3,115 @@
 namespace App\Http\Controllers\Admin\LinkBuilding;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\RestoreLinkBuildingOrderHistoryJob;
+use App\Models\LinkBuildingOrderHistoryBatch;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\LinkBuildingOrderPlacementRevision;
-use App\Services\LinkBuildingDomainUsageService;
 use App\Services\LinkBuildingOrderHistoryRestoreService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
- * Version history of the Link Building Orders table: every change grouped by the
- * action that made it (an edit, a paste, an import), the edit history of a single
- * row, and restoring either one. See LinkBuildingOrderHistoryRecorder for how the
- * history is written and LinkBuildingOrderHistoryRestoreService for the restore.
+ * Version history of the Link Building Orders table: every action that changed it
+ * (an edit, a paste, an import), the edit history of a single row, and restoring
+ * either one. See LinkBuildingOrderHistoryRecorder for how the history is written
+ * and LinkBuildingOrderHistoryRestoreService for the restore.
+ *
+ * Built to stay fast with a large table and a long history:
+ *   - the list reads one summary row per action (LinkBuildingOrderHistoryBatch),
+ *     never the revisions themselves;
+ *   - the revisions of an action load only when it is opened, a page at a time;
+ *   - every list pages with a cursor (the id of the last entry seen), which
+ *     costs the same on the first page as on the thousandth, and skips the
+ *     total count that a large table would have to scan for;
+ *   - restoring a large action runs on the queue.
  */
 class LinkBuildingOrderHistoryController extends Controller
 {
-    /** Revisions sent with each action of the list, the rest load with batch(). */
-    private const PREVIEW_REVISIONS = 25;
+    private const DEFAULT_PER_PAGE = 20;
+    private const MAX_PER_PAGE     = 50;
 
-    private const DEFAULT_PER_PAGE   = 20;
-    private const MAX_PER_PAGE       = 50;
-    private const MAX_BATCH_PER_PAGE = 200;
+    /** Revisions per page when an action is opened. */
+    private const REVISIONS_PER_PAGE     = 100;
+    private const MAX_REVISIONS_PER_PAGE = 200;
 
-    private const USER_COLUMNS = 'user:id,first_name,last_name,email';
+    private const USER_COLUMNS = 'id,first_name,last_name,email';
 
     public function __construct(
         private readonly LinkBuildingOrderHistoryRestoreService $restore_service,
-        private readonly LinkBuildingDomainUsageService $domain_usage,
     ) {}
 
     /**
      * GET /api/admin/link-building-orders/history
      *
-     * Paginated list of actions, newest first, each with its first revisions.
+     * Actions newest first, as summaries without their revisions.
      *
-     * Query: page, per_page, source, user_id, order_id (partial BL- id match)
+     * Query: before_id (cursor: id of the last action already shown), per_page,
+     *        source, user_id, order_id (an Order ID or its start, e.g. "BL-257")
      */
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'page'     => ['sometimes', 'integer', 'min:1'],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:' . self::MAX_PER_PAGE],
-            'source'   => ['sometimes', 'nullable', 'string', Rule::in(LinkBuildingOrderPlacementRevision::SOURCES)],
-            'user_id'  => ['sometimes', 'nullable', 'integer'],
-            'order_id' => ['sometimes', 'nullable', 'string', 'max:50'],
+            'before_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'per_page'  => ['sometimes', 'integer', 'min:1', 'max:' . self::MAX_PER_PAGE],
+            'source'    => ['sometimes', 'nullable', 'string', Rule::in(LinkBuildingOrderPlacementRevision::SOURCES)],
+            'user_id'   => ['sometimes', 'nullable', 'integer'],
+            'order_id'  => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
 
-        $filters = fn (): Builder => LinkBuildingOrderPlacementRevision::query()
+        $per_page        = $validated['per_page'] ?? self::DEFAULT_PER_PAGE;
+        $order_id_prefix = $this->orderIdPrefix($validated['order_id'] ?? null);
+
+        $batches = LinkBuildingOrderHistoryBatch::query()
+            ->with(['user:' . self::USER_COLUMNS, 'restoredBy:' . self::USER_COLUMNS])
+            ->when($validated['before_id'] ?? null, fn (Builder $q, int $before_id) => $q->where('id', '<', $before_id))
             ->when($validated['source'] ?? null, fn (Builder $q, string $source) => $q->where('source', $source))
             ->when($validated['user_id'] ?? null, fn (Builder $q, int $user_id) => $q->where('user_id', $user_id))
-            ->when(
-                filled($validated['order_id'] ?? null),
-                fn (Builder $q) => $q->where('order_id', 'like', '%' . addcslashes(trim($validated['order_id']), '%_\\') . '%')
-            );
-
-        /** @var LengthAwarePaginator $batches */
-        $batches = $filters()
-            ->selectRaw(implode(', ', [
+            ->when($order_id_prefix !== null, fn (Builder $q) => $q->whereIn(
                 'batch_id',
-                'MAX(id) as last_revision_id',
-                'MIN(created_at) as started_at',
-                'COUNT(*) as revisions_count',
-                'COUNT(DISTINCT placement_id) as rows_count',
-                "SUM(CASE WHEN event = 'created' THEN 1 ELSE 0 END) as created_count",
-                "SUM(CASE WHEN event = 'updated' THEN 1 ELSE 0 END) as updated_count",
-                "SUM(CASE WHEN event = 'deleted' THEN 1 ELSE 0 END) as deleted_count",
-            ]))
-            ->groupBy('batch_id')
-            ->orderByDesc('last_revision_id')
-            ->paginate($validated['per_page'] ?? self::DEFAULT_PER_PAGE);
-
-        $batch_ids = $batches->getCollection()->pluck('batch_id')->all();
-        $restores  = $this->restoresOf($batch_ids);
-
-        $data = $batches->getCollection()->map(function ($batch) use ($filters, $restores) {
-            $revisions = $filters()
-                ->where('batch_id', $batch->batch_id)
-                ->with(self::USER_COLUMNS)
-                ->orderBy('id')
-                ->limit(self::PREVIEW_REVISIONS)
-                ->get();
-
-            return $this->batchSummary($batch, $revisions, $restores[$batch->batch_id] ?? null);
-        });
+                LinkBuildingOrderPlacementRevision::select('batch_id')->where('order_id', 'like', $order_id_prefix . '%')
+            ))
+            ->orderByDesc('id')
+            ->limit($per_page + 1)
+            ->get();
 
         return response()->json([
-            'data' => $data->values()->all(),
-            'meta' => $this->paginationMeta($batches),
+            'data' => $batches->take($per_page)->map(fn (LinkBuildingOrderHistoryBatch $b) => $b->toApiArray())->values()->all(),
+            'meta' => $this->cursorMeta($batches, $per_page, 'next_before_id'),
         ]);
     }
 
     /**
      * GET /api/admin/link-building-orders/history/batches/{batch_id}
      *
-     * Every revision of one action, oldest first, for actions too large to fit in
-     * the list preview (a paste or an import over many rows).
+     * Revisions of one action, oldest first, a page at a time.
+     *
+     * Query: after_id (cursor: id of the last revision already shown), per_page
      */
     public function batch(Request $request, string $batch_id): JsonResponse
     {
-        $per_page = min(max((int) $request->input('per_page', 100), 1), self::MAX_BATCH_PER_PAGE);
+        $per_page = min(max((int) $request->input('per_page', self::REVISIONS_PER_PAGE), 1), self::MAX_REVISIONS_PER_PAGE);
+        $after_id = (int) $request->input('after_id', 0);
 
         $revisions = LinkBuildingOrderPlacementRevision::where('batch_id', $batch_id)
-            ->with(self::USER_COLUMNS)
+            ->when($after_id > 0, fn (Builder $q) => $q->where('id', '>', $after_id))
+            ->with('user:' . self::USER_COLUMNS)
             ->orderBy('id')
-            ->paginate($per_page);
+            ->limit($per_page + 1)
+            ->get();
 
-        if ($revisions->total() === 0) {
+        if ($revisions->isEmpty() && $after_id === 0) {
             return response()->json(['message' => 'Change not found in the history.'], 404);
         }
 
         return response()->json([
-            'data' => $revisions->getCollection()->map(fn (LinkBuildingOrderPlacementRevision $r) => $r->toApiArray())->all(),
-            'meta' => $this->paginationMeta($revisions),
+            'data' => $revisions->take($per_page)->map(fn (LinkBuildingOrderPlacementRevision $r) => $r->toApiArray())->values()->all(),
+            'meta' => $this->cursorMeta($revisions, $per_page, 'next_after_id'),
         ]);
     }
 
@@ -126,22 +120,27 @@ class LinkBuildingOrderHistoryController extends Controller
      *
      * Edit history of one row, newest first, like "Show edit history" on a cell.
      * Works for deleted rows too, their history is kept.
+     *
+     * Query: before_id (cursor: id of the last revision already shown), per_page
      */
     public function placement(Request $request, string $id): JsonResponse
     {
-        $per_page = min(max((int) $request->input('per_page', 25), 1), self::MAX_PER_PAGE);
+        $per_page  = min(max((int) $request->input('per_page', 25), 1), self::MAX_PER_PAGE);
+        $before_id = (int) $request->input('before_id', 0);
 
         $revisions = LinkBuildingOrderPlacementRevision::where('placement_id', $id)
-            ->with(self::USER_COLUMNS)
+            ->when($before_id > 0, fn (Builder $q) => $q->where('id', '<', $before_id))
+            ->with('user:' . self::USER_COLUMNS)
             ->orderByDesc('id')
-            ->paginate($per_page);
+            ->limit($per_page + 1)
+            ->get();
 
         $placement = LinkBuildingOrderPlacement::find($id);
 
         return response()->json([
-            'data'       => $revisions->getCollection()->map(fn (LinkBuildingOrderPlacementRevision $r) => $r->toApiArray())->all(),
-            'meta'       => $this->paginationMeta($revisions),
-            'order_id'   => $placement?->displayOrderId() ?? $revisions->getCollection()->first()?->order_id,
+            'data'       => $revisions->take($per_page)->map(fn (LinkBuildingOrderPlacementRevision $r) => $r->toApiArray())->values()->all(),
+            'meta'       => $this->cursorMeta($revisions, $per_page, 'next_before_id'),
+            'order_id'   => $placement?->displayOrderId() ?? $revisions->first()?->order_id,
             'is_deleted' => $placement === null,
         ]);
     }
@@ -158,7 +157,9 @@ class LinkBuildingOrderHistoryController extends Controller
      *                       cells edited again after the change being restored
      *
      * Responds 409 with the conflicts and without changing anything when there are
-     * conflicts and the strategy is "abort".
+     * conflicts and the strategy is "abort". An action larger than
+     * config('link_building.history_sync_restore_max_revisions') is restored on the
+     * queue: the answer is 202 with a restore_id to poll with restoreStatus().
      */
     public function restore(Request $request): JsonResponse
     {
@@ -169,116 +170,96 @@ class LinkBuildingOrderHistoryController extends Controller
         ]);
 
         $batch_id = $validated['batch_id'] ?? null;
+        $strategy = $validated['conflict_strategy'] ?? LinkBuildingOrderHistoryRestoreService::CONFLICTS_ABORT;
 
-        $revisions = $batch_id !== null
-            ? LinkBuildingOrderPlacementRevision::where('batch_id', $batch_id)->orderBy('id')->get()
-            : LinkBuildingOrderPlacementRevision::whereKey($validated['revision_id'])->get();
+        $query = $batch_id !== null
+            ? LinkBuildingOrderPlacementRevision::where('batch_id', $batch_id)
+            : LinkBuildingOrderPlacementRevision::whereKey($validated['revision_id']);
 
-        if ($revisions->isEmpty()) {
+        $events = (clone $query)->selectRaw('event, COUNT(*) as total')->groupBy('event')->pluck('total', 'event');
+
+        if ($events->isEmpty()) {
             return response()->json(['message' => 'Change not found in the history.'], 404);
         }
 
-        if ($revisions->every(fn ($r) => $r->event === LinkBuildingOrderPlacementRevision::EVENT_CREATED)) {
+        if ($events->keys()->all() === [LinkBuildingOrderPlacementRevision::EVENT_CREATED]) {
             return response()->json([
                 'message' => 'This change only added rows. Restoring never deletes rows, delete them from the table instead.',
             ], 422);
         }
 
+        if ($batch_id !== null && $events->sum() > config('link_building.history_sync_restore_max_revisions')) {
+            $restore_id = (string) Str::uuid();
+            RestoreLinkBuildingOrderHistoryJob::markQueued($restore_id, $request->user()->id);
+            RestoreLinkBuildingOrderHistoryJob::dispatch($restore_id, $batch_id, $strategy, $request->user()->id, $request->header('X-Session-ID'));
+
+            return response()->json([
+                'message'    => 'This change is large, it is being restored in the background.',
+                'queued'     => true,
+                'restore_id' => $restore_id,
+            ], 202);
+        }
+
         $result = $this->restore_service->restore(
-            $revisions,
-            $validated['conflict_strategy'] ?? LinkBuildingOrderHistoryRestoreService::CONFLICTS_ABORT,
+            $query->orderBy('id')->get(),
+            $strategy,
             $request->header('X-Session-ID'),
             $batch_id,
         );
 
-        $rows = [...$result['updated'], ...$result['recreated']];
-        $this->domain_usage->annotate($rows);
-
-        $conflict_count = count($result['conflicts']);
-
-        return response()->json([
-            'message'        => $result['applied']
-                ? $this->restoredMessage($result['restored_cells'], count($result['recreated']))
-                : "{$conflict_count} cell(s) were edited again after this change. Choose whether to skip or overwrite them.",
-            'applied'        => $result['applied'],
-            'restored_cells' => $result['restored_cells'],
-            'recreated_rows' => count($result['recreated']),
-            'conflicts'      => $result['conflicts'],
-            'skipped'        => $result['skipped'],
-            'data'           => array_map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray(), $rows),
-            'recreated_ids'  => array_map(fn (LinkBuildingOrderPlacement $p) => $p->id, $result['recreated']),
-        ], $result['applied'] ? 200 : 409);
+        return response()->json($this->restore_service->toPayload($result), $result['applied'] ? 200 : 409);
     }
 
     /**
-     * When and by whom each of the given batches was restored, keyed by batch id.
+     * GET /api/admin/link-building-orders/history/restores/{restore_id}
      *
-     * @return array<string, array{restored_at: string, user_id: ?int}>
+     * Status of a restore running on the queue: queued, processing, completed
+     * (with the same answer as an immediate restore in "result") or failed.
+     * Only the admin who started it can read it.
      */
-    private function restoresOf(array $batch_ids): array
+    public function restoreStatus(Request $request, string $restore_id): JsonResponse
     {
-        if (empty($batch_ids)) {
-            return [];
+        $status = Cache::get(RestoreLinkBuildingOrderHistoryJob::cacheKey($restore_id));
+
+        if (! $status || ($status['user_id'] ?? null) !== $request->user()->id) {
+            return response()->json(['message' => 'Restore not found.'], 404);
         }
 
-        return LinkBuildingOrderPlacementRevision::whereIn('restored_batch_id', $batch_ids)
-            ->selectRaw('restored_batch_id, MIN(created_at) as restored_at, MIN(user_id) as user_id')
-            ->groupBy('restored_batch_id')
-            ->get()
-            ->mapWithKeys(fn ($row) => [$row->restored_batch_id => [
-                'restored_at' => (string) $row->restored_at,
-                'user_id'     => $row->user_id === null ? null : (int) $row->user_id,
-            ]])
-            ->all();
+        unset($status['user_id']);
+
+        return response()->json($status);
     }
 
-    private function batchSummary(object $batch, $revisions, ?array $restore): array
+    /**
+     * Cursor of the next page: the id of the last entry shown, when the query
+     * found one more entry than the page holds.
+     */
+    private function cursorMeta(Collection $entries, int $per_page, string $cursor_key): array
     {
-        $first = $revisions->first();
+        $has_more = $entries->count() > $per_page;
 
         return [
-            'batch_id'           => $batch->batch_id,
-            'source'             => $first?->source,
-            'user'               => $first?->userSummary(),
-            'started_at'         => $first?->created_at?->toIso8601String(),
-            'revisions_count'    => (int) $batch->revisions_count,
-            'rows_count'         => (int) $batch->rows_count,
-            'created_count'      => (int) $batch->created_count,
-            'updated_count'      => (int) $batch->updated_count,
-            'deleted_count'      => (int) $batch->deleted_count,
-            // Only known when every revision of the action is in the preview.
-            'cells_count'        => (int) $batch->revisions_count > $revisions->count()
-                ? null
-                : $revisions->sum(fn ($r) => count($r->cell_changes ?? [])),
-            'restored_batch_id'  => $first?->restored_batch_id,
-            'restored'           => $restore,
-            'revisions'          => $revisions->map(fn (LinkBuildingOrderPlacementRevision $r) => $r->toApiArray())->all(),
-            'has_more_revisions' => (int) $batch->revisions_count > $revisions->count(),
+            'per_page'  => $per_page,
+            'has_more'  => $has_more,
+            $cursor_key => $has_more ? $entries->get($per_page - 1)->id : null,
         ];
     }
 
-    private function paginationMeta(LengthAwarePaginator $paginator): array
+    /**
+     * An Order ID search as an index friendly prefix: "BL-257" and "257" both look
+     * for "BL-257...". Null when there is nothing to search for.
+     */
+    private function orderIdPrefix(?string $search): ?string
     {
-        return [
-            'current_page' => $paginator->currentPage(),
-            'last_page'    => $paginator->lastPage(),
-            'per_page'     => $paginator->perPage(),
-            'total'        => $paginator->total(),
-        ];
-    }
-
-    private function restoredMessage(int $cells, int $rows): string
-    {
-        $parts = [];
-        if ($cells > 0) {
-            $parts[] = "{$cells} cell(s)";
-        }
-        if ($rows > 0) {
-            $parts[] = "{$rows} deleted row(s)";
+        $search = strtoupper(trim((string) $search));
+        if ($search === '') {
+            return null;
         }
 
-        return empty($parts)
-            ? 'Nothing to restore, the table already has these values.'
-            : 'Restored ' . implode(' and ', $parts) . '.';
+        if (ctype_digit($search)) {
+            $search = 'BL-' . $search;
+        }
+
+        return addcslashes($search, '%_\\');
     }
 }

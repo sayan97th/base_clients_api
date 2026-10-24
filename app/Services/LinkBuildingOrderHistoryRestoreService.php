@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\LinkBuildingOrderCreated;
 use App\Events\LinkBuildingOrderUpdated;
+use App\Events\LinkBuildingOrdersBulkChanged;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\LinkBuildingOrderPlacementRevision;
 use Illuminate\Support\Collection;
@@ -36,11 +37,16 @@ class LinkBuildingOrderHistoryRestoreService
     public function __construct(
         private readonly LinkBuildingOrderHistoryRecorder $history,
         private readonly LinkBuildingParentOrderStatusService $parent_order_status,
+        private readonly LinkBuildingDomainUsageService $domain_usage,
     ) {}
+
+    /** Rows looked up per query while planning a restore. */
+    private const LOOKUP_CHUNK_SIZE = 1000;
 
     /**
      * @param  Collection<int, LinkBuildingOrderPlacementRevision>  $revisions
      * @param  string|null  $restored_batch_id  set when the revisions are a whole batch
+     * @param  int|null  $user_id  who restores, for queued restores that run without a login
      * @return array{
      *     applied: bool,
      *     conflicts: list<array<string, mixed>>,
@@ -50,17 +56,23 @@ class LinkBuildingOrderHistoryRestoreService
      *     recreated: list<LinkBuildingOrderPlacement>,
      * }
      */
-    public function restore(Collection $revisions, string $conflict_strategy, ?string $session_id = null, ?string $restored_batch_id = null): array
-    {
+    public function restore(
+        Collection $revisions,
+        string $conflict_strategy,
+        ?string $session_id = null,
+        ?string $restored_batch_id = null,
+        ?int $user_id = null,
+    ): array {
         $plans      = $this->buildPlans($revisions);
-        $placements = LinkBuildingOrderPlacement::whereIn('id', array_keys($plans))->get()->keyBy('id');
+        $placements = $this->placementsById(array_keys($plans));
+        $order_ids  = $this->orderIdOwners($plans);
 
         $conflicts = [];
         $skipped   = [];
         $work      = [];
 
         foreach ($plans as $placement_id => $plan) {
-            $placement = $placements->get($placement_id);
+            $placement = $placements[$placement_id] ?? null;
             $recreate  = null;
 
             if (! $placement) {
@@ -70,7 +82,7 @@ class LinkBuildingOrderHistoryRestoreService
                 }
 
                 $snapshot_order_id = $plan['snapshot']['order_id'] ?? null;
-                if ($snapshot_order_id !== null && LinkBuildingOrderPlacement::where('order_id', $snapshot_order_id)->exists()) {
+                if ($snapshot_order_id !== null && isset($order_ids[$snapshot_order_id])) {
                     $skipped[] = $this->skipEntry($placement_id, $snapshot_order_id, 'order_id', self::SKIP_ORDER_ID_IN_USE);
                     continue;
                 }
@@ -89,7 +101,7 @@ class LinkBuildingOrderHistoryRestoreService
                 }
 
                 if ($field === 'order_id' && $target['old'] !== null
-                    && LinkBuildingOrderPlacement::where('order_id', $target['old'])->where('id', '!=', $placement_id)->exists()) {
+                    && isset($order_ids[$target['old']]) && $order_ids[$target['old']] !== $placement_id) {
                     $skipped[] = $this->skipEntry($placement_id, $current['order_id'] ?? $plan['order_id'], $field, self::SKIP_ORDER_ID_IN_USE);
                     continue;
                 }
@@ -121,7 +133,34 @@ class LinkBuildingOrderHistoryRestoreService
             return $this->result(false, $conflicts, $skipped, 0, [], []);
         }
 
-        [$updated, $recreated, $restored_cells] = $this->apply($work, $restored_batch_id);
+        [$updated, $recreated, $restored_cells] = $this->apply($work, $restored_batch_id, $user_id);
+
+        $this->broadcastRestoredRows($updated, $recreated, $session_id);
+        $this->syncParentOrders([...$updated, ...$recreated]);
+
+        return $this->result(true, $conflicts, $skipped, $restored_cells, $updated, $recreated);
+    }
+
+    /**
+     * Tells the open tables about the restored rows: one event per row for a small
+     * restore, a single "reload" event for a large one, where thousands of row
+     * events would flood every browser.
+     *
+     * @param  list<LinkBuildingOrderPlacement>  $updated
+     * @param  list<LinkBuildingOrderPlacement>  $recreated
+     */
+    private function broadcastRestoredRows(array $updated, array $recreated, ?string $session_id): void
+    {
+        $row_count = count($updated) + count($recreated);
+
+        if ($row_count === 0) {
+            return;
+        }
+
+        if ($row_count > config('link_building.history_restore_row_events_max')) {
+            broadcast(new LinkBuildingOrdersBulkChanged($session_id, $row_count));
+            return;
+        }
 
         foreach ($recreated as $placement) {
             broadcast(new LinkBuildingOrderCreated($placement, $session_id));
@@ -130,16 +169,74 @@ class LinkBuildingOrderHistoryRestoreService
         foreach ($updated as $placement) {
             broadcast(new LinkBuildingOrderUpdated($placement, $session_id));
         }
+    }
 
-        // A restored status keeps the client's order in step, but a correction is not
-        // news for the client, so no status email is sent.
-        foreach ([...$updated, ...$recreated] as $placement) {
-            if ($placement->order_item_id && ($placement->wasRecentlyCreated || $placement->wasChanged('status'))) {
-                $this->parent_order_status->sync($placement, notify_client: false);
+    /**
+     * A restored status keeps the client's order in step, once per order however
+     * many of its placements were restored. A correction is not news for the
+     * client, so no status email is sent.
+     *
+     * @param  list<LinkBuildingOrderPlacement>  $placements
+     */
+    private function syncParentOrders(array $placements): void
+    {
+        $synced_order_ids = [];
+
+        foreach ($placements as $placement) {
+            if (! $placement->order_item_id || ! ($placement->wasRecentlyCreated || $placement->wasChanged('status'))) {
+                continue;
+            }
+
+            $placement->loadMissing('orderItem');
+            $order_id = $placement->orderItem?->order_id;
+
+            if ($order_id === null || isset($synced_order_ids[$order_id])) {
+                continue;
+            }
+
+            $synced_order_ids[$order_id] = true;
+            $this->parent_order_status->sync($placement, notify_client: false);
+        }
+    }
+
+    /** @return array<string, LinkBuildingOrderPlacement> */
+    private function placementsById(array $ids): array
+    {
+        $placements = [];
+
+        foreach (array_chunk($ids, self::LOOKUP_CHUNK_SIZE) as $chunk) {
+            foreach (LinkBuildingOrderPlacement::whereIn('id', $chunk)->get() as $placement) {
+                $placements[$placement->id] = $placement;
             }
         }
 
-        return $this->result(true, $conflicts, $skipped, $restored_cells, $updated, $recreated);
+        return $placements;
+    }
+
+    /**
+     * Rows that hold any Order ID the restore could put back, keyed by Order ID, so
+     * a recreated row or a restored Order ID never collides with another row.
+     *
+     * @return array<string, string>  order_id => id of the row holding it
+     */
+    private function orderIdOwners(array $plans): array
+    {
+        $candidates = [];
+        foreach ($plans as $plan) {
+            if (isset($plan['snapshot']['order_id'])) {
+                $candidates[] = $plan['snapshot']['order_id'];
+            }
+            if (isset($plan['fields']['order_id']['old'])) {
+                $candidates[] = $plan['fields']['order_id']['old'];
+            }
+        }
+
+        $owners = [];
+        foreach (array_chunk(array_values(array_unique($candidates)), self::LOOKUP_CHUNK_SIZE) as $chunk) {
+            $owners += LinkBuildingOrderPlacement::whereIn('order_id', $chunk)->pluck('id', 'order_id')->all();
+        }
+
+        return $owners;
     }
 
     /**
@@ -178,9 +275,9 @@ class LinkBuildingOrderHistoryRestoreService
     /**
      * @return array{0: list<LinkBuildingOrderPlacement>, 1: list<LinkBuildingOrderPlacement>, 2: int}
      */
-    private function apply(array $work, ?string $restored_batch_id): array
+    private function apply(array $work, ?string $restored_batch_id, ?int $user_id): array
     {
-        $this->history->begin('restore', restored_batch_id: $restored_batch_id);
+        $this->history->begin('restore', user_id: $user_id, restored_batch_id: $restored_batch_id);
 
         return DB::transaction(function () use ($work) {
             $updated        = [];
@@ -208,6 +305,56 @@ class LinkBuildingOrderHistoryRestoreService
 
             return [$updated, $recreated, $restored_cells];
         });
+    }
+
+    /** Conflicts and skipped rows listed in a restore answer, the rest are only counted. */
+    public const MAX_LISTED_ISSUES = 100;
+
+    /**
+     * API answer of a restore, the same whether it ran in the request or on the
+     * queue. Small restores send the restored rows back for the table to merge.
+     * Large ones send none and ask the table to reload, like their broadcast does.
+     */
+    public function toPayload(array $result): array
+    {
+        $rows           = [...$result['updated'], ...$result['recreated']];
+        $reload         = count($rows) > config('link_building.history_restore_row_events_max');
+        $conflict_count = count($result['conflicts']);
+
+        if (! $reload) {
+            $this->domain_usage->annotate($rows);
+        }
+
+        return [
+            'message'         => $result['applied']
+                ? $this->restoredMessage($result['restored_cells'], count($result['recreated']))
+                : "{$conflict_count} cell(s) were edited again after this change. Choose whether to skip or overwrite them.",
+            'applied'         => $result['applied'],
+            'restored_cells'  => $result['restored_cells'],
+            'recreated_rows'  => count($result['recreated']),
+            'conflicts'       => array_slice($result['conflicts'], 0, self::MAX_LISTED_ISSUES),
+            'conflicts_count' => $conflict_count,
+            'skipped'         => array_slice($result['skipped'], 0, self::MAX_LISTED_ISSUES),
+            'skipped_count'   => count($result['skipped']),
+            'reload_required' => $reload,
+            'data'            => $reload ? [] : array_map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray(), $rows),
+            'recreated_ids'   => $reload ? [] : array_map(fn (LinkBuildingOrderPlacement $p) => $p->id, $result['recreated']),
+        ];
+    }
+
+    private function restoredMessage(int $cells, int $rows): string
+    {
+        $parts = [];
+        if ($cells > 0) {
+            $parts[] = number_format($cells) . ' cell(s)';
+        }
+        if ($rows > 0) {
+            $parts[] = number_format($rows) . ' deleted row(s)';
+        }
+
+        return empty($parts)
+            ? 'Nothing to restore, the table already has these values.'
+            : 'Restored ' . implode(' and ', $parts) . '.';
     }
 
     private function skipEntry(string $placement_id, ?string $order_id, ?string $field, string $reason): array

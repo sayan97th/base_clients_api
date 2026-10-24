@@ -414,6 +414,15 @@ class ProcessLinkBuildingImportJob implements ShouldQueue
                 }
             }
 
+            // The bulk write bypasses the model, so the normalized keys used by the
+            // recent domain usage lookup are set here from the imported values.
+            if (array_key_exists('partnership', $row)) {
+                $row['partnership_key'] = LinkBuildingOrderPlacement::partnershipKey($row['partnership']);
+            }
+            if (array_key_exists('landing_page', $row)) {
+                $row['landing_page_key'] = LinkBuildingOrderPlacement::landingPageKey($row['landing_page']);
+            }
+
             // Always include id and created_at so every row in the chunk has identical
             // column shape. For existing rows, ON DUPLICATE KEY UPDATE excludes both
             // columns, so the generated values are never written to the database.

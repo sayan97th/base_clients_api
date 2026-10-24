@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Models\LinkBuildingOrderPlacement;
+use App\Services\LinkBuildingDomainUsageService;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -30,6 +31,10 @@ class LinkBuildingOrderUpdated implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
+        // Annotated here, not by the caller, since the row may be restored from the
+        // serialized event and the flag must reach every table that shows it.
+        app(LinkBuildingDomainUsageService::class)->annotate([$this->placement]);
+
         return [
             'row'                   => $this->placement->toApiArray(),
             'updated_by_session_id' => $this->updated_by_session_id,

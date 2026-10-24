@@ -15,6 +15,7 @@ use App\Models\LinkBuildingOrder;
 use App\Models\LinkBuildingOrderItem;
 use App\Models\LinkBuildingOrderPlacement;
 use App\Models\User;
+use App\Services\LinkBuildingDomainUsageService;
 use App\Services\LinkBuildingPartnerMetricsService;
 use App\Services\OrderDetailsService;
 use Carbon\Carbon;
@@ -30,9 +31,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LinkBuildingOrdersDashboardController extends Controller
 {
-    /** Fills DR, traffic, POC and price from the partner metrics list when a row's Partnership changes. */
+    /**
+     * partner_metrics fills DR, traffic, POC and price from the partner metrics list
+     * when a row's Partnership changes. domain_usage flags the rows whose domain was
+     * already used for the same landing page in the last months.
+     */
     public function __construct(
         private readonly LinkBuildingPartnerMetricsService $partner_metrics,
+        private readonly LinkBuildingDomainUsageService $domain_usage,
     ) {}
 
     /**
@@ -167,6 +173,8 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $paginated = $query->paginate($per_page, ['*'], 'page', $page);
 
+        $this->domain_usage->annotate($paginated->getCollection());
+
         $data = $paginated->getCollection()
             ->map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray())
             ->values();
@@ -297,6 +305,8 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         broadcast(new LinkBuildingOrderCreated($placement, $session_id));
 
+        $this->domain_usage->annotate([$placement]);
+
         return response()->json([
             'message' => 'Link building order created successfully.',
             'data'    => $placement->toApiArray(),
@@ -335,6 +345,8 @@ class LinkBuildingOrdersDashboardController extends Controller
                 $this->notifyAssignedUser($fresh, $old_status);
             }
         }
+
+        $this->domain_usage->annotate([$fresh]);
 
         return response()->json([
             'message' => 'Link building order updated successfully.',
@@ -383,6 +395,9 @@ class LinkBuildingOrdersDashboardController extends Controller
      * Request body:
      *   row_ids : string[]                     — IDs of placements to update
      *   updates : Record<string, string|null>  — field → value map
+     *
+     * Responds with the updated rows, so the table can refresh what the server
+     * derives from the new values, such as the recent domain usage flag.
      */
     public function batchUpdate(Request $request): JsonResponse
     {
@@ -401,15 +416,21 @@ class LinkBuildingOrdersDashboardController extends Controller
 
         $placements = LinkBuildingOrderPlacement::whereIn('id', $row_ids)->get();
         $session_id = $request->header('X-Session-ID');
+        $updated    = [];
 
         foreach ($placements as $placement) {
             $placement->update($this->partner_metrics->withPartnershipLookup($placement, $safe_updates, keep_given_values: true));
-            broadcast(new LinkBuildingOrderUpdated($placement->fresh(), $session_id));
+            $fresh = $placement->fresh();
+            broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
+            $updated[] = $fresh;
         }
+
+        $this->domain_usage->annotate($updated);
 
         return response()->json([
             'message'       => "Updated {$placements->count()} row(s) successfully.",
             'updated_count' => $placements->count(),
+            'data'          => array_map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray(), $updated),
         ]);
     }
 
@@ -495,13 +516,15 @@ class LinkBuildingOrdersDashboardController extends Controller
             $placement->update($this->partner_metrics->withPartnershipLookup($placement, $safe_fields, keep_given_values: true));
             $fresh = $placement->fresh();
             broadcast(new LinkBuildingOrderUpdated($fresh, $session_id));
-            $updated_placements[] = $fresh->toApiArray();
+            $updated_placements[] = $fresh;
         }
+
+        $this->domain_usage->annotate($updated_placements);
 
         return response()->json([
             'message'       => count($updated_placements) . ' row(s) updated successfully.',
             'updated_count' => count($updated_placements),
-            'data'          => $updated_placements,
+            'data'          => array_map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray(), $updated_placements),
         ]);
     }
 

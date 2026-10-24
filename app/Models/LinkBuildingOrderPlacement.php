@@ -130,8 +130,74 @@ class LinkBuildingOrderPlacement extends Model
         return ($is_negative && $amount > 0 ? '-' : '') . $symbol . number_format($amount, 2);
     }
 
+    /**
+     * Recent use of this row's domain for its landing page, set by
+     * LinkBuildingDomainUsageService::annotate() before the row is sent to the
+     * dashboard. Null when the domain was not used for that page recently, or
+     * when the row was not annotated.
+     *
+     * @var array{count: int, last_order_id: string, last_request_date: string, window_months: int}|null
+     */
+    protected ?array $recent_domain_usage = null;
+
+    /**
+     * Domain of a Partnership value, so "https://www.Site.com/blog/" and "site.com"
+     * count as the same site: lowercased, without scheme, "www.", path, query or
+     * fragment. Null when there is no domain.
+     */
+    public static function partnershipKey(?string $value): ?string
+    {
+        $key = strtolower(trim((string) $value));
+        $key = preg_replace('#^[a-z][a-z0-9+.-]*://#', '', $key);
+        $key = preg_replace('#^www\.#', '', $key);
+        $key = rtrim(preg_split('#[/?\#]#', $key, 2)[0], '.');
+
+        return $key === '' ? null : mb_substr($key, 0, 255);
+    }
+
+    /**
+     * Landing Page URL in a comparable form, so "https://www.site.com/page/?utm=x"
+     * and "site.com/page" count as the same page: lowercased, without scheme,
+     * "www.", query, fragment or trailing slash. Null when there is no URL.
+     */
+    public static function landingPageKey(?string $value): ?string
+    {
+        $key = strtolower(trim((string) $value));
+        $key = preg_replace('#^[a-z][a-z0-9+.-]*://#', '', $key);
+        $key = preg_replace('#^www\.#', '', $key);
+        $key = rtrim(preg_split('#[?\#]#', $key, 2)[0], '/');
+
+        return $key === '' ? null : mb_substr($key, 0, 255);
+    }
+
+    /**
+     * The partnership_key and landing_page_key columns for the given values. Bulk
+     * writes that bypass the model (imports, migrations) use it to keep them in sync.
+     *
+     * @return array{partnership_key: ?string, landing_page_key: ?string}
+     */
+    public static function usageKeysFor(?string $partnership, ?string $landing_page): array
+    {
+        return [
+            'partnership_key'  => self::partnershipKey($partnership),
+            'landing_page_key' => self::landingPageKey($landing_page),
+        ];
+    }
+
     protected static function booted(): void
     {
+        // The normalized keys follow the Partnership and Landing Page they are built
+        // from, so the recent domain usage lookup always matches the current values.
+        static::saving(function (self $placement) {
+            if ($placement->isDirty('partnership')) {
+                $placement->partnership_key = self::partnershipKey($placement->partnership);
+            }
+
+            if ($placement->isDirty('landing_page')) {
+                $placement->landing_page_key = self::landingPageKey($placement->landing_page);
+            }
+        });
+
         // Prices are saved with the symbol of the row's currency, so a typed "150"
         // is stored as "$150.00", and switching the currency updates every price.
         static::saving(function (self $placement) {
@@ -232,6 +298,14 @@ class LinkBuildingOrderPlacement extends Model
         return $this->belongsTo(User::class, 'assigned_admin_user_id');
     }
 
+    /** Sets the recent domain usage sent with this row, see LinkBuildingDomainUsageService. */
+    public function setRecentDomainUsage(?array $usage): static
+    {
+        $this->recent_domain_usage = $usage;
+
+        return $this;
+    }
+
     /**
      * Generates the next sequential BL-{n} order_id by querying the current maximum
      * across all placements. Used by dashboard creation and cart checkout controllers
@@ -264,7 +338,7 @@ class LinkBuildingOrderPlacement extends Model
 
         // Derive display order_id for client-purchased placements that don't have one.
         // Uses placement UUID to guarantee uniqueness. Saved permanently on first admin edit.
-        $order_id = $this->order_id ?? $this->derivedOrderId();
+        $order_id = $this->displayOrderId();
 
         // Derive company name from linked purchase order user when not set directly.
         // Company is the primary identifier; falls back to empty string if unset.
@@ -315,6 +389,7 @@ class LinkBuildingOrderPlacement extends Model
             'final_price'               => $this->final_price ?? '',
             'currency'                  => $this->currency ?? 'USD',
             'cell_formulas'             => empty($this->cell_formulas) ? null : $this->cell_formulas,
+            'recent_domain_usage'       => $this->recent_domain_usage,
             'user_id'                       => $this->user_id,
             'admin_team_id'                 => $this->admin_team_id,
             'admin_team_name'               => $this->relationLoaded('adminTeam') ? ($this->adminTeam?->name ?? null) : null,
@@ -332,6 +407,12 @@ class LinkBuildingOrderPlacement extends Model
             'created_at'                    => $this->created_at?->toIso8601String(),
             'updated_at'                    => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    /** Order ID shown on the dashboard: the stored one, or the derived fallback below. */
+    public function displayOrderId(): string
+    {
+        return $this->order_id ?? $this->derivedOrderId();
     }
 
     /**

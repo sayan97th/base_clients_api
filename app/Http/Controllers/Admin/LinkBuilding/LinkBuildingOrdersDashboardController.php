@@ -126,6 +126,12 @@ class LinkBuildingOrdersDashboardController extends Controller
     private const FILTER_VALUES_DEFAULT_LIMIT = 500;
     private const FILTER_VALUES_MAX_LIMIT     = 1000;
 
+    /** Relations every dashboard row needs to build its API array without extra queries. */
+    private const ROW_RELATIONS = ['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser'];
+
+    /** Maximum ids per rows() request, so one batch stays a fast, bounded query. */
+    public const ROWS_MAX_IDS = 1000;
+
     /** Limits of findPages(): terms per request and characters per term. */
     public const FIND_MAX_TERMS       = 25;
     public const FIND_MAX_TERM_LENGTH = 255;
@@ -158,20 +164,32 @@ class LinkBuildingOrdersDashboardController extends Controller
      * Paginated list with server-side filtering and multi-column sorting.
      * Returns all dashboard-visible placements: admin-created (order_id set),
      * client-purchased (order_item_id set), and admin-assigned (user_id set).
+     *
+     * With include_row_index the response also carries the id and version of every
+     * matching row, in display order. The dashboard paints the requested page right
+     * away and then loads the remaining rows by id through rows(), skipping the ones
+     * it already holds at the same version, so the whole result set ends up in the
+     * spreadsheet without paging through it with OFFSET.
+     *
+     *   row_index.ids      : string[]  every matching row id, in display order
+     *   row_index.versions : int[]     updated_at of each row as a unix timestamp, same order
      */
     public function search(Request $request): JsonResponse
     {
         $page       = max(1, (int) $request->input('page', 1));
-        $per_page   = min((int) $request->input('per_page', 50), 500);
-        $sort_rules = $request->input('sort_rules', []);
+        $per_page   = max(1, min((int) $request->input('per_page', 50), 500));
+        $sort_rules = (array) $request->input('sort_rules', []);
 
-        $query = $this->dashboardQuery()
-            ->with(['orderItem.order.user', 'user', 'adminTeam', 'assignedAdminUser']);
+        $query = $this->dashboardQuery();
 
         $this->applyRequestFilters($query, $request);
         $this->applySortRules($query, $sort_rules);
 
-        $paginated = $query->paginate($per_page, ['*'], 'page', $page);
+        if ($request->boolean('include_row_index')) {
+            return $this->searchWithRowIndex($query, $page, $per_page);
+        }
+
+        $paginated = $query->with(self::ROW_RELATIONS)->paginate($per_page, ['*'], 'page', $page);
 
         $this->domain_usage->annotate($paginated->getCollection());
 
@@ -188,6 +206,95 @@ class LinkBuildingOrdersDashboardController extends Controller
             'from'         => $paginated->firstItem(),
             'to'           => $paginated->lastItem(),
         ]);
+    }
+
+    /**
+     * POST /api/admin/link-building-orders/rows
+     *
+     * Dashboard rows by id, in the order the ids were given. Used after search()
+     * with include_row_index to load the rest of the result set in batches. Ids that
+     * no longer exist (deleted in the meantime) are simply left out.
+     *
+     * Request body:
+     *   ids : string[]  required, at most ROWS_MAX_IDS
+     */
+    public function rows(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids'   => ['required', 'array', 'min:1', 'max:' . self::ROWS_MAX_IDS],
+            'ids.*' => ['required', 'string', 'max:36'],
+        ]);
+
+        return response()->json([
+            'data' => $this->rowsInOrder(array_values(array_unique($validated['ids']))),
+        ]);
+    }
+
+    /**
+     * The search() response with the full row index. The ordered ids come from one
+     * light query (two columns, no relations), and the requested page is sliced from
+     * them, so the page and the index always agree on the order.
+     */
+    private function searchWithRowIndex($query, int $page, int $per_page): JsonResponse
+    {
+        $ids      = [];
+        $versions = [];
+
+        $index_rows = $query->toBase()
+            ->select([$query->getModel()->qualifyColumn('id'), $query->getModel()->qualifyColumn('updated_at')])
+            ->cursor();
+
+        foreach ($index_rows as $row) {
+            $ids[]      = $row->id;
+            $versions[] = $row->updated_at ? (int) strtotime((string) $row->updated_at) : 0;
+        }
+
+        $total    = count($ids);
+        $offset   = ($page - 1) * $per_page;
+        $page_ids = array_slice($ids, $offset, $per_page);
+        $data     = $this->rowsInOrder($page_ids);
+
+        return response()->json([
+            'data'         => $data,
+            'current_page' => $page,
+            'last_page'    => max(1, (int) ceil($total / $per_page)),
+            'per_page'     => $per_page,
+            'total'        => $total,
+            'from'         => empty($page_ids) ? null : $offset + 1,
+            'to'           => empty($page_ids) ? null : $offset + count($page_ids),
+            'row_index'    => [
+                'ids'      => $ids,
+                'versions' => $versions,
+            ],
+        ]);
+    }
+
+    /**
+     * API arrays of the dashboard rows with the given ids, in the same order as the ids.
+     *
+     * @param  string[]  $ids
+     * @return array<int, array<string, mixed>>
+     */
+    private function rowsInOrder(array $ids): array
+    {
+        if (empty($ids)) {
+            return [];
+        }
+
+        $placements = $this->dashboardQuery()
+            ->whereIn('id', $ids)
+            ->with(self::ROW_RELATIONS)
+            ->get();
+
+        $this->domain_usage->annotate($placements);
+
+        $position_by_id = array_flip($ids);
+
+        return $placements
+            ->sortBy(fn (LinkBuildingOrderPlacement $p) => $position_by_id[$p->id] ?? PHP_INT_MAX)
+            ->map(fn (LinkBuildingOrderPlacement $p) => $p->toApiArray())
+            ->values()
+            ->all();
     }
 
     /**
@@ -2114,5 +2221,11 @@ class LinkBuildingOrdersDashboardController extends Controller
             // BL-9999 in descending order instead of doing a plain string comparison.
             $query->orderByRaw("CAST(REGEXP_SUBSTR(`order_id`, '[0-9]+\$') AS UNSIGNED) DESC, `order_id` DESC");
         }
+
+        // Rows that tie on every rule (same status, same date...) would otherwise come
+        // back in whatever order the database picks, which can differ between two
+        // requests. The id keeps the order stable, so a row never shows up twice or
+        // goes missing between the row index and the batches loaded from it.
+        $query->orderBy($query->getModel()->qualifyColumn('id'));
     }
 }

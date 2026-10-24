@@ -526,6 +526,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/link-building-orders/status-counts',           [LinkBuildingOrdersDashboardController::class, 'statusCounts']);
             Route::post('/link-building-orders/search',                  [LinkBuildingOrdersDashboardController::class, 'search']);
             Route::post('/link-building-orders/find-pages',              [LinkBuildingOrdersDashboardController::class, 'findPages']);
+            Route::post('/link-building-orders/rows',                    [LinkBuildingOrdersDashboardController::class, 'rows']);
             Route::post('/link-building-orders/export',                  [LinkBuildingOrdersDashboardController::class, 'export']);
             Route::post('/link-building-orders/batch-update',            [LinkBuildingOrdersDashboardController::class, 'batchUpdate']);
             Route::post('/link-building-orders/batch-update-cells',      [LinkBuildingOrdersDashboardController::class, 'batchUpdateCells']);

@@ -149,6 +149,28 @@ class LinkBuildingOrderFilterPreferenceControllerTest extends TestCase
             ->assertJsonPath('data.filters.sheet_filters.link_builder.values.values', ['Jane']);
     }
 
+    /**
+     * The sort is stored as sent. The table decides on load whether to use it (only
+     * while a saved filter is applied) or to open with the newest orders first.
+     */
+    public function test_update_stores_the_sort_unchanged_with_the_view(): void
+    {
+        $sort_rules = [
+            ['key' => 'client', 'direction' => 'asc', 'nulls_last' => true],
+            ['key' => 'order_id', 'direction' => 'desc', 'nulls_last' => true],
+        ];
+
+        $this->actingAs($this->admin, 'api')
+            ->putJson(self::BASE_URL, ['filters' => $this->filterState(['sort_rules' => $sort_rules])])
+            ->assertOk();
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson(self::BASE_URL)
+            ->assertOk()
+            ->assertJsonPath('data.filters.sort_rules', $sort_rules)
+            ->assertJsonPath('data.applied_saved_filter_id', null);
+    }
+
     public function test_update_remembers_an_own_or_shared_applied_filter(): void
     {
         $shared = $this->savedFilter($this->other_admin, ['is_shared' => true]);

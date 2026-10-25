@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
  * Per user auto saved view of the admin "Link Building Orders" table. The frontend
  * writes the current filters, sorting and hidden columns here as they change, and
  * reads them back on load, so every user finds the table the way they left it.
+ * The sort is only restored while a saved filter is applied, otherwise the table
+ * opens with its default sort (newest orders first).
  */
 class LinkBuildingOrderFilterPreferenceController extends Controller
 {

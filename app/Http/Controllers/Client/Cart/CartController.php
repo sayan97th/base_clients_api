@@ -525,9 +525,7 @@ class CartController extends Controller
         // Increment coupon usage counts after the transaction commits
         // (skipped for any credits-backed payment since no coupons are permitted)
         if (! $any_credits_applied) {
-            foreach ($coupon_models as $coupon) {
-                $coupon->increment('times_used');
-            }
+            $this->couponService->incrementUsageForAppliedCoupons($coupon_models, $created_orders);
         }
 
         // Fire product-specific events

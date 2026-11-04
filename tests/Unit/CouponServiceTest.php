@@ -150,4 +150,29 @@ class CouponServiceTest extends TestCase
 
         $this->assertTrue($result['valid']);
     }
+
+    public function test_coupon_without_minimum_is_valid_for_any_small_order_amount(): void
+    {
+        $coupon = $this->makeCoupon(['discount_value' => 25.0]);
+
+        foreach ([1.0, 50.0, 400.0, 499.99] as $order_amount) {
+            $result = $this->service->validateAndCalculate($coupon, $order_amount, 1);
+
+            $this->assertTrue($result['valid'], "Expected coupon to be valid for \${$order_amount}");
+            $this->assertEquals(round($order_amount * 0.25, 2), $result['discount_amount']);
+        }
+    }
+
+    public function test_minimum_purchase_amount_is_ignored_unless_applies_to_is_minimum_purchase(): void
+    {
+        // A leftover minimum on a coupon that applies to "all" must not block it.
+        $coupon = $this->makeCoupon([
+            'applies_to'              => 'all',
+            'minimum_purchase_amount' => 1000.0,
+        ]);
+
+        $result = $this->service->validateAndCalculate($coupon, 400.0, 1);
+
+        $this->assertTrue($result['valid']);
+    }
 }

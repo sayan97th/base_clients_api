@@ -140,9 +140,8 @@ class DeferredCartController extends Controller
             ], 500);
         }
 
-        foreach ($coupon_models as $coupon) {
-            $coupon->increment('times_used');
-        }
+        // Only coupons that were actually applied to a created order consume a use.
+        $this->couponService->incrementUsageForAppliedCoupons($coupon_models, $created_orders);
 
         $invoice = null;
 

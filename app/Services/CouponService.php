@@ -107,6 +107,42 @@ class CouponService
         return ['valid' => true, 'discount_amount' => $discount_amount];
     }
 
+    /**
+     * Increment times_used once per checkout, only for coupons that were actually
+     * persisted on at least one created order. Coupons submitted at checkout that
+     * failed validation (for example a coupon's own minimum purchase was not met)
+     * are skipped silently, so they must not consume a use.
+     *
+     * @param array<int|string, Coupon>                    $coupon_models
+     * @param array<int, array{model?: \Illuminate\Database\Eloquent\Model}> $created_orders
+     */
+    public function incrementUsageForAppliedCoupons(array $coupon_models, array $created_orders): void
+    {
+        if (empty($coupon_models)) {
+            return;
+        }
+
+        $applied_coupon_ids = [];
+
+        foreach ($created_orders as $entry) {
+            $order = $entry['model'] ?? null;
+
+            if (! $order || ! method_exists($order, 'orderCoupons')) {
+                continue;
+            }
+
+            foreach ($order->orderCoupons()->pluck('coupon_id') as $coupon_id) {
+                $applied_coupon_ids[$coupon_id] = true;
+            }
+        }
+
+        foreach ($coupon_models as $coupon) {
+            if (isset($applied_coupon_ids[$coupon->id])) {
+                $coupon->increment('times_used');
+            }
+        }
+    }
+
     private function calculateDiscount(
         Coupon $coupon,
         float $order_amount,

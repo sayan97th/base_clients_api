@@ -29,13 +29,9 @@ class CouponValidationController extends Controller
         $cart_product_types   = $request->cart_product_types ?? [];
         $product_type_amounts = $request->product_type_amounts ?? [];
 
-        if ($order_amount < 500.00) {
-            return response()->json($this->buildInvalidResponse(
-                $code,
-                'A minimum cart total of $500.00 is required to apply a promo code.'
-            ));
-        }
-
+        // There is no global cart minimum for promo codes. A minimum purchase only
+        // applies when an individual coupon is configured with applies_to
+        // "minimum_purchase", which CouponService::validateAndCalculate enforces.
         $coupon = Coupon::where('code', $code)->where('is_active', true)->first();
 
         if (!$coupon) {

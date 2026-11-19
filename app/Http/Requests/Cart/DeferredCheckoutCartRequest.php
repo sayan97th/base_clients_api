@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Cart;
 
+use App\Models\GiftCardRewardClaim;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class DeferredCheckoutCartRequest extends FormRequest
 {
@@ -19,6 +21,11 @@ class DeferredCheckoutCartRequest extends FormRequest
             'session_id'          => ['nullable', 'string', 'uuid'],
             'coupon_ids'          => ['nullable', 'array'],
             'coupon_ids.*'        => ['string', 'uuid'],
+            // Optional gift card details for money back promo codes (HAPPYHOLIDAYS).
+            // The client may skip this and fill it in later from the order page.
+            'gift_card_reward'                 => ['nullable', 'array'],
+            'gift_card_reward.recipient_email' => ['nullable', 'string', 'email:rfc', 'max:255'],
+            'gift_card_reward.gift_card_brand' => ['nullable', 'string', Rule::in(GiftCardRewardClaim::brandKeys())],
 
             'order_title'         => ['nullable', 'string', 'max:500'],
             'order_notes'         => ['nullable', 'string', 'max:5000'],

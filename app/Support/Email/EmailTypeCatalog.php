@@ -3,6 +3,7 @@
 namespace App\Support\Email;
 
 use App\Mail\AdminCreditPurchaseNotification;
+use App\Mail\AdminGiftCardRewardNotification;
 use App\Mail\AdminInvoicePaidNotification;
 use App\Mail\AdminInvoiceRefundedNotification;
 use App\Mail\AdminNewTicketNotification;
@@ -98,6 +99,13 @@ final class EmailTypeCatalog
             'audience'    => self::AUDIENCE_ADMIN,
             'category'    => self::CATEGORY_PURCHASES,
             'classes'     => [AdminInvoicePaidNotification::class],
+        ],
+        'admin_gift_card_reward' => [
+            'label'       => 'Promo gift card request',
+            'description' => 'Sent to admins when a client submits the email and gift card brand for a money back promo code such as HAPPYHOLIDAYS.',
+            'audience'    => self::AUDIENCE_ADMIN,
+            'category'    => self::CATEGORY_PURCHASES,
+            'classes'     => [AdminGiftCardRewardNotification::class],
         ],
         'admin_pay_later_order' => [
             'label'       => 'Pay later order placed',

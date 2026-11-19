@@ -31,7 +31,7 @@ class StoreCouponRequest extends FormRequest
             ],
             'name'                    => 'required|string|max:100',
             'description'             => 'nullable|string|max:500',
-            'discount_type'           => 'required|in:percentage,fixed_amount',
+            'discount_type'           => 'required|in:percentage,fixed_amount,gift_card_reward',
             'discount_value'          => [
                 'required',
                 'numeric',
@@ -39,6 +39,9 @@ class StoreCouponRequest extends FormRequest
                 function ($attribute, $value, $fail) {
                     if ($this->discount_type === 'percentage' && $value > 100) {
                         $fail('The discount value must not be greater than 100 when discount type is percentage.');
+                    }
+                    if ($this->discount_type === 'gift_card_reward' && $value > 100) {
+                        $fail('The reward percentage must not be greater than 100.');
                     }
                 },
             ],

@@ -13,6 +13,20 @@ class Coupon extends Model
 {
     use HasUuids, SoftDeletes;
 
+    public const DISCOUNT_TYPE_PERCENTAGE       = 'percentage';
+    public const DISCOUNT_TYPE_FIXED_AMOUNT     = 'fixed_amount';
+    /**
+     * Money back promo: the order price is not reduced, instead the client
+     * earns a gift card worth discount_value percent of the order total.
+     */
+    public const DISCOUNT_TYPE_GIFT_CARD_REWARD = 'gift_card_reward';
+
+    public const DISCOUNT_TYPES = [
+        self::DISCOUNT_TYPE_PERCENTAGE,
+        self::DISCOUNT_TYPE_FIXED_AMOUNT,
+        self::DISCOUNT_TYPE_GIFT_CARD_REWARD,
+    ];
+
     protected $fillable = [
         'code',
         'name',
@@ -64,5 +78,38 @@ class Coupon extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(LinkBuildingOrder::class, 'coupon_id');
+    }
+
+    public function giftCardRewardClaims(): HasMany
+    {
+        return $this->hasMany(GiftCardRewardClaim::class, 'coupon_id');
+    }
+
+    public function isGiftCardReward(): bool
+    {
+        return $this->discount_type === self::DISCOUNT_TYPE_GIFT_CARD_REWARD;
+    }
+
+    /**
+     * Whether the promotion is currently running: active, not deleted,
+     * already started and not expired. Uses the same date rules as
+     * CouponService::validateAndCalculate so checkout and the post purchase
+     * gift card form always agree on whether the promo is still live.
+     */
+    public function isRunning(): bool
+    {
+        if (! $this->is_active || $this->trashed()) {
+            return false;
+        }
+
+        if ($this->starts_at && now()->lt($this->starts_at)) {
+            return false;
+        }
+
+        if ($this->expires_at && now()->gt($this->expires_at)) {
+            return false;
+        }
+
+        return true;
     }
 }

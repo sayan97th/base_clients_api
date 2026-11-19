@@ -35,7 +35,7 @@ class UpdateCouponRequest extends FormRequest
             ],
             'name'                    => 'sometimes|string|max:100',
             'description'             => 'sometimes|nullable|string|max:500',
-            'discount_type'           => 'sometimes|in:percentage,fixed_amount',
+            'discount_type'           => 'sometimes|in:percentage,fixed_amount,gift_card_reward',
             'discount_value'          => [
                 'sometimes',
                 'numeric',
@@ -44,6 +44,9 @@ class UpdateCouponRequest extends FormRequest
                     $type = $discount_type ?? $this->input('discount_type');
                     if ($type === 'percentage' && $value > 100) {
                         $fail('The discount value must not be greater than 100 when discount type is percentage.');
+                    }
+                    if ($type === 'gift_card_reward' && $value > 100) {
+                        $fail('The reward percentage must not be greater than 100.');
                     }
                 },
             ],

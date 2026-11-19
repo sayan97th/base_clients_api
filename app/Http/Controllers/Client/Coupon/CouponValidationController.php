@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Client\Coupon;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Coupon\ValidateCouponRequest;
 use App\Models\Coupon;
+use App\Models\GiftCardRewardClaim;
 use App\Services\CouponService;
 use Illuminate\Http\JsonResponse;
 
@@ -64,7 +65,13 @@ class CouponValidationController extends Controller
             'dr_tier_id'              => $coupon->dr_tier_id,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
             'discount_amount'         => $result['discount_amount'],
-            'message'                 => 'Coupon applied successfully.',
+            'is_gift_card_reward'     => $coupon->isGiftCardReward(),
+            'reward_percentage'       => $coupon->isGiftCardReward() ? (float) $coupon->discount_value : null,
+            'reward_amount'           => $result['reward_amount'] ?? 0,
+            'gift_card_brands'        => $coupon->isGiftCardReward() ? GiftCardRewardClaim::brandOptions() : [],
+            'message'                 => $coupon->isGiftCardReward()
+                ? 'Promo code applied. You will receive a gift card worth ' . rtrim(rtrim(number_format((float) $coupon->discount_value, 2), '0'), '.') . '% of your order total.'
+                : 'Coupon applied successfully.',
         ]);
     }
 
@@ -82,6 +89,10 @@ class CouponValidationController extends Controller
             'dr_tier_id'              => null,
             'minimum_purchase_amount' => null,
             'discount_amount'         => 0,
+            'is_gift_card_reward'     => false,
+            'reward_percentage'       => null,
+            'reward_amount'           => 0,
+            'gift_card_brands'        => [],
             'message'                 => $message,
         ];
     }

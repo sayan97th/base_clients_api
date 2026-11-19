@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\BacklinkOrder\BacklinkOrderController as AdminBac
 use App\Http\Controllers\Admin\ContentRefresh\AdminContentRefreshTierController;
 use App\Http\Controllers\Admin\NewsPlacement\NewsPlacementController as AdminNewsPlacementController;
 use App\Http\Controllers\Admin\Coupon\CouponController as AdminCouponController;
+use App\Http\Controllers\Admin\GiftCardReward\GiftCardRewardClaimController as AdminGiftCardRewardClaimController;
 use App\Http\Controllers\Admin\Discount\AdminDiscountController;
 use App\Http\Controllers\Admin\Transaction\AdminTransactionController;
 use App\Http\Controllers\Client\Discount\DiscountController as ClientDiscountController;
@@ -52,6 +53,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\Client\Coupon\CouponValidationController;
+use App\Http\Controllers\Client\GiftCardReward\GiftCardRewardController;
 use App\Http\Controllers\Client\News\NewsController;
 use App\Http\Controllers\Client\Resource\ResourceController;
 use App\Http\Controllers\Client\Stripe\StripeController;
@@ -382,6 +384,12 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
+        });
+
+        // Promo gift card requests (money back coupons such as HAPPYHOLIDAYS)
+        Route::middleware('role:super_admin,admin,staff')->prefix('gift-card-claims')->group(function () {
+            Route::get('/', [AdminGiftCardRewardClaimController::class, 'index']);
+            Route::patch('/{id}/fulfillment', [AdminGiftCardRewardClaimController::class, 'updateFulfillment']);
         });
 
         // Admin Teams — super_admin, admin, staff
@@ -854,6 +862,10 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
     // Coupon validation
     Route::post('/coupons/validate', [CouponValidationController::class, 'validate']);
+
+    // Promo gift card rewards (money back coupons such as HAPPYHOLIDAYS)
+    Route::get('/gift-card-rewards/lookup', [GiftCardRewardController::class, 'lookup']);
+    Route::put('/gift-card-rewards/{id}', [GiftCardRewardController::class, 'submit'])->middleware('throttle:20,1');
 
     // Active discounts — available to all authenticated users
     Route::get('/discounts/active', [ClientDiscountController::class, 'active']);

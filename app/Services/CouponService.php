@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ContentBriefOrderCoupon;
 use App\Models\ContentOptimizationOrderCoupon;
 use App\Models\Coupon;
+use App\Models\GiftCardRewardClaim;
 use App\Models\LinkBuildingOrderCoupon;
 use App\Models\NewContentOrderCoupon;
 use Illuminate\Support\Carbon;
@@ -58,6 +59,11 @@ class CouponService
                     ->count()
                 + ContentBriefOrderCoupon::where('coupon_id', $coupon->id)
                     ->whereHas('order', fn ($q) => $q->where('user_id', $user_id))
+                    ->count()
+                // Gift card reward coupons never touch the order coupon tables,
+                // each use is recorded as a claim instead.
+                + GiftCardRewardClaim::where('coupon_id', $coupon->id)
+                    ->where('user_id', $user_id)
                     ->count();
 
             if ($user_usage >= $coupon->usage_per_user) {
@@ -104,7 +110,26 @@ class CouponService
 
         $discount_amount = $this->calculateDiscount($coupon, $order_amount, $dr_tier_amounts, $product_type_amounts);
 
-        return ['valid' => true, 'discount_amount' => $discount_amount];
+        return [
+            'valid'           => true,
+            'discount_amount' => $discount_amount,
+            'reward_amount'   => $coupon->isGiftCardReward()
+                ? $this->calculateRewardAmount($coupon, $order_amount)
+                : 0.0,
+        ];
+    }
+
+    /**
+     * Gift card value earned with a gift card reward coupon. discount_value
+     * holds the reward percentage (10 means 10% back).
+     */
+    public function calculateRewardAmount(Coupon $coupon, float $order_total): float
+    {
+        if (! $coupon->isGiftCardReward()) {
+            return 0.0;
+        }
+
+        return round(max(0.0, $order_total) * ((float) $coupon->discount_value / 100), 2);
     }
 
     /**
@@ -149,6 +174,11 @@ class CouponService
         array $dr_tier_amounts,
         array $product_type_amounts = []
     ): float {
+        // A gift card reward never lowers the price, it is paid back later as a gift card.
+        if ($coupon->isGiftCardReward()) {
+            return 0.0;
+        }
+
         // Product type restriction takes precedence for base amount calculation
         $coupon_product_types = $coupon->product_types ?? [];
         if (!empty($coupon_product_types) && !empty($product_type_amounts)) {

@@ -18,6 +18,7 @@ use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
 use App\Services\EmailNotificationSettingService;
+use App\Services\GiftCardRewardService;
 use App\Services\InvoiceService;
 use App\Services\LinkBuildingOrderHistoryRecorder;
 use App\Services\LinkBuildingOrderSnapshotService;
@@ -39,6 +40,7 @@ class DeferredCartController extends Controller
         protected TierPricingService $tierPricingService,
         protected LinkBuildingOrderSnapshotService $order_snapshots,
         protected LinkBuildingOrderHistoryRecorder $history,
+        protected GiftCardRewardService $giftCardRewardService,
     ) {}
 
     /**
@@ -53,8 +55,15 @@ class DeferredCartController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        $coupon_ids    = $request->input('coupon_ids', []);
+        $coupon_ids    = $request->input('coupon_ids', []) ?? [];
         $coupon_models = [];
+
+        // A gift card reward coupon (money back promo) cannot be stacked with other promo codes.
+        $combination_error = $this->giftCardRewardService->findCombinationError($coupon_ids);
+
+        if ($combination_error) {
+            return response()->json(['message' => $combination_error], 422);
+        }
 
         foreach ($coupon_ids as $coupon_id) {
             $coupon = Coupon::find($coupon_id);
@@ -65,6 +74,10 @@ class DeferredCartController extends Controller
 
             $coupon_models[$coupon_id] = $coupon;
         }
+
+        // Gift card reward coupons never discount the price, so they are kept
+        // out of order creation and recorded as a gift card claim afterwards.
+        [$coupon_models, $reward_coupon] = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
 
         $order_title      = $request->input('order_title');
         $order_notes      = $request->input('order_notes');
@@ -142,6 +155,15 @@ class DeferredCartController extends Controller
 
         // Only coupons that were actually applied to a created order consume a use.
         $this->couponService->incrementUsageForAppliedCoupons($coupon_models, $created_orders);
+
+        // Record the money back gift card earned with a reward coupon (if any).
+        $gift_card_claim = $this->giftCardRewardService->safelyCreateClaimForCheckout(
+            $user,
+            $reward_coupon,
+            $session_id,
+            $created_orders,
+            $request->input('gift_card_reward'),
+        );
 
         $invoice = null;
 
@@ -221,6 +243,7 @@ class DeferredCartController extends Controller
             'session_id'        => $session_id,
             'orders'            => $response_orders,
             'invoice_unique_id' => $invoice?->unique_id,
+            'gift_card_reward'  => $gift_card_claim ? $this->giftCardRewardService->formatForClient($gift_card_claim) : null,
         ]]);
     }
 

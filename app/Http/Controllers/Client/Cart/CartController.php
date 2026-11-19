@@ -22,6 +22,7 @@ use App\Models\LinkBuildingOrderSnapshot;
 use App\Models\NewContentOrder;
 use App\Models\User;
 use App\Services\CouponService;
+use App\Services\GiftCardRewardService;
 use App\Services\InvoiceService;
 use App\Services\LinkBuildingOrderHistoryRecorder;
 use App\Services\LinkBuildingOrderSnapshotService;
@@ -49,6 +50,7 @@ class CartController extends Controller
         protected TierPricingService $tierPricingService,
         protected LinkBuildingOrderSnapshotService $order_snapshots,
         protected LinkBuildingOrderHistoryRecorder $history,
+        protected GiftCardRewardService $giftCardRewardService,
     ) {}
 
     public function show(Request $request): JsonResponse
@@ -125,6 +127,14 @@ class CartController extends Controller
             return response()->json([
                 'message' => 'Coupon codes cannot be applied when paying with account credits.',
             ], 422);
+        }
+
+        // A gift card reward coupon (money back promo) is exclusive and cannot be
+        // stacked with other promo codes. Checked before the payment is verified.
+        $combination_error = $this->giftCardRewardService->findCombinationError($request->input('coupon_ids', []) ?? []);
+
+        if ($combination_error) {
+            return response()->json(['message' => $combination_error], 422);
         }
 
         // Calculate the expected order total server-side so it can be verified
@@ -227,6 +237,10 @@ class CartController extends Controller
 
             $coupon_models[$coupon_id] = $coupon;
         }
+
+        // Gift card reward coupons never discount the price, so they are kept
+        // out of order creation and recorded as a gift card claim afterwards.
+        [$coupon_models, $reward_coupon] = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
 
         $billing       = $request->input('billing');
         $order_title   = $request->input('order_title');
@@ -528,6 +542,17 @@ class CartController extends Controller
             $this->couponService->incrementUsageForAppliedCoupons($coupon_models, $created_orders);
         }
 
+        // Record the money back gift card earned with a reward coupon (if any).
+        $gift_card_claim = $any_credits_applied
+            ? null
+            : $this->giftCardRewardService->safelyCreateClaimForCheckout(
+                $user,
+                $reward_coupon,
+                $session_id,
+                $created_orders,
+                $request->input('gift_card_reward'),
+            );
+
         // Fire product-specific events
         foreach ($created_orders as $entry) {
             if ($entry['product_type'] === 'link_building') {
@@ -630,8 +655,9 @@ class CartController extends Controller
         ]);
 
         return response()->json(['data' => [
-            'session_id' => $session_id,
-            'orders'     => $response_orders,
+            'session_id'       => $session_id,
+            'orders'           => $response_orders,
+            'gift_card_reward' => $gift_card_claim ? $this->giftCardRewardService->formatForClient($gift_card_claim) : null,
         ]]);
     }
 

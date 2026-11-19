@@ -17,6 +17,10 @@ class CouponController extends Controller
     public function index(): JsonResponse
     {
         $coupons = Coupon::with('drTiers')
+            ->withCount([
+                'giftCardRewardClaims as gift_card_claims_count',
+                'giftCardRewardClaims as gift_card_claims_awaiting_count' => fn ($q) => $q->where('status', 'submitted'),
+            ])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -30,7 +34,12 @@ class CouponController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $coupon = Coupon::with('drTiers')->find($id);
+        $coupon = Coupon::with('drTiers')
+            ->withCount([
+                'giftCardRewardClaims as gift_card_claims_count',
+                'giftCardRewardClaims as gift_card_claims_awaiting_count' => fn ($q) => $q->where('status', 'submitted'),
+            ])
+            ->find($id);
 
         if (!$coupon) {
             return response()->json(['message' => 'Coupon not found.'], 404);
@@ -122,6 +131,9 @@ class CouponController extends Controller
             'usage_per_user'          => $coupon->usage_per_user,
             'times_used'              => $coupon->times_used,
             'is_active'               => $coupon->is_active,
+            'is_gift_card_reward'     => $coupon->isGiftCardReward(),
+            'gift_card_claims_count'  => (int) ($coupon->gift_card_claims_count ?? 0),
+            'gift_card_claims_awaiting_count' => (int) ($coupon->gift_card_claims_awaiting_count ?? 0),
             'created_at'              => $coupon->created_at?->toIso8601String(),
             'updated_at'              => $coupon->updated_at?->toIso8601String(),
         ];

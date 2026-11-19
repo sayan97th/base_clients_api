@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Coupon\StoreCouponRequest;
 use App\Http\Requests\Admin\Coupon\UpdateCouponRequest;
 use App\Models\Coupon;
+use App\Services\CouponUsageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 
@@ -46,6 +47,36 @@ class CouponController extends Controller
         }
 
         return response()->json(['data' => $this->formatCoupon($coupon)]);
+    }
+
+    /**
+     * GET /api/admin/coupons/{id}/usages
+     *
+     * Every order the coupon was applied to, with the client who placed it,
+     * the purchased items and the discount it produced. Soft deleted coupons
+     * are included so their history stays available.
+     */
+    public function usages(string $id, CouponUsageService $coupon_usage_service): JsonResponse
+    {
+        $coupon = Coupon::withTrashed()
+            ->with('drTiers')
+            ->withCount([
+                'giftCardRewardClaims as gift_card_claims_count',
+                'giftCardRewardClaims as gift_card_claims_awaiting_count' => fn ($q) => $q->where('status', 'submitted'),
+            ])
+            ->find($id);
+
+        if (!$coupon) {
+            return response()->json(['message' => 'Coupon not found.'], 404);
+        }
+
+        $usage = $coupon_usage_service->getUsage($coupon);
+
+        return response()->json([
+            'coupon'  => $this->formatCoupon($coupon),
+            'summary' => $usage['summary'],
+            'data'    => $usage['data'],
+        ]);
     }
 
     /**

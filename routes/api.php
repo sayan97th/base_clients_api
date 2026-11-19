@@ -381,6 +381,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         Route::middleware('role:super_admin,admin,staff')->prefix('coupons')->group(function () {
             Route::get('/', [AdminCouponController::class, 'index']);
             Route::post('/', [AdminCouponController::class, 'store']);
+            Route::get('/{id}/usages', [AdminCouponController::class, 'usages']);
             Route::get('/{id}', [AdminCouponController::class, 'show']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);

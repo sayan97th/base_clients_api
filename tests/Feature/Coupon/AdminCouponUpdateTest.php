@@ -149,6 +149,86 @@ class AdminCouponUpdateTest extends TestCase
         ]))->assertStatus(422)->assertJsonValidationErrors('expires_at');
     }
 
+    // ── Partial updates ───────────────────────────────────────────────────────
+
+    public function test_a_partial_update_keeps_the_tiers_of_a_dr_tier_coupon(): void
+    {
+        $coupon = $this->makeRegularCoupon(['applies_to' => 'specific_product']);
+        $coupon->drTiers()->sync([$this->dr_tier->id]);
+
+        $this->patchCoupon($coupon, ['name' => 'Renamed'])->assertOk();
+
+        $this->assertSame('Renamed', $coupon->refresh()->name);
+        $this->assertSame(1, $coupon->drTiers()->count());
+    }
+
+    public function test_a_dr_tier_coupon_cannot_be_left_without_tiers(): void
+    {
+        $coupon = $this->makeRegularCoupon(['applies_to' => 'specific_product']);
+        $coupon->drTiers()->sync([$this->dr_tier->id]);
+
+        $this->patchCoupon($coupon, ['dr_tier_ids' => []])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('dr_tier_ids');
+
+        $this->assertSame(1, $coupon->drTiers()->count());
+    }
+
+    public function test_the_tiers_of_a_dr_tier_coupon_can_be_replaced(): void
+    {
+        $other_tier = DrTier::create([
+            'id'             => 'dr60',
+            'label'          => 'DR 60+',
+            'min_dr'         => 60,
+            'max_dr'         => 69,
+            'traffic_range'  => '20k-40k',
+            'word_count'     => 500,
+            'price_per_link' => 600.0,
+            'is_hidden'      => false,
+            'is_active'      => true,
+        ]);
+        $coupon = $this->makeRegularCoupon(['applies_to' => 'specific_product']);
+        $coupon->drTiers()->sync([$this->dr_tier->id]);
+
+        $this->patchCoupon($coupon, ['dr_tier_ids' => [$other_tier->id]])
+            ->assertOk()
+            ->assertJsonPath('data.dr_tier_ids', [$other_tier->id]);
+    }
+
+    public function test_switching_to_the_minimum_purchase_scope_requires_an_amount(): void
+    {
+        $coupon = $this->makeRegularCoupon();
+
+        $this->patchCoupon($coupon, ['applies_to' => 'minimum_purchase'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('minimum_purchase_amount');
+    }
+
+    public function test_the_generic_update_can_still_change_only_the_status(): void
+    {
+        $coupon = $this->makeRegularCoupon();
+
+        $this->patchCoupon($coupon, ['is_active' => false])->assertOk();
+
+        $this->assertFalse($coupon->refresh()->is_active);
+    }
+
+    public function test_a_percentage_above_100_is_rejected_using_the_stored_type(): void
+    {
+        $coupon = $this->makeRegularCoupon(['discount_type' => 'percentage']);
+
+        $this->patchCoupon($coupon, ['discount_value' => 150])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('discount_value');
+    }
+
+    public function test_update_returns_not_found_for_an_unknown_coupon(): void
+    {
+        $this->actingAs($this->admin, 'api')
+            ->patchJson('/api/admin/coupons/00000000-0000-0000-0000-000000000000', ['name' => 'Ghost'])
+            ->assertNotFound();
+    }
+
     // ── Quick status switch ───────────────────────────────────────────────────
 
     public function test_admin_can_disable_a_coupon_from_the_status_endpoint(): void
@@ -189,6 +269,63 @@ class AdminCouponUpdateTest extends TestCase
         $coupon->refresh();
         $this->assertTrue($coupon->is_active);
         $this->assertEquals(15.0, $coupon->discount_value);
+    }
+
+    public function test_admin_can_enable_a_disabled_coupon_again(): void
+    {
+        $coupon = $this->makeRegularCoupon(['is_active' => false]);
+
+        $this->patchStatus($coupon, true)->assertOk()->assertJsonPath('data.is_active', true);
+    }
+
+    public function test_staff_can_disable_a_coupon(): void
+    {
+        $coupon = $this->makeRegularCoupon();
+
+        $this->actingAs($this->makeUserWithRole('staff'), 'api')
+            ->patchJson("/api/admin/coupons/{$coupon->id}/status", ['is_active' => false])
+            ->assertOk();
+
+        $this->assertFalse($coupon->refresh()->is_active);
+    }
+
+    public function test_status_switch_keeps_the_coupon_tiers_and_scope(): void
+    {
+        $coupon = $this->makeRegularCoupon(['applies_to' => 'specific_product']);
+        $coupon->drTiers()->sync([$this->dr_tier->id]);
+
+        $this->patchStatus($coupon, false)
+            ->assertOk()
+            ->assertJsonPath('data.applies_to', 'specific_product')
+            ->assertJsonPath('data.dr_tier_ids', [$this->dr_tier->id]);
+    }
+
+    public function test_status_switch_returns_the_gift_card_counts(): void
+    {
+        $coupon = $this->makeRewardCoupon();
+
+        $this->patchStatus($coupon, false)
+            ->assertOk()
+            ->assertJsonPath('data.is_gift_card_reward', true)
+            ->assertJsonPath('data.gift_card_claims_count', 0);
+    }
+
+    public function test_a_deleted_coupon_cannot_be_switched(): void
+    {
+        $coupon = $this->makeRegularCoupon();
+        $coupon->delete();
+
+        $this->patchStatus($coupon, true)->assertNotFound();
+    }
+
+    public function test_status_switch_requires_is_active(): void
+    {
+        $coupon = $this->makeRegularCoupon();
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson("/api/admin/coupons/{$coupon->id}/status", [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['is_active' => 'Choose whether the coupon is active or disabled.']);
     }
 
     public function test_status_switch_requires_a_boolean(): void

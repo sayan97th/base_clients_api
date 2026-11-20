@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature\Coupon;
+namespace Tests\Feature\GiftCardReward;
 
 use App\Jobs\SendAdminGiftCardRewardNotificationJob;
 use App\Mail\AdminGiftCardRewardNotification;

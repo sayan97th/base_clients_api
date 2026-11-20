@@ -130,28 +130,70 @@ class CouponRedemptionRecorder
             }
         }
 
+        // The claim lists every order of the checkout. When the promo is
+        // limited to some products, only the qualifying orders used it.
+        $eligible_types = $coupon->product_types ?? [];
+
+        if (! empty($eligible_types)) {
+            $orders = array_values(array_filter(
+                $orders,
+                fn (array $entry) => in_array($entry[1], $eligible_types, true),
+            ));
+        }
+
         if (empty($orders)) {
             return [];
         }
 
-        // The reward belongs to the whole checkout, split it evenly so the
-        // per order amounts add up to the claim total.
-        $reward_share = round((float) $claim->reward_amount / count($orders), 2);
-        $redemptions  = [];
+        $reward_shares = $this->splitReward((float) $claim->reward_amount, $orders);
+        $redemptions   = [];
 
-        foreach ($orders as [$order, $product_type]) {
+        foreach ($orders as $index => [$order, $product_type]) {
             $redemptions[] = $this->snapshot(
                 coupon: $coupon,
                 order: $order,
                 product_type: $product_type,
                 discount_amount: 0.0,
-                reward_amount: $reward_share,
+                reward_amount: $reward_shares[$index],
                 gift_card_claim_id: $claim->id,
                 redeemed_at: $claim->created_at,
             );
         }
 
         return $redemptions;
+    }
+
+    /**
+     * Splits the checkout reward across its orders in proportion to each
+     * order total. The last order takes the rounding remainder so the shares
+     * always add up to the exact claim amount.
+     *
+     * @param array<int, array{0: Model, 1: string}> $orders
+     * @return array<int, float>
+     */
+    private function splitReward(float $reward_amount, array $orders): array
+    {
+        $order_totals = array_map(fn (array $entry) => max(0.0, (float) $entry[0]->total_amount), $orders);
+        $grand_total  = array_sum($order_totals);
+        $last_index   = count($orders) - 1;
+        $shares       = [];
+        $assigned     = 0.0;
+
+        foreach ($order_totals as $index => $order_total) {
+            if ($index === $last_index) {
+                $shares[$index] = round($reward_amount - $assigned, 2);
+                break;
+            }
+
+            $share = $grand_total > 0
+                ? round($reward_amount * ($order_total / $grand_total), 2)
+                : round($reward_amount / count($orders), 2);
+
+            $shares[$index] = $share;
+            $assigned      += $share;
+        }
+
+        return $shares;
     }
 
     private function findOrder(string $product_type, string $order_id): ?Model

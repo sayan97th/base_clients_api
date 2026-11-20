@@ -147,6 +147,12 @@ class OrderController extends Controller
                 return response()->json(['message' => 'One or more coupons are no longer valid.'], 422);
             }
 
+            // Gift card reward coupons only work through the cart checkout, which
+            // records the reward claim. Here they would consume a use without one.
+            if ($coupon->isGiftCardReward()) {
+                return response()->json(['message' => 'This promotion can only be applied from the cart checkout.'], 422);
+            }
+
             $result = $this->couponService->validateAndCalculate(
                 $coupon,
                 $current_amount,

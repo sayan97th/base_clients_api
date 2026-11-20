@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin\Coupon;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Coupon\StoreCouponRequest;
 use App\Http\Requests\Admin\Coupon\UpdateCouponRequest;
+use App\Http\Requests\Admin\Coupon\UpdateCouponStatusRequest;
 use App\Models\Coupon;
 use App\Services\CouponUsageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 class CouponController extends Controller
 {
@@ -84,17 +86,21 @@ class CouponController extends Controller
      */
     public function store(StoreCouponRequest $request): JsonResponse
     {
-        $validated   = $request->validated();
+        $validated   = $this->normalizeScopeFields($request->validated(), $request->validated('applies_to'));
         $dr_tier_ids = $validated['dr_tier_ids'] ?? [];
         unset($validated['dr_tier_ids']);
 
         $validated['dr_tier_id'] = null;
 
-        $coupon = Coupon::create($validated);
+        $coupon = DB::transaction(function () use ($validated, $dr_tier_ids) {
+            $coupon = Coupon::create($validated);
 
-        if (!empty($dr_tier_ids)) {
-            $coupon->drTiers()->sync($dr_tier_ids);
-        }
+            if (!empty($dr_tier_ids)) {
+                $coupon->drTiers()->sync($dr_tier_ids);
+            }
+
+            return $coupon;
+        });
 
         $coupon->load('drTiers');
 
@@ -112,19 +118,39 @@ class CouponController extends Controller
             return response()->json(['message' => 'Coupon not found.'], 404);
         }
 
-        $validated   = $request->validated();
+        $applies_to  = $request->effectiveAppliesTo();
+        $validated   = $this->normalizeScopeFields($request->validated(), $applies_to);
         $dr_tier_ids = $validated['dr_tier_ids'] ?? null;
         unset($validated['dr_tier_ids']);
 
-        $coupon->update($validated);
+        DB::transaction(function () use ($coupon, $validated, $dr_tier_ids) {
+            $coupon->update($validated);
 
-        if ($dr_tier_ids !== null) {
-            $coupon->drTiers()->sync($dr_tier_ids);
+            if ($dr_tier_ids !== null) {
+                $coupon->drTiers()->sync($dr_tier_ids);
+            }
+        });
+
+        return response()->json(['data' => $this->formatCoupon($this->loadCouponDetails($coupon->refresh()))]);
+    }
+
+    /**
+     * PATCH /api/admin/coupons/{id}/status
+     *
+     * Quick enable or disable. It skips the full edit validation so a coupon
+     * can always be switched off right away, for example during an incident.
+     */
+    public function updateStatus(UpdateCouponStatusRequest $request, string $id): JsonResponse
+    {
+        $coupon = Coupon::find($id);
+
+        if (!$coupon) {
+            return response()->json(['message' => 'Coupon not found.'], 404);
         }
 
-        $coupon->refresh()->load('drTiers');
+        $coupon->update(['is_active' => $request->boolean('is_active')]);
 
-        return response()->json(['data' => $this->formatCoupon($coupon)]);
+        return response()->json(['data' => $this->formatCoupon($this->loadCouponDetails($coupon))]);
     }
 
     /**
@@ -141,6 +167,32 @@ class CouponController extends Controller
         $coupon->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * Keeps the scope fields consistent with the selected scope: DR tiers are
+     * only stored for the DR Tiers scope and the minimum amount only for the
+     * Minimum Purchase scope. Stale values from a previous scope are cleared.
+     */
+    private function normalizeScopeFields(array $validated, ?string $applies_to): array
+    {
+        if ($applies_to !== Coupon::APPLIES_TO_DR_TIERS) {
+            $validated['dr_tier_ids'] = [];
+        }
+
+        if ($applies_to !== Coupon::APPLIES_TO_MINIMUM_PURCHASE) {
+            $validated['minimum_purchase_amount'] = null;
+        }
+
+        return $validated;
+    }
+
+    private function loadCouponDetails(Coupon $coupon): Coupon
+    {
+        return $coupon->load('drTiers')->loadCount([
+            'giftCardRewardClaims as gift_card_claims_count',
+            'giftCardRewardClaims as gift_card_claims_awaiting_count' => fn ($q) => $q->where('status', 'submitted'),
+        ]);
     }
 
     private function formatCoupon(Coupon $coupon): array

@@ -383,6 +383,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
             Route::post('/', [AdminCouponController::class, 'store']);
             Route::get('/{id}/usages', [AdminCouponController::class, 'usages']);
             Route::get('/{id}', [AdminCouponController::class, 'show']);
+            Route::patch('/{id}/status', [AdminCouponController::class, 'updateStatus']);
             Route::patch('/{id}', [AdminCouponController::class, 'update']);
             Route::delete('/{id}', [AdminCouponController::class, 'destroy']);
         });

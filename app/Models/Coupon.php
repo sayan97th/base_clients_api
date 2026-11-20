@@ -28,6 +28,17 @@ class Coupon extends Model
         self::DISCOUNT_TYPE_GIFT_CARD_REWARD,
     ];
 
+    /** Discount scope values stored in applies_to. */
+    public const APPLIES_TO_ALL              = 'all';
+    public const APPLIES_TO_DR_TIERS         = 'specific_product';
+    public const APPLIES_TO_MINIMUM_PURCHASE = 'minimum_purchase';
+
+    public const APPLIES_TO_OPTIONS = [
+        self::APPLIES_TO_ALL,
+        self::APPLIES_TO_DR_TIERS,
+        self::APPLIES_TO_MINIMUM_PURCHASE,
+    ];
+
     protected $fillable = [
         'code',
         'name',

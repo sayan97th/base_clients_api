@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Coupon;
 
+use App\Models\Coupon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,6 +22,9 @@ class StoreCouponRequest extends FormRequest
 
     public function rules(): array
     {
+        $is_dr_tier_scope          = $this->applies_to === Coupon::APPLIES_TO_DR_TIERS;
+        $is_minimum_purchase_scope = $this->applies_to === Coupon::APPLIES_TO_MINIMUM_PURCHASE;
+
         return [
             'code' => [
                 'required',
@@ -45,25 +49,20 @@ class StoreCouponRequest extends FormRequest
                     }
                 },
             ],
-            'applies_to'              => 'required|in:all,specific_product,minimum_purchase',
+            'applies_to'              => ['required', Rule::in(Coupon::APPLIES_TO_OPTIONS)],
             'product_types'           => 'nullable|array',
             'product_types.*'         => 'string|in:link_building,new_content,content_optimization,content_brief',
-            'dr_tier_ids'             => [
-                Rule::requiredIf($this->applies_to === 'specific_product'),
-                'nullable',
-                'array',
-                'min:1',
-            ],
+            // DR tiers only matter for the DR Tiers scope, other scopes accept an empty list.
+            'dr_tier_ids'             => $is_dr_tier_scope
+                ? ['required', 'array', 'min:1']
+                : ['nullable', 'array'],
             'dr_tier_ids.*'           => [
                 'string',
                 Rule::exists('dr_tiers', 'id'),
             ],
-            'minimum_purchase_amount' => [
-                Rule::requiredIf($this->applies_to === 'minimum_purchase'),
-                'nullable',
-                'numeric',
-                'gt:0',
-            ],
+            'minimum_purchase_amount' => $is_minimum_purchase_scope
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'gt:0'],
             'starts_at'               => [
                 'nullable',
                 'date_format:Y-m-d',
@@ -92,10 +91,10 @@ class StoreCouponRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'dr_tier_ids.required'             => 'At least one DR tier must be selected when applies_to is specific_product.',
-            'dr_tier_ids.min'                  => 'At least one DR tier must be selected.',
+            'dr_tier_ids.required'             => 'At least one DR tier must be selected when the discount scope is DR Tiers.',
+            'dr_tier_ids.min'                  => 'At least one DR tier must be selected when the discount scope is DR Tiers.',
             'dr_tier_ids.*.exists'             => 'One or more selected DR tiers are invalid.',
-            'minimum_purchase_amount.required' => 'A minimum purchase amount is required when applies_to is minimum_purchase.',
+            'minimum_purchase_amount.required' => 'A minimum purchase amount is required when the discount scope is Minimum Purchase.',
         ];
     }
 }

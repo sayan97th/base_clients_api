@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -102,11 +103,21 @@ class Coupon extends Model
             return false;
         }
 
-        if ($this->starts_at && now()->lt($this->starts_at)) {
+        return $this->wasRunningAt(now());
+    }
+
+    /**
+     * Whether the given moment falls inside the promotion dates (starts_at
+     * and expires_at). Only the dates are checked, so a request made while
+     * the promo was live stays valid even if it is processed later.
+     */
+    public function wasRunningAt(CarbonInterface $moment): bool
+    {
+        if ($this->starts_at && $moment->lt($this->starts_at)) {
             return false;
         }
 
-        if ($this->expires_at && now()->gt($this->expires_at)) {
+        if ($this->expires_at && $moment->gt($this->expires_at)) {
             return false;
         }
 

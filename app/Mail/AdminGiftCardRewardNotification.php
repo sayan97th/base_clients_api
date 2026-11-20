@@ -38,6 +38,7 @@ class AdminGiftCardRewardNotification extends Mailable
         public string $view_order_url,
         public string $view_claims_url,
         public string $settings_url,
+        public string $promotion_ends_at = '',
     ) {
         $this->onQueue('emails');
     }
@@ -45,7 +46,7 @@ class AdminGiftCardRewardNotification extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Gift Card Request: ' . $this->reward_amount . ' ' . $this->gift_card_label . ' for ' . $this->client_name . ' - ' . config('app.name'),
+            subject: "\u{1F381} Send a {$this->reward_amount} {$this->gift_card_label} gift card to {$this->client_name} | " . config('app.name'),
         );
     }
 

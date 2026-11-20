@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Emails every admin recipient configured in Email Notification Settings
@@ -48,6 +49,17 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
         $claim = GiftCardRewardClaim::with(['user', 'coupon'])->find($this->claim_id);
 
         if (! $claim || ! $claim->recipient_email || ! $claim->gift_card_brand) {
+            return;
+        }
+
+        // Only requests made while the promo code was valid reach the team.
+        if (! $this->wasSubmittedDuringPromotion($claim)) {
+            Log::info('Gift card reward notification skipped, the details were submitted outside the promotion dates.', [
+                'claim_id'     => $claim->id,
+                'coupon_id'    => $claim->coupon_id,
+                'submitted_at' => $claim->submitted_at?->toIso8601String(),
+            ]);
+
             return;
         }
 
@@ -92,6 +104,7 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
                     products:           $products ?: 'Order',
                     is_payment_pending: $this->isPaymentPending($claim),
                     submitted_at:       ($claim->submitted_at ?? now())->format('F j, Y \a\t g:i A'),
+                    promotion_ends_at:  $claim->coupon?->expires_at?->format('F j, Y') ?? '',
                     view_order_url:     $view_order_url,
                     view_claims_url:    $view_claims_url,
                     settings_url:       FrontendUrl::to('/admin/email-notifications'),
@@ -108,6 +121,23 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
             'claim_id' => $this->claim_id,
             'error'    => $exception->getMessage(),
         ]);
+    }
+
+    /**
+     * The promo code must have been valid (inside its start and end dates)
+     * when the client submitted the gift card details. The submission time is
+     * used instead of the time the queue runs, so a request made minutes
+     * before the promo ends is still delivered if the queue is busy.
+     */
+    private function wasSubmittedDuringPromotion(GiftCardRewardClaim $claim): bool
+    {
+        $coupon = $claim->coupon;
+
+        if (! $coupon || ! $coupon->isGiftCardReward()) {
+            return false;
+        }
+
+        return $coupon->wasRunningAt($claim->submitted_at ?? $claim->created_at ?? now());
     }
 
     /**

@@ -143,4 +143,71 @@ class SendAdminGiftCardRewardNotificationJobTest extends TestCase
 
         Bus::assertNotDispatched(SendEmailJob::class);
     }
+
+    // ─── Promotion dates ──────────────────────────────────────────────────────
+
+    public function test_the_promo_end_date_is_shown_in_the_email(): void
+    {
+        $this->makeUserWithRole('admin');
+        $coupon = $this->makeRewardCoupon(['expires_at' => '2026-12-31 23:59:59']);
+
+        $this->travelTo('2026-12-01 10:00:00');
+        $this->runJob($this->makeSubmittedClaim($this->client, $coupon)->id);
+
+        Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->mailable->promotion_ends_at === 'December 31, 2026');
+    }
+
+    public function test_nothing_is_sent_when_details_arrive_after_the_promo_ended(): void
+    {
+        $this->makeUserWithRole('admin');
+        $coupon = $this->makeRewardCoupon(['expires_at' => '2026-12-31 23:59:59']);
+        $claim  = $this->makeSubmittedClaim($this->client, $coupon, ['submitted_at' => '2027-01-01 08:00:00']);
+
+        $this->runJob($claim->id);
+
+        Bus::assertNotDispatched(SendEmailJob::class);
+    }
+
+    public function test_nothing_is_sent_when_details_arrive_before_the_promo_started(): void
+    {
+        $this->makeUserWithRole('admin');
+        $coupon = $this->makeRewardCoupon(['starts_at' => '2026-12-01 00:00:00', 'expires_at' => '2026-12-31 23:59:59']);
+        $claim  = $this->makeSubmittedClaim($this->client, $coupon, ['submitted_at' => '2026-11-30 23:00:00']);
+
+        $this->runJob($claim->id);
+
+        Bus::assertNotDispatched(SendEmailJob::class);
+    }
+
+    public function test_a_request_made_before_the_deadline_is_still_sent_when_the_queue_runs_late(): void
+    {
+        $this->makeUserWithRole('admin');
+        $coupon = $this->makeRewardCoupon(['expires_at' => '2026-12-31 23:59:59']);
+        $claim  = $this->makeSubmittedClaim($this->client, $coupon, ['submitted_at' => '2026-12-31 23:58:00']);
+
+        $this->travelTo('2027-01-01 00:05:00');
+        $this->runJob($claim->id);
+
+        Bus::assertDispatched(SendEmailJob::class, 1);
+    }
+
+    public function test_promos_without_dates_always_notify(): void
+    {
+        $this->makeUserWithRole('admin');
+        $coupon = $this->makeRewardCoupon(['starts_at' => null, 'expires_at' => null]);
+
+        $this->runJob($this->makeSubmittedClaim($this->client, $coupon)->id);
+
+        Bus::assertDispatched(SendEmailJob::class, fn (SendEmailJob $job) => $job->mailable->promotion_ends_at === '');
+    }
+
+    public function test_nothing_is_sent_for_a_claim_whose_coupon_is_not_a_money_back_promo(): void
+    {
+        $this->makeUserWithRole('admin');
+        $claim = $this->makeSubmittedClaim($this->client, $this->makeRegularCoupon());
+
+        $this->runJob($claim->id);
+
+        Bus::assertNotDispatched(SendEmailJob::class);
+    }
 }

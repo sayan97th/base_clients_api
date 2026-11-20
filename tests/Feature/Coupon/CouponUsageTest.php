@@ -3,21 +3,27 @@
 namespace Tests\Feature\Coupon;
 
 use App\Models\Coupon;
+use App\Models\CouponRedemption;
 use App\Models\DrTier;
 use App\Models\GiftCardRewardClaim;
 use App\Models\LinkBuildingOrder;
+use App\Models\LinkBuildingOrderCoupon;
 use App\Models\NewContentOrder;
 use App\Models\NewContentTier;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 use Tests\TestCase;
 
 /**
  * GET /api/admin/coupons/{id}/usages
  *
  * Lists every order a coupon was applied to, with the client and order
- * details, so the admin team can track how each promo performs.
+ * details, so the admin team can track how each promo performs. The history
+ * is a snapshot taken at checkout, so later price, tier, coupon or order
+ * changes never alter what was charged.
  */
 class CouponUsageTest extends TestCase
 {
@@ -65,6 +71,8 @@ class CouponUsageTest extends TestCase
         ]);
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
     private function makeCoupon(): Coupon
     {
         return Coupon::create([
@@ -78,43 +86,58 @@ class CouponUsageTest extends TestCase
         ]);
     }
 
+    /**
+     * Mirrors the checkout: the coupon pivot is created before the items,
+     * inside one transaction, so the snapshot must wait for the commit.
+     */
+    private function checkoutLinkBuildingOrder(Coupon $coupon, ?string $session_id = 'session-1'): LinkBuildingOrder
+    {
+        return DB::transaction(function () use ($coupon, $session_id) {
+            $order = LinkBuildingOrder::create([
+                'user_id'                  => $this->client->id,
+                'order_title'              => 'Spring links',
+                'subtotal_before_discount' => 800.0,
+                'total_amount'             => 600.0,
+                'status'                   => 'pending',
+                'session_id'               => $session_id,
+            ]);
+            $order->orderCoupons()->create(['coupon_id' => $coupon->id, 'discount_amount' => 200.0]);
+            $order->items()->create([
+                'dr_tier_id' => 'dr50',
+                'quantity'   => 2,
+                'unit_price' => 400.0,
+                'subtotal'   => 800.0,
+            ]);
+
+            return $order;
+        });
+    }
+
+    private function getUsage(Coupon $coupon)
+    {
+        return $this->actingAs($this->admin, 'api')->getJson("/api/admin/coupons/{$coupon->id}/usages");
+    }
+
+    // ─── Listing ──────────────────────────────────────────────────────────────
+
     public function test_it_lists_every_order_the_coupon_was_applied_to(): void
     {
-        $coupon = $this->makeCoupon();
+        $coupon              = $this->makeCoupon();
+        $link_building_order = $this->checkoutLinkBuildingOrder($coupon);
 
-        $link_building_order = LinkBuildingOrder::create([
-            'user_id'                  => $this->client->id,
-            'order_title'              => 'Spring links',
-            'subtotal_before_discount' => 800.0,
-            'total_amount'             => 600.0,
-            'status'                   => 'pending',
-            'session_id'               => 'session-1',
-        ]);
-        $link_building_order->items()->create([
-            'dr_tier_id' => 'dr50',
-            'quantity'   => 2,
-            'unit_price' => 400.0,
-            'subtotal'   => 800.0,
-        ]);
-        $link_building_order->orderCoupons()->create(['coupon_id' => $coupon->id, 'discount_amount' => 200.0]);
+        DB::transaction(function () use ($coupon) {
+            $order = NewContentOrder::create([
+                'user_id'                  => $this->client->id,
+                'subtotal_before_discount' => 100.0,
+                'total_amount'             => 75.0,
+                'status'                   => 'processing',
+                'session_id'               => 'session-1',
+            ]);
+            $order->orderCoupons()->create(['coupon_id' => $coupon->id, 'discount_amount' => 25.0]);
+            $order->items()->create(['tier_id' => 'nc', 'quantity' => 1, 'unit_price' => 100.0, 'subtotal' => 100.0]);
+        });
 
-        $new_content_order = NewContentOrder::create([
-            'user_id'                  => $this->client->id,
-            'subtotal_before_discount' => 100.0,
-            'total_amount'             => 75.0,
-            'status'                   => 'processing',
-            'session_id'               => 'session-1',
-        ]);
-        $new_content_order->items()->create([
-            'tier_id'    => 'nc',
-            'quantity'   => 1,
-            'unit_price' => 100.0,
-            'subtotal'   => 100.0,
-        ]);
-        $new_content_order->orderCoupons()->create(['coupon_id' => $coupon->id, 'discount_amount' => 25.0]);
-
-        $response = $this->actingAs($this->admin, 'api')
-            ->getJson("/api/admin/coupons/{$coupon->id}/usages")
+        $response = $this->getUsage($coupon)
             ->assertOk()
             ->assertJsonPath('coupon.code', 'CONF25')
             ->assertJsonPath('summary.order_count', 2)
@@ -125,13 +148,14 @@ class CouponUsageTest extends TestCase
         $this->assertEqualsWithDelta(225.0, $response->json('summary.total_discount'), 0.001);
         $this->assertEqualsWithDelta(675.0, $response->json('summary.net_revenue'), 0.001);
 
-        $link_building_usage = collect($response->json('data'))->firstWhere('product_type', 'link_building');
+        $usage = collect($response->json('data'))->firstWhere('product_type', 'link_building');
 
-        $this->assertSame($link_building_order->id, $link_building_usage['order_id']);
-        $this->assertSame('Kennedy Client', $link_building_usage['client']['name']);
-        $this->assertSame('DR 50+', $link_building_usage['items'][0]['label']);
-        $this->assertSame(2, $link_building_usage['items_quantity']);
-        $this->assertSame('/admin/orders/' . $link_building_order->id, $link_building_usage['order_url']);
+        $this->assertSame($link_building_order->id, $usage['order_id']);
+        $this->assertSame('Kennedy Client', $usage['client']['name']);
+        $this->assertSame('DR 50+', $usage['items'][0]['label']);
+        $this->assertSame(2, $usage['items_quantity']);
+        $this->assertSame('/admin/orders/' . $link_building_order->id, $usage['order_url']);
+        $this->assertFalse($usage['is_order_deleted']);
     }
 
     public function test_gift_card_reward_coupons_list_the_orders_from_their_claims(): void
@@ -167,8 +191,7 @@ class CouponUsageTest extends TestCase
             'status'            => GiftCardRewardClaim::STATUS_PENDING_DETAILS,
         ]);
 
-        $response = $this->actingAs($this->admin, 'api')
-            ->getJson("/api/admin/coupons/{$coupon->id}/usages")
+        $response = $this->getUsage($coupon)
             ->assertOk()
             ->assertJsonPath('summary.order_count', 1)
             ->assertJsonPath('data.0.order_id', $order->id)
@@ -180,10 +203,7 @@ class CouponUsageTest extends TestCase
 
     public function test_it_returns_an_empty_history_for_an_unused_coupon(): void
     {
-        $coupon = $this->makeCoupon();
-
-        $this->actingAs($this->admin, 'api')
-            ->getJson("/api/admin/coupons/{$coupon->id}/usages")
+        $this->getUsage($this->makeCoupon())
             ->assertOk()
             ->assertJsonPath('summary.order_count', 0)
             ->assertJsonCount(0, 'data');
@@ -203,5 +223,94 @@ class CouponUsageTest extends TestCase
         $this->actingAs($this->client, 'api')
             ->getJson("/api/admin/coupons/{$coupon->id}/usages")
             ->assertForbidden();
+    }
+
+    // ─── Price snapshot ───────────────────────────────────────────────────────
+
+    public function test_the_history_keeps_the_price_charged_after_product_prices_change(): void
+    {
+        $coupon = $this->makeCoupon();
+        $this->checkoutLinkBuildingOrder($coupon);
+
+        DrTier::where('id', 'dr50')->update(['price_per_link' => 950.0, 'label' => 'DR 50 Premium']);
+        $coupon->update(['discount_value' => 50.0, 'name' => 'Renamed promo']);
+
+        $response = $this->getUsage($coupon)->assertOk();
+        $usage    = $response->json('data.0');
+
+        $this->assertSame('DR 50+', $usage['items'][0]['label']);
+        $this->assertEqualsWithDelta(400.0, $usage['items'][0]['unit_price'], 0.001);
+        $this->assertEqualsWithDelta(800.0, $usage['subtotal_before_discount'], 0.001);
+        $this->assertEqualsWithDelta(200.0, $usage['discount_amount'], 0.001);
+        $this->assertEqualsWithDelta(600.0, $usage['total_amount'], 0.001);
+        $this->assertEqualsWithDelta(25.0, $usage['coupon_terms']['discount_value'], 0.001);
+        $this->assertSame('Conference 25', $usage['coupon_terms']['name']);
+    }
+
+    public function test_the_history_keeps_the_purchase_after_the_order_is_edited_or_deleted(): void
+    {
+        $coupon = $this->makeCoupon();
+        $order  = $this->checkoutLinkBuildingOrder($coupon);
+
+        $order->update(['total_amount' => 1.0, 'status' => 'cancelled']);
+        $order->delete();
+
+        $this->assertDatabaseMissing('link_building_order_coupons', ['order_id' => $order->id]);
+
+        $usage = $this->getUsage($coupon)
+            ->assertOk()
+            ->assertJsonPath('summary.order_count', 1)
+            ->json('data.0');
+
+        $this->assertTrue($usage['is_order_deleted']);
+        $this->assertNull($usage['order_url']);
+        $this->assertEqualsWithDelta(600.0, $usage['total_amount'], 0.001);
+        $this->assertSame('Kennedy Client', $usage['client']['name']);
+    }
+
+    public function test_the_order_status_stays_live_while_the_order_exists(): void
+    {
+        $coupon = $this->makeCoupon();
+        $order  = $this->checkoutLinkBuildingOrder($coupon);
+
+        $order->update(['status' => 'completed']);
+
+        $this->getUsage($coupon)->assertOk()->assertJsonPath('data.0.status', 'completed');
+    }
+
+    public function test_snapshots_cannot_be_updated(): void
+    {
+        $this->checkoutLinkBuildingOrder($this->makeCoupon());
+
+        $this->expectException(LogicException::class);
+
+        CouponRedemption::firstOrFail()->update(['total_amount' => 1.0]);
+    }
+
+    public function test_backfill_command_records_coupon_uses_missing_from_the_history(): void
+    {
+        $coupon = $this->makeCoupon();
+
+        // A coupon use recorded before the history existed.
+        $order = LinkBuildingOrder::create([
+            'user_id'                  => $this->client->id,
+            'subtotal_before_discount' => 400.0,
+            'total_amount'             => 300.0,
+            'status'                   => 'pending',
+        ]);
+        $order->items()->create(['dr_tier_id' => 'dr50', 'quantity' => 1, 'unit_price' => 400.0, 'subtotal' => 400.0]);
+        LinkBuildingOrderCoupon::withoutEvents(fn () => LinkBuildingOrderCoupon::create([
+            'order_id'        => $order->id,
+            'coupon_id'       => $coupon->id,
+            'discount_amount' => 100.0,
+        ]));
+
+        $this->assertSame(0, CouponRedemption::count());
+
+        $this->artisan('coupons:backfill-redemptions')->assertSuccessful();
+        $this->artisan('coupons:backfill-redemptions')->assertSuccessful();
+
+        $this->assertSame(1, CouponRedemption::count());
+        $this->assertEqualsWithDelta(100.0, CouponRedemption::first()->discount_amount, 0.001);
     }
 }

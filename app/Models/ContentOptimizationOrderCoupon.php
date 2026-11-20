@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Traits\RecordsCouponRedemption;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ContentOptimizationOrderCoupon extends Model
 {
-    use HasUuids;
+    use HasUuids, RecordsCouponRedemption;
 
     protected $fillable = [
         'order_id',

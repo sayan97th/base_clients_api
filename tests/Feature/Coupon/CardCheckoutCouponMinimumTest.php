@@ -3,6 +3,7 @@
 namespace Tests\Feature\Coupon;
 
 use App\Models\Coupon;
+use App\Models\CouponRedemption;
 use App\Models\DrTier;
 use App\Models\Role;
 use App\Models\User;
@@ -138,6 +139,14 @@ class CardCheckoutCouponMinimumTest extends TestCase
             'discount_amount' => 100.0,
         ]);
         $this->assertEquals(1, $coupon->fresh()->times_used);
+
+        // The checkout stores a price snapshot in the coupon redemption history.
+        $redemption = CouponRedemption::where('coupon_id', $coupon->id)->firstOrFail();
+        $this->assertEquals(100.0, $redemption->discount_amount);
+        $this->assertEquals(300.0, $redemption->total_amount);
+        $this->assertSame('CONF25', $redemption->coupon_code);
+        $this->assertNotEmpty($redemption->items);
+        $this->assertEquals(400.0, $redemption->items[0]['unit_price']);
     }
 
     public function test_coupon_with_unmet_own_minimum_is_skipped_without_consuming_a_use(): void

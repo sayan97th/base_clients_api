@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Traits\RecordsCouponRedemption;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PremiumMentionsOrderCoupon extends Model
 {
+    use RecordsCouponRedemption;
+
     protected $fillable = [
         'order_id',
         'coupon_id',

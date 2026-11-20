@@ -4,7 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
+use App\Services\CouponRedemptionRecorder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A gift card the client earned by checking out with a gift card reward
@@ -59,6 +61,17 @@ class GiftCardRewardClaim extends Model
             'submitted_at'      => 'datetime',
             'fulfilled_at'      => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Gift card reward coupons never touch the order coupon tables, the
+        // claim is their record of use, so it feeds the redemption history.
+        static::created(function (GiftCardRewardClaim $claim) {
+            DB::afterCommit(
+                fn () => app(CouponRedemptionRecorder::class)->safelyRecordGiftCardClaim($claim)
+            );
+        });
     }
 
     public static function brandKeys(): array

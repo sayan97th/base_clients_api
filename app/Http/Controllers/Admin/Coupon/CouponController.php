@@ -7,7 +7,9 @@ use App\Http\Requests\Admin\Coupon\StoreCouponRequest;
 use App\Http\Requests\Admin\Coupon\UpdateCouponRequest;
 use App\Http\Requests\Admin\Coupon\UpdateCouponStatusRequest;
 use App\Models\Coupon;
+use App\Models\GiftCardRewardClaim;
 use App\Services\CouponUsageService;
+use App\Services\GiftCardRewardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +80,44 @@ class CouponController extends Controller
             'coupon'  => $this->formatCoupon($coupon),
             'summary' => $usage['summary'],
             'data'    => $usage['data'],
+        ]);
+    }
+
+    /**
+     * GET /api/admin/coupons/{id}/gift-card-claims
+     *
+     * Every gift card request of one money back coupon, with the totals the
+     * dedicated admin view and its export need. Unlike the generic list of
+     * gift card requests this endpoint is not capped, so an export always
+     * contains every row.
+     */
+    public function giftCardClaims(string $id, GiftCardRewardService $gift_card_reward_service): JsonResponse
+    {
+        $coupon = Coupon::withTrashed()
+            ->with('drTiers')
+            ->withCount([
+                'giftCardRewardClaims as gift_card_claims_count',
+                'giftCardRewardClaims as gift_card_claims_awaiting_count' => fn ($q) => $q->where('status', GiftCardRewardClaim::STATUS_SUBMITTED),
+            ])
+            ->find($id);
+
+        if (!$coupon) {
+            return response()->json(['message' => 'Coupon not found.'], 404);
+        }
+
+        if (!$coupon->isGiftCardReward()) {
+            return response()->json(['message' => 'This coupon does not reward gift cards.'], 422);
+        }
+
+        $claims = GiftCardRewardClaim::with(['user', 'coupon', 'fulfilledBy'])
+            ->where('coupon_id', $coupon->id)
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json([
+            'coupon'  => $this->formatCoupon($coupon),
+            'summary' => $gift_card_reward_service->summarizeForAdmin($claims),
+            'data'    => $claims->map(fn (GiftCardRewardClaim $claim) => $gift_card_reward_service->formatForAdmin($claim))->values(),
         ]);
     }
 

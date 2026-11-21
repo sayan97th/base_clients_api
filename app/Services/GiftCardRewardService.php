@@ -6,6 +6,7 @@ use App\Jobs\SendAdminGiftCardRewardNotificationJob;
 use App\Models\Coupon;
 use App\Models\GiftCardRewardClaim;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -288,6 +289,57 @@ class GiftCardRewardService
                 'name' => $claim->fulfilledBy->full_name ?? $claim->fulfilledBy->email,
             ] : null,
         ]);
+    }
+
+    /**
+     * Totals shown on top of the admin gift card requests view: how many
+     * requests sit in each status, how much money they represent and which
+     * brands clients picked.
+     *
+     * @param  Collection<int, GiftCardRewardClaim>  $claims
+     */
+    public function summarizeForAdmin(Collection $claims): array
+    {
+        $statuses = [
+            GiftCardRewardClaim::STATUS_PENDING_DETAILS,
+            GiftCardRewardClaim::STATUS_SUBMITTED,
+            GiftCardRewardClaim::STATUS_FULFILLED,
+        ];
+
+        $by_status = [];
+        foreach ($statuses as $status) {
+            $status_claims = $claims->where('status', $status);
+            $by_status[$status] = [
+                'count'        => $status_claims->count(),
+                'reward_total' => round((float) $status_claims->sum('reward_amount'), 2),
+            ];
+        }
+
+        $by_brand = $claims
+            ->filter(fn (GiftCardRewardClaim $claim) => $claim->gift_card_brand !== null)
+            ->groupBy('gift_card_brand')
+            ->map(fn (Collection $brand_claims, string $brand) => [
+                'brand'        => $brand,
+                'label'        => $brand_claims->first()->brandLabel(),
+                'count'        => $brand_claims->count(),
+                'reward_total' => round((float) $brand_claims->sum('reward_amount'), 2),
+            ])
+            ->sortByDesc('count')
+            ->values()
+            ->all();
+
+        $created_dates = $claims->pluck('created_at')->filter();
+
+        return [
+            'total_count'       => $claims->count(),
+            'client_count'      => $claims->pluck('user_id')->filter()->unique()->count(),
+            'reward_total'      => round((float) $claims->sum('reward_amount'), 2),
+            'order_total'       => round((float) $claims->sum('order_total'), 2),
+            'by_status'         => $by_status,
+            'by_brand'          => $by_brand,
+            'first_created_at'  => $created_dates->min()?->toIso8601String(),
+            'last_created_at'   => $created_dates->max()?->toIso8601String(),
+        ];
     }
 
     private function hasCompleteDetails(?array $details): bool

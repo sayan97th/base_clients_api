@@ -91,17 +91,22 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
 
     private function linkBuildingItems(): array
     {
-        return [[
-            'dr_tier_id' => 'dr50',
+        return [$this->linkBuildingItem('dr50', 400.0)];
+    }
+
+    private function linkBuildingItem(string $dr_tier_id, float $unit_price): array
+    {
+        return [
+            'dr_tier_id' => $dr_tier_id,
             'quantity'   => 1,
-            'unit_price' => 400.0,
+            'unit_price' => $unit_price,
             'placements' => [[
                 'row_index'    => 0,
                 'keyword'      => 'promo keyword',
                 'landing_page' => 'https://example.com/page',
                 'exact_match'  => false,
             ]],
-        ]];
+        ];
     }
 
     private function newContentItems(): array
@@ -119,8 +124,12 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
         ]];
     }
 
-    private function cardCheckout(array $coupon_ids, float $total_amount, bool $with_new_content = false): TestResponse
-    {
+    private function cardCheckout(
+        array $coupon_ids,
+        float $total_amount,
+        bool $with_new_content = false,
+        ?array $link_building_items = null,
+    ): TestResponse {
         return $this->actingAs($this->client, 'api')->postJson('/api/cart/checkout', [
             'payment_method_id'          => 'pi_test_card',
             'total_amount'               => $total_amount,
@@ -135,7 +144,7 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
                 'postal_code' => '83701',
             ],
             'coupon_ids'                 => $coupon_ids,
-            'link_building_items'        => $this->linkBuildingItems(),
+            'link_building_items'        => $link_building_items ?? $this->linkBuildingItems(),
             'new_content_items'          => $with_new_content ? $this->newContentItems() : null,
             'content_optimization_items' => null,
             'content_brief_items'        => null,
@@ -298,5 +307,136 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
 
         $this->assertSame(0, $coupon->fresh()->times_used);
         $this->assertSame(0, CouponRedemption::count());
+    }
+
+    // ─── Checkout view ────────────────────────────────────────────────────────
+
+    public function test_a_multi_product_checkout_is_listed_as_one_checkout_with_every_order(): void
+    {
+        $coupon = $this->makeCoupon();
+
+        // $400 link + $100 article, 25% off both.
+        $this->cardCheckout([$coupon->id], 375.0, true)->assertOk();
+
+        $response = $this->usageOf($coupon)
+            ->assertJsonCount(1, 'checkouts')
+            ->assertJsonPath('checkouts.0.order_count', 2)
+            ->assertJsonPath('checkouts.0.applied_order_count', 2)
+            ->assertJsonPath('checkouts.0.items_quantity', 2)
+            ->assertJsonPath('summary.multi_product_checkout_count', 1);
+
+        $checkout = $response->json('checkouts.0');
+
+        $this->assertEqualsWithDelta(500.0, $checkout['subtotal_before_discount'], 0.001);
+        $this->assertEqualsWithDelta(125.0, $checkout['discount_amount'], 0.001);
+        $this->assertEqualsWithDelta(375.0, $checkout['total_amount'], 0.001);
+        $this->assertEqualsWithDelta(375.0, $response->json('summary.average_checkout_value'), 0.001);
+        $this->assertEqualsCanonicalizing(['link_building', 'new_content'], $checkout['product_types']);
+        $this->assertNotNull($checkout['session_url']);
+        $this->assertSame('Promo Order', $checkout['title']);
+    }
+
+    public function test_the_checkout_keeps_the_products_the_coupon_did_not_discount(): void
+    {
+        $coupon = $this->makeCoupon(['product_types' => ['new_content']]);
+
+        // Link building $400 full price + new content $100 with 25% off.
+        $this->cardCheckout([$coupon->id], 475.0, true)->assertOk();
+
+        $response = $this->usageOf($coupon)
+            ->assertJsonPath('summary.order_count', 1)
+            ->assertJsonPath('summary.checkout_count', 1)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('checkouts.0.order_count', 2)
+            ->assertJsonPath('checkouts.0.applied_order_count', 1)
+            ->assertJsonPath('checkouts.0.applied_product_types', ['new_content']);
+
+        $orders = collect($response->json('checkouts.0.orders'))->keyBy('product_type');
+
+        $this->assertTrue($orders['new_content']['is_coupon_applied']);
+        $this->assertTrue($orders['new_content']['items'][0]['is_coupon_applied']);
+        $this->assertEqualsWithDelta(25.0, $orders['new_content']['items'][0]['discount_amount'], 0.001);
+
+        $this->assertFalse($orders['link_building']['is_coupon_applied']);
+        $this->assertFalse($orders['link_building']['items'][0]['is_coupon_applied']);
+        $this->assertEqualsWithDelta(0.0, $orders['link_building']['discount_amount'], 0.001);
+        $this->assertSame('DR 50+', $orders['link_building']['items'][0]['label']);
+
+        // Discounted orders are listed first.
+        $this->assertSame('new_content', $response->json('checkouts.0.orders.0.product_type'));
+        $this->assertEqualsWithDelta(475.0, $response->json('checkouts.0.total_amount'), 0.001);
+        $this->assertEqualsWithDelta(100.0, $response->json('checkouts.0.eligible_subtotal'), 0.001);
+        $this->assertSame(1, $coupon->fresh()->times_used);
+    }
+
+    public function test_a_dr_tier_coupon_marks_only_the_items_it_discounted(): void
+    {
+        DrTier::create([
+            'id'             => 'dr70',
+            'label'          => 'DR 70+',
+            'min_dr'         => 70,
+            'max_dr'         => 79,
+            'traffic_range'  => '50k+',
+            'word_count'     => 700,
+            'price_per_link' => 600.0,
+            'is_hidden'      => false,
+            'is_active'      => true,
+        ]);
+
+        $coupon = $this->makeCoupon(['applies_to' => Coupon::APPLIES_TO_DR_TIERS]);
+        $coupon->drTiers()->attach('dr70');
+
+        // $400 + $600, 25% off the DR 70+ link only.
+        $this->cardCheckout([$coupon->id], 850.0, false, [
+            $this->linkBuildingItem('dr50', 400.0),
+            $this->linkBuildingItem('dr70', 600.0),
+        ])->assertOk();
+
+        $items = collect($this->usageOf($coupon)->json('checkouts.0.orders.0.items'))->keyBy('tier_id');
+
+        $this->assertFalse($items['dr50']['is_coupon_applied']);
+        $this->assertEqualsWithDelta(0.0, $items['dr50']['discount_amount'], 0.001);
+        $this->assertTrue($items['dr70']['is_coupon_applied']);
+        $this->assertEqualsWithDelta(150.0, $items['dr70']['discount_amount'], 0.001);
+    }
+
+    public function test_the_checkout_keeps_names_and_prices_after_products_change(): void
+    {
+        $coupon = $this->makeCoupon(['product_types' => ['new_content']]);
+
+        $this->cardCheckout([$coupon->id], 475.0, true)->assertOk();
+
+        DrTier::where('id', 'dr50')->update(['label' => 'DR 50 Renamed', 'price_per_link' => 999.0]);
+        NewContentTier::where('id', 'nc-basic')->update(['label' => 'Renamed Article', 'price' => 555.0]);
+
+        $orders = collect($this->usageOf($coupon)->json('checkouts.0.orders'))->keyBy('product_type');
+
+        $this->assertSame('DR 50+', $orders['link_building']['items'][0]['label']);
+        $this->assertEqualsWithDelta(400.0, $orders['link_building']['items'][0]['unit_price'], 0.001);
+        $this->assertSame('Basic Article', $orders['new_content']['items'][0]['label']);
+        $this->assertEqualsWithDelta(100.0, $orders['new_content']['items'][0]['unit_price'], 0.001);
+    }
+
+    public function test_a_product_restricted_gift_card_reward_keeps_the_rest_of_the_checkout(): void
+    {
+        $coupon = $this->makeCoupon([
+            'code'           => 'HAPPYHOLIDAYS',
+            'discount_type'  => Coupon::DISCOUNT_TYPE_GIFT_CARD_REWARD,
+            'discount_value' => 10.0,
+            'product_types'  => ['link_building'],
+        ]);
+
+        $this->cardCheckout([$coupon->id], 500.0, true)->assertOk();
+
+        $response = $this->usageOf($coupon)
+            ->assertJsonPath('checkouts.0.order_count', 2)
+            ->assertJsonPath('checkouts.0.applied_product_types', ['link_building']);
+
+        $orders = collect($response->json('checkouts.0.orders'))->keyBy('product_type');
+
+        $this->assertEqualsWithDelta(40.0, $orders['link_building']['items'][0]['reward_amount'], 0.001);
+        $this->assertFalse($orders['new_content']['is_coupon_applied']);
+        $this->assertEqualsWithDelta(40.0, $response->json('checkouts.0.reward_amount'), 0.001);
+        $this->assertEqualsWithDelta(500.0, $response->json('checkouts.0.total_amount'), 0.001);
     }
 }

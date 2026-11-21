@@ -77,9 +77,10 @@ class CouponController extends Controller
         $usage = $coupon_usage_service->getUsage($coupon);
 
         return response()->json([
-            'coupon'  => $this->formatCoupon($coupon),
-            'summary' => $usage['summary'],
-            'data'    => $usage['data'],
+            'coupon'    => $this->formatCoupon($coupon),
+            'summary'   => $usage['summary'],
+            'data'      => $usage['data'],
+            'checkouts' => $usage['checkouts'],
         ]);
     }
 

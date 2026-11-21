@@ -313,4 +313,46 @@ class CouponUsageTest extends TestCase
         $this->assertSame(1, CouponRedemption::count());
         $this->assertEqualsWithDelta(100.0, CouponRedemption::first()->discount_amount, 0.001);
     }
+
+    public function test_backfill_adds_the_other_orders_of_a_past_checkout(): void
+    {
+        $coupon = $this->makeCoupon();
+
+        // A past checkout: the coupon only discounted the link building order.
+        $order = LinkBuildingOrder::create([
+            'user_id'                  => $this->client->id,
+            'subtotal_before_discount' => 400.0,
+            'total_amount'             => 300.0,
+            'status'                   => 'pending',
+            'session_id'               => 'legacy-session',
+        ]);
+        $order->items()->create(['dr_tier_id' => 'dr50', 'quantity' => 1, 'unit_price' => 400.0, 'subtotal' => 400.0]);
+        LinkBuildingOrderCoupon::withoutEvents(fn () => LinkBuildingOrderCoupon::create([
+            'order_id'        => $order->id,
+            'coupon_id'       => $coupon->id,
+            'discount_amount' => 100.0,
+        ]));
+
+        $companion = NewContentOrder::create([
+            'user_id'                  => $this->client->id,
+            'subtotal_before_discount' => 100.0,
+            'total_amount'             => 100.0,
+            'status'                   => 'processing',
+            'session_id'               => 'legacy-session',
+        ]);
+        $companion->items()->create(['tier_id' => 'nc', 'quantity' => 1, 'unit_price' => 100.0, 'subtotal' => 100.0]);
+
+        $this->artisan('coupons:backfill-redemptions')->assertSuccessful();
+        $this->artisan('coupons:backfill-redemptions')->assertSuccessful();
+
+        $this->assertSame(2, CouponRedemption::count());
+        $this->assertSame(1, CouponRedemption::applied()->count());
+
+        $this->getUsage($coupon)
+            ->assertOk()
+            ->assertJsonPath('summary.order_count', 1)
+            ->assertJsonPath('checkouts.0.order_count', 2)
+            ->assertJsonPath('checkouts.0.orders.1.product_type', 'new_content')
+            ->assertJsonPath('checkouts.0.orders.1.is_coupon_applied', false);
+    }
 }

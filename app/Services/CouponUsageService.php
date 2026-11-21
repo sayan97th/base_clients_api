@@ -11,12 +11,16 @@ use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\PremiumMentionsOrder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 
 /**
  * Builds the usage history of a coupon from the coupon_redemptions snapshots,
  * so prices, coupon terms and client details always show what was charged at
- * checkout. Live records are only read for what is meant to be current: the
+ * checkout. Clients use a coupon once per checkout, so the history is served
+ * two ways: "checkouts" groups every order bought together (including the
+ * products the coupon did not discount) and "data" lists each discounted
+ * product order on its own. Live records are only read for what is meant to be current: the
  * order status, its invoice, the gift card claim status and whether the order
  * still exists.
  */
@@ -47,8 +51,11 @@ class CouponUsageService
         'content_brief',
     ];
 
+    /** Shown when the orders of one checkout are in different statuses. */
+    public const MIXED_STATUS = 'mixed';
+
     /**
-     * @return array{summary: array<string, mixed>, data: array<int, array<string, mixed>>}
+     * @return array{summary: array<string, mixed>, data: array<int, array<string, mixed>>, checkouts: array<int, array<string, mixed>>}
      */
     public function getUsage(Coupon $coupon): array
     {
@@ -63,7 +70,7 @@ class CouponUsageService
             ->get()
             ->keyBy('id');
 
-        $usages = $redemptions
+        $all_usages = $redemptions
             ->map(fn (CouponRedemption $redemption) => $this->formatUsage(
                 $redemption,
                 $live_orders->get($redemption->product_type . ':' . $redemption->order_id),
@@ -71,9 +78,13 @@ class CouponUsageService
             ))
             ->values();
 
+        $applied_usages = $all_usages->where('is_coupon_applied', true)->values();
+        $checkouts      = $this->buildCheckouts($all_usages);
+
         return [
-            'summary' => $this->buildSummary($usages),
-            'data'    => $usages->all(),
+            'summary'   => $this->buildSummary($applied_usages, $checkouts),
+            'data'      => $applied_usages->all(),
+            'checkouts' => $checkouts->all(),
         ];
     }
 
@@ -114,6 +125,8 @@ class CouponUsageService
 
         return [
             'id'                       => $redemption->id,
+            'checkout_key'             => $this->checkoutKey($redemption),
+            'is_coupon_applied'        => (bool) $redemption->is_coupon_applied,
             'order_id'                 => $redemption->order_id,
             'order_reference'          => strtoupper(substr($redemption->order_id, 0, 8)),
             'order_title'              => $redemption->order_title,
@@ -124,10 +137,16 @@ class CouponUsageService
             'status'                   => $live_order?->status ?? $redemption->order_status ?? 'deleted',
             'is_order_deleted'         => $live_order === null,
             'items'                    => $items->map(fn (array $item) => [
-                'label'      => $item['label'] ?? 'Item',
-                'quantity'   => (int) ($item['quantity'] ?? 0),
-                'unit_price' => (float) ($item['unit_price'] ?? 0),
-                'subtotal'   => (float) ($item['subtotal'] ?? 0),
+                'tier_id'           => $item['tier_id'] ?? null,
+                'label'             => $item['label'] ?? 'Item',
+                'quantity'          => (int) ($item['quantity'] ?? 0),
+                'unit_price'        => (float) ($item['unit_price'] ?? 0),
+                'subtotal'          => (float) ($item['subtotal'] ?? 0),
+                // Snapshots taken before items carried this flag belong to a
+                // discounted order, so every item of that order got the promo.
+                'is_coupon_applied' => (bool) ($item['is_coupon_applied'] ?? $redemption->is_coupon_applied),
+                'discount_amount'   => isset($item['discount_amount']) ? (float) $item['discount_amount'] : null,
+                'reward_amount'     => isset($item['reward_amount']) ? (float) $item['reward_amount'] : null,
             ])->values()->all(),
             'items_quantity'           => (int) $items->sum('quantity'),
             'subtotal_before_discount' => $redemption->subtotal_before_discount,
@@ -167,20 +186,95 @@ class CouponUsageService
     }
 
     /**
+     * Checkout key: one checkout creates one order per product, all sharing
+     * the session id. Orders placed without a session are a checkout alone.
+     */
+    private function checkoutKey(CouponRedemption $redemption): string
+    {
+        return $redemption->session_id ?: $redemption->product_type . ':' . $redemption->order_id;
+    }
+
+    /**
+     * Groups the product orders into the checkouts the client placed. Only
+     * checkouts with at least one discounted order are listed.
+     *
      * @param Collection<int, array<string, mixed>> $usages
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function buildCheckouts(Collection $usages): Collection
+    {
+        return $usages
+            ->groupBy('checkout_key')
+            ->filter(fn (Collection $orders) => $orders->contains('is_coupon_applied', true))
+            ->map(fn (Collection $orders, string $checkout_key) => $this->formatCheckout($checkout_key, $orders))
+            ->sortByDesc('used_at')
+            ->values();
+    }
+
+    /**
+     * @param Collection<int, array<string, mixed>> $orders
      * @return array<string, mixed>
      */
-    private function buildSummary(Collection $usages): array
+    private function formatCheckout(string $checkout_key, Collection $orders): array
     {
-        $order_count = $usages->count();
-        $net_revenue = (float) $usages->sum('total_amount');
+        // Discounted orders first, then by product, so the promo reads first.
+        $orders = $orders
+            ->sortBy(fn (array $usage) => [$usage['is_coupon_applied'] ? 0 : 1, $usage['product_label']])
+            ->values();
 
-        // A multi product checkout creates one order per product, the
-        // session id groups them back into a single checkout.
-        $checkout_count = $usages
-            ->map(fn (array $usage) => $usage['session_id'] ?: $usage['order_id'])
-            ->unique()
-            ->count();
+        $applied_orders = $orders->where('is_coupon_applied', true)->values();
+        $first_applied  = $applied_orders->first();
+        $session_id     = $first_applied['session_id'];
+        $statuses       = $orders->pluck('status')->unique()->values();
+        $all_items      = $orders->flatMap(fn (array $usage) => $usage['items']);
+        $applied_items  = $all_items->where('is_coupon_applied', true);
+        $used_dates     = $applied_orders->pluck('used_at')->filter()->sort()->values();
+
+        return [
+            'id'                       => $checkout_key,
+            'session_id'               => $session_id,
+            'reference'                => strtoupper(substr($session_id ?: $first_applied['order_id'], 0, 8)),
+            'title'                    => $orders->pluck('order_title')->filter()->first(),
+            'status'                   => $statuses->count() === 1 ? $statuses->first() : self::MIXED_STATUS,
+            'client'                   => $first_applied['client'] ?? $orders->pluck('client')->filter()->first(),
+            'coupon_terms'             => $first_applied['coupon_terms'],
+            'gift_card_claim'          => $orders->pluck('gift_card_claim')->filter()->first(),
+            'invoices'                 => $orders->pluck('invoice')->filter()->unique('id')->values()->all(),
+            'product_types'            => $orders->pluck('product_type')->unique()->values()->all(),
+            'applied_product_types'    => $applied_orders->pluck('product_type')->unique()->values()->all(),
+            'order_count'              => $orders->count(),
+            'applied_order_count'      => $applied_orders->count(),
+            'items_quantity'           => (int) $orders->sum('items_quantity'),
+            'applied_items_quantity'   => (int) $applied_items->sum('quantity'),
+            'subtotal_before_discount' => round((float) $orders->sum('subtotal_before_discount'), 2),
+            'eligible_subtotal'        => round((float) $applied_items->sum('subtotal'), 2),
+            'discount_amount'          => round((float) $orders->sum('discount_amount'), 2),
+            'reward_amount'            => round((float) $orders->sum('reward_amount'), 2),
+            'total_amount'             => round((float) $orders->sum('total_amount'), 2),
+            'has_deleted_orders'       => $orders->contains('is_order_deleted', true),
+            'is_fully_deleted'         => $orders->every(fn (array $usage) => $usage['is_order_deleted']),
+            'session_url'              => $session_id && ! $orders->every(fn (array $usage) => $usage['is_order_deleted'])
+                ? '/admin/orders/session/' . $session_id
+                : null,
+            'used_at'                  => $used_dates->first(),
+            'orders'                   => $orders->map(fn (array $usage) => Arr::except($usage, ['client', 'coupon_terms']))->all(),
+        ];
+    }
+
+    /**
+     * Uses are counted per checkout, the same way the coupon times_used is
+     * counted. Order level figures only include the discounted orders.
+     *
+     * @param Collection<int, array<string, mixed>> $usages    discounted product orders
+     * @param Collection<int, array<string, mixed>> $checkouts
+     * @return array<string, mixed>
+     */
+    private function buildSummary(Collection $usages, Collection $checkouts): array
+    {
+        $order_count    = $usages->count();
+        $checkout_count = $checkouts->count();
+        $net_revenue    = (float) $usages->sum('total_amount');
+        $checkout_net   = (float) $checkouts->sum('total_amount');
 
         $by_product_type = $usages
             ->groupBy('product_type')
@@ -188,6 +282,7 @@ class CouponUsageService
                 'product_type'    => $product_type,
                 'product_label'   => self::PRODUCT_LABELS[$product_type] ?? $product_type,
                 'order_count'     => $group->count(),
+                'checkout_count'  => $group->pluck('checkout_key')->unique()->count(),
                 'discount_amount' => round((float) $group->sum('discount_amount'), 2),
                 'net_revenue'     => round((float) $group->sum('total_amount'), 2),
             ])
@@ -197,17 +292,20 @@ class CouponUsageService
         $used_dates = $usages->pluck('used_at')->filter()->sort()->values();
 
         return [
-            'order_count'         => $order_count,
-            'checkout_count'      => $checkout_count,
-            'client_count'        => $usages->map(fn (array $usage) => $usage['client']['id'] ?? $usage['client']['email'] ?? null)->filter()->unique()->count(),
-            'total_discount'      => round((float) $usages->sum('discount_amount'), 2),
-            'total_reward'        => round((float) $usages->sum('reward_amount'), 2),
-            'gross_revenue'       => round((float) $usages->sum('subtotal_before_discount'), 2),
-            'net_revenue'         => round($net_revenue, 2),
-            'average_order_value' => $order_count > 0 ? round($net_revenue / $order_count, 2) : 0.0,
-            'by_product_type'     => $by_product_type,
-            'first_used_at'       => $used_dates->first(),
-            'last_used_at'        => $used_dates->last(),
+            'order_count'                   => $order_count,
+            'checkout_count'                => $checkout_count,
+            'multi_product_checkout_count'  => $checkouts->where('order_count', '>', 1)->count(),
+            'client_count'                  => $usages->map(fn (array $usage) => $usage['client']['id'] ?? $usage['client']['email'] ?? null)->filter()->unique()->count(),
+            'total_discount'                => round((float) $usages->sum('discount_amount'), 2),
+            'total_reward'                  => round((float) $usages->sum('reward_amount'), 2),
+            'gross_revenue'                 => round((float) $usages->sum('subtotal_before_discount'), 2),
+            'net_revenue'                   => round($net_revenue, 2),
+            'checkout_net_revenue'          => round($checkout_net, 2),
+            'average_order_value'           => $order_count > 0 ? round($net_revenue / $order_count, 2) : 0.0,
+            'average_checkout_value'        => $checkout_count > 0 ? round($checkout_net / $checkout_count, 2) : 0.0,
+            'by_product_type'               => $by_product_type,
+            'first_used_at'                 => $used_dates->first(),
+            'last_used_at'                  => $used_dates->last(),
         ];
     }
 }

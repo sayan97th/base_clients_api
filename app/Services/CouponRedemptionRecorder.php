@@ -308,7 +308,7 @@ class CouponRedemptionRecorder
                 'user_id'                  => $client?->id,
                 'client_name'              => $this->clientName($client),
                 'client_email'             => $client?->email,
-                'client_company'           => $order->billing?->company ?: null,
+                'client_company'           => $order->billing?->company ?: ($client?->company ?: null),
                 'client_organization'      => $client?->organization?->name,
                 'items'                    => $items,
                 'subtotal_before_discount' => round($subtotal, 2),

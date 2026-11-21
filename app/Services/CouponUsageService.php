@@ -10,6 +10,7 @@ use App\Models\GiftCardRewardClaim;
 use App\Models\LinkBuildingOrder;
 use App\Models\NewContentOrder;
 use App\Models\PremiumMentionsOrder;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -70,6 +71,11 @@ class CouponUsageService
             ->get();
 
         $live_orders = $this->findLiveOrders($redemptions);
+
+        // Current company of each client, used when the order billing had none.
+        $client_companies = User::query()
+            ->whereIn('id', $redemptions->pluck('user_id')->filter()->unique())
+            ->pluck('company', 'id');
         $claims      = GiftCardRewardClaim::query()
             ->whereIn('id', $redemptions->pluck('gift_card_claim_id')->filter()->unique())
             ->get()
@@ -89,6 +95,7 @@ class CouponUsageService
                 $live_orders->get($redemption->product_type . ':' . $redemption->order_id),
                 $redemption->gift_card_claim_id ? $claims->get($redemption->gift_card_claim_id) : null,
                 (float) ($legacy_rewards->get($redemption->gift_card_claim_id) ?? 0.0),
+                $redemption->user_id ? $client_companies->get($redemption->user_id) : null,
             ))
             ->values();
 
@@ -137,6 +144,7 @@ class CouponUsageService
         ?Model $live_order,
         ?GiftCardRewardClaim $claim,
         float $legacy_order_reward,
+        ?string $client_current_company = null,
     ): array {
         $items   = collect($redemption->items ?? []);
         $invoice = $live_order && $live_order->relationLoaded('invoice') ? $live_order->invoice : null;
@@ -191,7 +199,8 @@ class CouponUsageService
                 'id'           => $redemption->user_id,
                 'name'         => $redemption->client_name ?? $redemption->client_email,
                 'email'        => $redemption->client_email,
-                'company'      => $redemption->client_company,
+                // Company billed at checkout, or the client's current company when the order had none.
+                'company'      => $redemption->client_company ?: ($client_current_company ?: null),
                 'organization' => $redemption->client_organization,
             ] : null,
             'order_url'                => $live_order && in_array($redemption->product_type, self::LINKABLE_PRODUCT_TYPES, true)

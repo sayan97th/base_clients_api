@@ -252,6 +252,41 @@ class CouponUsageTest extends TestCase
         $this->assertArrayNotHasKey('reward_amount', $response->json('data.0.items.0'));
     }
 
+    public function test_the_client_company_falls_back_to_the_profile_when_the_order_billing_has_none(): void
+    {
+        $coupon = $this->makeCoupon();
+        $this->client->update(['company' => 'Acme Corp']);
+
+        foreach ([['session-billed', 'Billing Company LLC'], ['session-unbilled', null]] as [$session_id, $billing_company]) {
+            CouponRedemption::create([
+                'coupon_id'                => $coupon->id,
+                'coupon_code'              => $coupon->code,
+                'discount_type'            => $coupon->discount_type,
+                'discount_value'           => (float) $coupon->discount_value,
+                'is_coupon_applied'        => true,
+                'order_id'                 => (string) Str::uuid(),
+                'product_type'             => 'link_building',
+                'session_id'               => $session_id,
+                'user_id'                  => $this->client->id,
+                'client_name'              => 'Kennedy Client',
+                'client_email'             => $this->client->email,
+                'client_company'           => $billing_company,
+                'client_organization'      => 'Shared Organization',
+                'items'                    => [],
+                'subtotal_before_discount' => 100.0,
+                'discount_amount'          => 25.0,
+                'total_amount'             => 75.0,
+                'redeemed_at'              => now(),
+            ]);
+        }
+
+        $checkouts = collect($this->getUsage($coupon)->assertOk()->json('checkouts'))->keyBy('session_id');
+
+        // The company billed at checkout wins, the profile company fills the gap.
+        $this->assertSame('Billing Company LLC', $checkouts['session-billed']['client']['company']);
+        $this->assertSame('Acme Corp', $checkouts['session-unbilled']['client']['company']);
+    }
+
     public function test_it_returns_an_empty_history_for_an_unused_coupon(): void
     {
         $this->getUsage($this->makeCoupon())

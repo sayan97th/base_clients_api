@@ -248,8 +248,12 @@ class CouponController extends Controller
             'dr_tier_ids'             => $coupon->drTiers->pluck('id')->values()->toArray(),
             'dr_tiers'                => $coupon->drTiers->values()->toArray(),
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
-            'starts_at'               => $coupon->starts_at?->format('Y-m-d'),
-            'expires_at'              => $coupon->expires_at?->format('Y-m-d'),
+            // Calendar days in the promotion timezone, both days included.
+            'starts_at'               => $coupon->startDate(),
+            'expires_at'              => $coupon->endDate(),
+            // Exact moments the coupon starts and stops working, for status badges.
+            'active_from'             => $coupon->starts_at?->toIso8601String(),
+            'active_until'            => $coupon->expires_at?->toIso8601String(),
             'usage_limit'             => $coupon->usage_limit,
             'usage_per_user'          => $coupon->usage_per_user,
             'times_used'              => $coupon->times_used,

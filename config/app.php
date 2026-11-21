@@ -84,6 +84,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Promotion Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Coupon start and expiry dates are calendar days, and both days are
+    | included in the promotion. This timezone decides when those days begin
+    | and end. For example, a coupon expiring on 2026-12-18 stays valid until
+    | 23:59:59 on December 18 in this timezone. Values are still stored in UTC.
+    |
+    */
+
+    'promotion_timezone' => env('PROMOTION_TIMEZONE', 'America/Denver'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

@@ -3,12 +3,14 @@
 namespace App\Models;
 
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 class Coupon extends Model
 {
@@ -100,6 +102,78 @@ class Coupon extends Model
     public function isGiftCardReward(): bool
     {
         return $this->discount_type === self::DISCOUNT_TYPE_GIFT_CARD_REWARD;
+    }
+
+    /**
+     * Timezone that defines when a coupon's calendar days begin and end.
+     */
+    public static function promotionTimezone(): string
+    {
+        return (string) config('app.promotion_timezone', config('app.timezone', 'UTC'));
+    }
+
+    /**
+     * A calendar date (Y-m-d) is stored as the first second of that day in the
+     * promotion timezone, so the coupon is valid for the whole start day.
+     * Full date times (Carbon instances or "Y-m-d H:i:s" strings) are kept as is.
+     */
+    protected function startsAt(): Attribute
+    {
+        return Attribute::make(
+            set: fn ($value) => $this->normalizePromotionDate($value, false),
+        );
+    }
+
+    /**
+     * A calendar date (Y-m-d) is stored as the last second of that day in the
+     * promotion timezone, so the coupon is valid for the whole expiry day.
+     * Full date times (Carbon instances or "Y-m-d H:i:s" strings) are kept as is.
+     */
+    protected function expiresAt(): Attribute
+    {
+        return Attribute::make(
+            set: fn ($value) => $this->normalizePromotionDate($value, true),
+        );
+    }
+
+    /**
+     * First day the coupon can be used (Y-m-d in the promotion timezone).
+     */
+    public function startDate(): ?string
+    {
+        return $this->starts_at?->copy()->setTimezone(self::promotionTimezone())->format('Y-m-d');
+    }
+
+    /**
+     * Last day the coupon can be used (Y-m-d in the promotion timezone).
+     */
+    public function endDate(): ?string
+    {
+        return $this->expires_at?->copy()->setTimezone(self::promotionTimezone())->format('Y-m-d');
+    }
+
+    /**
+     * Today's calendar date in the promotion timezone.
+     */
+    public static function promotionToday(): string
+    {
+        return now(self::promotionTimezone())->format('Y-m-d');
+    }
+
+    private function normalizePromotionDate(mixed $value, bool $is_end_of_day): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            $day    = Carbon::createFromFormat('Y-m-d', $value, self::promotionTimezone());
+            $moment = $is_end_of_day ? $day->endOfDay()->startOfSecond() : $day->startOfDay();
+        } else {
+            $moment = $this->asDateTime($value)->copy();
+        }
+
+        return $this->fromDateTime($moment->setTimezone(config('app.timezone', 'UTC')));
     }
 
     /**

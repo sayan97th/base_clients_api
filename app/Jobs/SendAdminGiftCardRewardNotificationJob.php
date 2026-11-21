@@ -15,6 +15,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -104,7 +105,7 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
                     products:           $products ?: 'Order',
                     is_payment_pending: $this->isPaymentPending($claim),
                     submitted_at:       ($claim->submitted_at ?? now())->format('F j, Y \a\t g:i A'),
-                    promotion_ends_at:  $claim->coupon?->expires_at?->format('F j, Y') ?? '',
+                    promotion_ends_at:  $this->formatPromotionLastDay($claim->coupon?->endDate()),
                     view_order_url:     $view_order_url,
                     view_claims_url:    $view_claims_url,
                     settings_url:       FrontendUrl::to('/admin/email-notifications'),
@@ -155,6 +156,18 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
         }
 
         return false;
+    }
+
+    /**
+     * Last day the promo code works, for example "December 18, 2026".
+     */
+    private function formatPromotionLastDay(?string $last_day): string
+    {
+        if (! $last_day) {
+            return '';
+        }
+
+        return Carbon::createFromFormat('Y-m-d', $last_day)->format('F j, Y');
     }
 
     private function buildInitials(string $name): string

@@ -68,8 +68,8 @@ class UpdateCouponRequest extends FormRequest
                 'nullable',
                 'date_format:Y-m-d',
                 function ($attribute, $value, $fail) {
-                    if ($value && $this->expires_at && strtotime($value) >= strtotime($this->expires_at)) {
-                        $fail('The starts at date must be before expires at.');
+                    if ($value && $this->expires_at && strtotime($value) > strtotime($this->expires_at)) {
+                        $fail('The starts at date must be on or before the expires at date.');
                     }
                 },
             ],
@@ -151,13 +151,11 @@ class UpdateCouponRequest extends FormRequest
      */
     private function isNewExpiryDateInThePast(string $value): bool
     {
-        $stored_expiry_date = $this->currentCoupon()?->expires_at?->format('Y-m-d');
-
-        if ($stored_expiry_date === $value) {
+        if ($this->currentCoupon()?->endDate() === $value) {
             return false;
         }
 
-        return strtotime($value) < strtotime(now()->format('Y-m-d'));
+        return $value < Coupon::promotionToday();
     }
 
     private function currentCoupon(): ?Coupon

@@ -6,6 +6,7 @@ use App\Models\Coupon;
 use App\Models\DrTier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\Support\GiftCardReward\InteractsWithGiftCardRewards;
 use Tests\TestCase;
 
@@ -186,5 +187,38 @@ class AdminCouponStoreTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame(0, Coupon::count());
+    }
+
+    // ── Validity dates ────────────────────────────────────────────────────────
+
+    public function test_start_and_expiry_dates_are_saved_as_full_calendar_days(): void
+    {
+        config(['app.promotion_timezone' => 'America/Denver']);
+        $this->travelTo(Carbon::parse('2026-11-20 18:00:00', 'UTC'));
+
+        $this->createCoupon(['starts_at' => '2026-11-27', 'expires_at' => '2026-12-18'])
+            ->assertCreated()
+            ->assertJsonPath('data.starts_at', '2026-11-27')
+            ->assertJsonPath('data.expires_at', '2026-12-18');
+
+        $coupon = Coupon::firstOrFail();
+        $this->assertSame('2026-12-19 06:59:59', $coupon->expires_at->utc()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_a_coupon_can_start_and_expire_on_the_same_day(): void
+    {
+        $day = now(Coupon::promotionTimezone())->addWeek()->format('Y-m-d');
+
+        $this->createCoupon(['starts_at' => $day, 'expires_at' => $day])->assertCreated();
+    }
+
+    public function test_the_start_date_cannot_be_after_the_expiry_date(): void
+    {
+        $expiry_day = now(Coupon::promotionTimezone())->addWeek();
+
+        $this->createCoupon([
+            'starts_at'  => $expiry_day->copy()->addDay()->format('Y-m-d'),
+            'expires_at' => $expiry_day->format('Y-m-d'),
+        ])->assertStatus(422)->assertJsonValidationErrors('starts_at');
     }
 }

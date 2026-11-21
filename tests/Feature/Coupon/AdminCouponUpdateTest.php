@@ -133,10 +133,12 @@ class AdminCouponUpdateTest extends TestCase
 
     public function test_an_expired_coupon_can_be_edited_without_changing_its_expiry_date(): void
     {
-        $coupon = $this->makeRegularCoupon(['expires_at' => now()->subDays(3)]);
+        // Admins pick calendar days, which are measured in the promotion timezone.
+        $expired_day = now(Coupon::promotionTimezone())->subDays(3)->format('Y-m-d');
+        $coupon      = $this->makeRegularCoupon(['expires_at' => $expired_day]);
 
         $this->patchCoupon($coupon, $this->editPayload([
-            'expires_at' => now()->subDays(3)->format('Y-m-d'),
+            'expires_at' => $expired_day,
         ]))->assertOk();
     }
 
@@ -145,7 +147,7 @@ class AdminCouponUpdateTest extends TestCase
         $coupon = $this->makeRegularCoupon(['expires_at' => now()->addMonth()]);
 
         $this->patchCoupon($coupon, $this->editPayload([
-            'expires_at' => now()->subDay()->format('Y-m-d'),
+            'expires_at' => now(Coupon::promotionTimezone())->subDay()->format('Y-m-d'),
         ]))->assertStatus(422)->assertJsonValidationErrors('expires_at');
     }
 

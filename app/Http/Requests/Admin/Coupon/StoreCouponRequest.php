@@ -67,12 +67,20 @@ class StoreCouponRequest extends FormRequest
                 'nullable',
                 'date_format:Y-m-d',
                 function ($attribute, $value, $fail) {
-                    if ($value && $this->expires_at && strtotime($value) >= strtotime($this->expires_at)) {
-                        $fail('The starts at date must be before expires at.');
+                    if ($value && $this->expires_at && strtotime($value) > strtotime($this->expires_at)) {
+                        $fail('The starts at date must be on or before the expires at date.');
                     }
                 },
             ],
-            'expires_at'              => 'nullable|date_format:Y-m-d|after_or_equal:today',
+            'expires_at'              => [
+                'nullable',
+                'date_format:Y-m-d',
+                function ($attribute, $value, $fail) {
+                    if ($value && $value < Coupon::promotionToday()) {
+                        $fail('The expires at field must be a date after or equal to today.');
+                    }
+                },
+            ],
             'usage_limit'             => 'nullable|integer|min:1',
             'usage_per_user'          => [
                 'nullable',

@@ -23,6 +23,11 @@ use Illuminate\Support\Collection;
  * product order on its own. Live records are only read for what is meant to be current: the
  * order status, its invoice, the gift card claim status and whether the order
  * still exists.
+ *
+ * Gift card reward coupons earn one gift card per checkout, never one per
+ * product order or item. The gift card amount is only reported on the
+ * checkout (and on gift_card_claim, which every order of that checkout
+ * shares), so no view can add it up per product.
  */
 class CouponUsageService
 {
@@ -70,11 +75,20 @@ class CouponUsageService
             ->get()
             ->keyBy('id');
 
+        // Snapshots recorded before gift cards were tracked per order kept a
+        // share of the reward on each product order. Adding those shares back
+        // gives the order gift card when its claim no longer exists.
+        $legacy_rewards = $redemptions
+            ->filter(fn (CouponRedemption $redemption) => $redemption->gift_card_claim_id !== null)
+            ->groupBy('gift_card_claim_id')
+            ->map(fn (Collection $group) => round((float) $group->sum('reward_amount'), 2));
+
         $all_usages = $redemptions
             ->map(fn (CouponRedemption $redemption) => $this->formatUsage(
                 $redemption,
                 $live_orders->get($redemption->product_type . ':' . $redemption->order_id),
                 $redemption->gift_card_claim_id ? $claims->get($redemption->gift_card_claim_id) : null,
+                (float) ($legacy_rewards->get($redemption->gift_card_claim_id) ?? 0.0),
             ))
             ->values();
 
@@ -118,8 +132,12 @@ class CouponUsageService
     /**
      * @return array<string, mixed>
      */
-    private function formatUsage(CouponRedemption $redemption, ?Model $live_order, ?GiftCardRewardClaim $claim): array
-    {
+    private function formatUsage(
+        CouponRedemption $redemption,
+        ?Model $live_order,
+        ?GiftCardRewardClaim $claim,
+        float $legacy_order_reward,
+    ): array {
         $items   = collect($redemption->items ?? []);
         $invoice = $live_order && $live_order->relationLoaded('invoice') ? $live_order->invoice : null;
 
@@ -146,23 +164,22 @@ class CouponUsageService
                 // discounted order, so every item of that order got the promo.
                 'is_coupon_applied' => (bool) ($item['is_coupon_applied'] ?? $redemption->is_coupon_applied),
                 'discount_amount'   => isset($item['discount_amount']) ? (float) $item['discount_amount'] : null,
-                'reward_amount'     => isset($item['reward_amount']) ? (float) $item['reward_amount'] : null,
             ])->values()->all(),
             'items_quantity'           => (int) $items->sum('quantity'),
             'subtotal_before_discount' => $redemption->subtotal_before_discount,
             'discount_amount'          => $redemption->discount_amount,
             'total_amount'             => $redemption->total_amount,
-            'reward_amount'            => $redemption->reward_amount,
             'coupon_terms'             => [
                 'code'           => $redemption->coupon_code,
                 'name'           => $redemption->coupon_name,
                 'discount_type'  => $redemption->discount_type,
                 'discount_value' => $redemption->discount_value,
             ],
+            // One gift card for the whole checkout, shared by all of its orders.
             'gift_card_claim'          => $redemption->gift_card_claim_id ? [
                 'id'              => $redemption->gift_card_claim_id,
                 'status'          => $claim?->status,
-                'reward_amount'   => $claim ? (float) $claim->reward_amount : $redemption->reward_amount,
+                'reward_amount'   => $claim ? (float) $claim->reward_amount : $legacy_order_reward,
                 'gift_card_brand' => $claim?->gift_card_brand,
             ] : null,
             'invoice'                  => $invoice ? [
@@ -229,6 +246,7 @@ class CouponUsageService
         $all_items      = $orders->flatMap(fn (array $usage) => $usage['items']);
         $applied_items  = $all_items->where('is_coupon_applied', true);
         $used_dates     = $applied_orders->pluck('used_at')->filter()->sort()->values();
+        $gift_card      = $orders->pluck('gift_card_claim')->filter()->first();
 
         return [
             'id'                       => $checkout_key,
@@ -238,7 +256,7 @@ class CouponUsageService
             'status'                   => $statuses->count() === 1 ? $statuses->first() : self::MIXED_STATUS,
             'client'                   => $first_applied['client'] ?? $orders->pluck('client')->filter()->first(),
             'coupon_terms'             => $first_applied['coupon_terms'],
-            'gift_card_claim'          => $orders->pluck('gift_card_claim')->filter()->first(),
+            'gift_card_claim'          => $gift_card,
             'invoices'                 => $orders->pluck('invoice')->filter()->unique('id')->values()->all(),
             'product_types'            => $orders->pluck('product_type')->unique()->values()->all(),
             'applied_product_types'    => $applied_orders->pluck('product_type')->unique()->values()->all(),
@@ -249,7 +267,8 @@ class CouponUsageService
             'subtotal_before_discount' => round((float) $orders->sum('subtotal_before_discount'), 2),
             'eligible_subtotal'        => round((float) $applied_items->sum('subtotal'), 2),
             'discount_amount'          => round((float) $orders->sum('discount_amount'), 2),
-            'reward_amount'            => round((float) $orders->sum('reward_amount'), 2),
+            // The single gift card earned by this checkout (the whole order).
+            'reward_amount'            => round((float) ($gift_card['reward_amount'] ?? 0.0), 2),
             'total_amount'             => round((float) $orders->sum('total_amount'), 2),
             'has_deleted_orders'       => $orders->contains('is_order_deleted', true),
             'is_fully_deleted'         => $orders->every(fn (array $usage) => $usage['is_order_deleted']),
@@ -263,7 +282,8 @@ class CouponUsageService
 
     /**
      * Uses are counted per checkout, the same way the coupon times_used is
-     * counted. Order level figures only include the discounted orders.
+     * counted. Order level figures only include the discounted orders. Gift
+     * cards are counted per checkout too, one gift card per order.
      *
      * @param Collection<int, array<string, mixed>> $usages    discounted product orders
      * @param Collection<int, array<string, mixed>> $checkouts
@@ -297,7 +317,8 @@ class CouponUsageService
             'multi_product_checkout_count'  => $checkouts->where('order_count', '>', 1)->count(),
             'client_count'                  => $usages->map(fn (array $usage) => $usage['client']['id'] ?? $usage['client']['email'] ?? null)->filter()->unique()->count(),
             'total_discount'                => round((float) $usages->sum('discount_amount'), 2),
-            'total_reward'                  => round((float) $usages->sum('reward_amount'), 2),
+            'total_reward'                  => round((float) $checkouts->sum('reward_amount'), 2),
+            'gift_card_count'               => $checkouts->filter(fn (array $checkout) => $checkout['gift_card_claim'] !== null)->count(),
             'gross_revenue'                 => round((float) $usages->sum('subtotal_before_discount'), 2),
             'net_revenue'                   => round($net_revenue, 2),
             'checkout_net_revenue'          => round($checkout_net, 2),

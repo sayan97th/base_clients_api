@@ -50,7 +50,7 @@
             ?? ['background' => '#111827', 'shine' => '#1f2937', 'accent' => $brand_color, 'text' => '#ffffff', 'muted' => '#d1d5db'];
 
         $details = array_values(array_filter([
-            ['Gift card', $gift_card_label . ' gift card'],
+            ['Gift card', '1 ' . $gift_card_label . ' gift card for the whole order'],
             ['Value', $reward_amount . ' (' . $reward_percentage . ' back)'],
             ['Order total', $order_total],
             ['Products', $products],

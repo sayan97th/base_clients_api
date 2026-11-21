@@ -70,7 +70,7 @@ class CouponValidationController extends Controller
             'reward_amount'           => $result['reward_amount'] ?? 0,
             'gift_card_brands'        => $coupon->isGiftCardReward() ? GiftCardRewardClaim::brandOptions() : [],
             'message'                 => $coupon->isGiftCardReward()
-                ? 'Promo code applied. You will receive a gift card worth ' . rtrim(rtrim(number_format((float) $coupon->discount_value, 2), '0'), '.') . '% of your order total.'
+                ? 'Promo code applied. You will receive one gift card for this whole order, worth ' . rtrim(rtrim(number_format((float) $coupon->discount_value, 2), '0'), '.') . '% of your order total.'
                 : 'Coupon applied successfully.',
         ]);
     }

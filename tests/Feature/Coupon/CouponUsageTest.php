@@ -14,6 +14,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use LogicException;
 use Tests\TestCase;
 
@@ -198,7 +199,57 @@ class CouponUsageTest extends TestCase
             ->assertJsonPath('data.0.gift_card_claim.status', GiftCardRewardClaim::STATUS_PENDING_DETAILS);
 
         $this->assertEqualsWithDelta(40.0, $response->json('summary.total_reward'), 0.001);
+        $this->assertEqualsWithDelta(40.0, $response->json('checkouts.0.reward_amount'), 0.001);
         $this->assertEqualsWithDelta(0.0, $response->json('summary.total_discount'), 0.001);
+    }
+
+    public function test_legacy_snapshots_with_split_rewards_still_report_one_gift_card_per_order(): void
+    {
+        $coupon = Coupon::create([
+            'code'           => 'HAPPYHOLIDAYS',
+            'name'           => 'Happy Holidays',
+            'discount_type'  => Coupon::DISCOUNT_TYPE_GIFT_CARD_REWARD,
+            'discount_value' => 10.0,
+            'applies_to'     => 'all',
+            'is_active'      => true,
+            'times_used'     => 1,
+        ]);
+
+        // Older snapshots kept a share of the gift card on each product order,
+        // and the claim they point to no longer exists.
+        $missing_claim_id = (string) Str::uuid();
+
+        foreach ([['link_building', 400.0, 40.0], ['new_content', 100.0, 10.0]] as [$product_type, $total, $share]) {
+            CouponRedemption::create([
+                'coupon_id'                => $coupon->id,
+                'coupon_code'              => 'HAPPYHOLIDAYS',
+                'discount_type'            => Coupon::DISCOUNT_TYPE_GIFT_CARD_REWARD,
+                'discount_value'           => 10.0,
+                'is_coupon_applied'        => true,
+                'order_id'                 => (string) Str::uuid(),
+                'product_type'             => $product_type,
+                'session_id'               => 'legacy-session',
+                'user_id'                  => $this->client->id,
+                'client_email'             => $this->client->email,
+                'items'                    => [['label' => 'Item', 'quantity' => 1, 'unit_price' => $total, 'subtotal' => $total, 'reward_amount' => $share]],
+                'subtotal_before_discount' => $total,
+                'discount_amount'          => 0.0,
+                'total_amount'             => $total,
+                'reward_amount'            => $share,
+                'gift_card_claim_id'       => $missing_claim_id,
+                'redeemed_at'              => now(),
+            ]);
+        }
+
+        $response = $this->getUsage($coupon)
+            ->assertOk()
+            ->assertJsonCount(1, 'checkouts')
+            ->assertJsonPath('summary.gift_card_count', 1);
+
+        $this->assertEqualsWithDelta(50.0, $response->json('checkouts.0.reward_amount'), 0.001);
+        $this->assertEqualsWithDelta(50.0, $response->json('summary.total_reward'), 0.001);
+        $this->assertEqualsWithDelta(50.0, $response->json('data.0.gift_card_claim.reward_amount'), 0.001);
+        $this->assertArrayNotHasKey('reward_amount', $response->json('data.0.items.0'));
     }
 
     public function test_it_returns_an_empty_history_for_an_unused_coupon(): void

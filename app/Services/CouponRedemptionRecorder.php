@@ -30,6 +30,11 @@ use Throwable;
  * applied to it, so the admin can see the whole purchase and which products
  * got the promo. Snapshots are write once, so recording the same coupon and
  * order twice keeps the first.
+ *
+ * Gift card reward coupons earn ONE gift card per checkout (the whole order),
+ * never one per product or per item. The amount lives on the
+ * GiftCardRewardClaim, so the product order snapshots only record that the
+ * promo applied and link to the claim. They never carry a share of it.
  */
 class CouponRedemptionRecorder
 {
@@ -105,7 +110,6 @@ class CouponRedemptionRecorder
             product_type: $product_type,
             is_coupon_applied: true,
             discount_amount: (float) $order_coupon->discount_amount,
-            reward_amount: 0.0,
             gift_card_claim_id: null,
             redeemed_at: $order_coupon->created_at,
         );
@@ -148,8 +152,9 @@ class CouponRedemptionRecorder
         }
 
         // The claim lists every order of the checkout. When the promo is
-        // limited to some products, only the qualifying orders earn a reward,
-        // the others are kept as orders of the checkout without the coupon.
+        // limited to some products, only the qualifying orders count toward
+        // the gift card, the others are kept as orders of the checkout without
+        // the coupon. Either way the checkout earns a single gift card.
         $eligible_types = $coupon->product_types ?? [];
         $is_eligible    = fn (array $entry) => empty($eligible_types) || in_array($entry[1], $eligible_types, true);
         $eligible       = array_values(array_filter($orders, $is_eligible));
@@ -159,18 +164,16 @@ class CouponRedemptionRecorder
             return [];
         }
 
-        $reward_shares = $this->splitReward((float) $claim->reward_amount, $eligible);
         $redemptions   = [];
         $recorded_keys = [];
 
-        foreach ($eligible as $index => [$order, $product_type]) {
+        foreach ($eligible as [$order, $product_type]) {
             $redemptions[] = $this->snapshot(
                 coupon: $coupon,
                 order: $order,
                 product_type: $product_type,
                 is_coupon_applied: true,
                 discount_amount: 0.0,
-                reward_amount: $reward_shares[$index],
                 gift_card_claim_id: $claim->id,
                 redeemed_at: $claim->created_at,
             );
@@ -184,7 +187,6 @@ class CouponRedemptionRecorder
                 product_type: $product_type,
                 is_coupon_applied: false,
                 discount_amount: 0.0,
-                reward_amount: 0.0,
                 gift_card_claim_id: $claim->id,
                 redeemed_at: $claim->created_at,
             );
@@ -244,7 +246,6 @@ class CouponRedemptionRecorder
                     product_type: $product_type,
                     is_coupon_applied: false,
                     discount_amount: 0.0,
-                    reward_amount: 0.0,
                     gift_card_claim_id: $gift_card_claim_id,
                     redeemed_at: $redeemed_at,
                 );
@@ -260,39 +261,6 @@ class CouponRedemptionRecorder
     private function clientOf(Model $order, string $product_type): ?User
     {
         return $product_type === 'premium_mentions' ? $order->client : $order->user;
-    }
-
-    /**
-     * Splits the checkout reward across its orders in proportion to each
-     * order total. The last order takes the rounding remainder so the shares
-     * always add up to the exact claim amount.
-     *
-     * @param array<int, array{0: Model, 1: string}> $orders
-     * @return array<int, float>
-     */
-    private function splitReward(float $reward_amount, array $orders): array
-    {
-        $order_totals = array_map(fn (array $entry) => max(0.0, (float) $entry[0]->total_amount), $orders);
-        $grand_total  = array_sum($order_totals);
-        $last_index   = count($orders) - 1;
-        $shares       = [];
-        $assigned     = 0.0;
-
-        foreach ($order_totals as $index => $order_total) {
-            if ($index === $last_index) {
-                $shares[$index] = round($reward_amount - $assigned, 2);
-                break;
-            }
-
-            $share = $grand_total > 0
-                ? round($reward_amount * ($order_total / $grand_total), 2)
-                : round($reward_amount / count($orders), 2);
-
-            $shares[$index] = $share;
-            $assigned      += $share;
-        }
-
-        return $shares;
     }
 
     private function findOrder(string $product_type, string $order_id): ?Model
@@ -312,12 +280,11 @@ class CouponRedemptionRecorder
         string $product_type,
         bool $is_coupon_applied,
         float $discount_amount,
-        float $reward_amount,
         ?string $gift_card_claim_id,
         ?Carbon $redeemed_at,
     ): CouponRedemption {
         $client       = $this->clientOf($order, $product_type);
-        $items        = $this->snapshotItems($order, $product_type, $coupon, $is_coupon_applied, $discount_amount, $reward_amount);
+        $items        = $this->snapshotItems($order, $product_type, $coupon, $is_coupon_applied, $discount_amount);
         $total_amount = (float) $order->total_amount;
         $subtotal     = $order->subtotal_before_discount !== null
             ? (float) $order->subtotal_before_discount
@@ -347,7 +314,9 @@ class CouponRedemptionRecorder
                 'subtotal_before_discount' => round($subtotal, 2),
                 'discount_amount'          => round($discount_amount, 2),
                 'total_amount'             => round($total_amount, 2),
-                'reward_amount'            => round($reward_amount, 2),
+                // The gift card is earned once per checkout and stored on the
+                // claim, a product order never holds a share of it.
+                'reward_amount'            => 0.0,
                 'gift_card_claim_id'       => $gift_card_claim_id,
                 'redeemed_at'              => $redeemed_at ?? $order->created_at ?? now(),
             ],
@@ -358,7 +327,8 @@ class CouponRedemptionRecorder
      * Items are copied with the unit price stored on the order item, which is
      * the price charged at checkout, never the current price of the tier.
      * Each item records whether the coupon applied to it and its share of the
-     * order discount or reward, split by item subtotal.
+     * order discount, split by item subtotal. Gift card rewards are never split
+     * across items, the checkout earns one gift card for the whole order.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -368,7 +338,6 @@ class CouponRedemptionRecorder
         Coupon $coupon,
         bool $is_coupon_applied,
         float $discount_amount,
-        float $reward_amount,
     ): array {
         if ($product_type === 'premium_mentions') {
             $charged_price = round((float) $order->total_amount + $discount_amount, 2);
@@ -381,7 +350,6 @@ class CouponRedemptionRecorder
                 'subtotal'          => $charged_price,
                 'is_coupon_applied' => $is_coupon_applied,
                 'discount_amount'   => $is_coupon_applied ? round($discount_amount, 2) : 0.0,
-                'reward_amount'     => $is_coupon_applied ? round($reward_amount, 2) : 0.0,
             ]];
         }
 
@@ -401,12 +369,10 @@ class CouponRedemptionRecorder
             : [];
 
         $discount_shares = $this->splitAcrossItems($discount_amount, $items, $eligible_indexes);
-        $reward_shares   = $this->splitAcrossItems($reward_amount, $items, $eligible_indexes);
 
         foreach ($items as $index => $item) {
             $items[$index]['is_coupon_applied'] = in_array($index, $eligible_indexes, true);
             $items[$index]['discount_amount']   = $discount_shares[$index] ?? 0.0;
-            $items[$index]['reward_amount']     = $reward_shares[$index] ?? 0.0;
         }
 
         return $items;

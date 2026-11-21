@@ -14,6 +14,10 @@ use Throwable;
  * Money back promotions (for example HAPPYHOLIDAYS): the client pays the
  * full price and earns a gift card worth a percentage of the order total.
  *
+ * The gift card is always earned per order (one checkout), never per
+ * product or item: a checkout with several products still earns a single
+ * gift card, calculated on the total of its qualifying products.
+ *
  * Reward coupons never reduce the price, so they are kept out of the order
  * coupon tables (which drive discount, bulk discount and invoice logic) and
  * each use is tracked as a GiftCardRewardClaim instead.
@@ -253,6 +257,9 @@ class GiftCardRewardService
             'id'                => $claim->id,
             'session_id'        => $claim->session_id,
             'order_ids'         => $claim->order_ids ?? [],
+            // Product orders covered by this single gift card.
+            'order_count'       => count($claim->order_ids ?? []),
+            'product_types'     => $claim->product_types ?? [],
             'coupon_code'       => $claim->coupon_code,
             'promotion_name'    => $claim->coupon?->name ?? $claim->coupon_code,
             'order_total'       => $claim->order_total,

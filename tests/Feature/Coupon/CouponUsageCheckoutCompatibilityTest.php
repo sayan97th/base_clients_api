@@ -259,11 +259,12 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
         $response = $this->usageOf($coupon)->assertJsonPath('summary.order_count', 1);
 
         $this->assertSame('link_building', $response->json('data.0.product_type'));
-        $this->assertEqualsWithDelta(40.0, $response->json('data.0.reward_amount'), 0.001);
+        $this->assertArrayNotHasKey('reward_amount', $response->json('data.0'));
+        $this->assertEqualsWithDelta(40.0, $response->json('data.0.gift_card_claim.reward_amount'), 0.001);
         $this->assertEqualsWithDelta(0.0, $response->json('data.0.discount_amount'), 0.001);
     }
 
-    public function test_gift_card_reward_is_split_by_order_total_across_products(): void
+    public function test_a_multi_product_checkout_earns_one_gift_card_for_the_whole_order(): void
     {
         $coupon = $this->makeCoupon([
             'code'           => 'HAPPYHOLIDAYS',
@@ -273,11 +274,28 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
 
         $this->cardCheckout([$coupon->id], 500.0, true)->assertOk();
 
-        $usages = collect($this->usageOf($coupon)->json('data'))->keyBy('product_type');
+        $response = $this->usageOf($coupon)
+            ->assertJsonCount(1, 'checkouts')
+            ->assertJsonPath('summary.gift_card_count', 1);
 
-        $this->assertEqualsWithDelta(40.0, $usages['link_building']['reward_amount'], 0.001);
-        $this->assertEqualsWithDelta(10.0, $usages['new_content']['reward_amount'], 0.001);
-        $this->assertEqualsWithDelta(50.0, CouponRedemption::sum('reward_amount'), 0.001);
+        // One gift card for the order, never a share per product order or item.
+        $this->assertEqualsWithDelta(50.0, $response->json('checkouts.0.reward_amount'), 0.001);
+        $this->assertEqualsWithDelta(50.0, $response->json('summary.total_reward'), 0.001);
+        $this->assertEqualsWithDelta(0.0, CouponRedemption::sum('reward_amount'), 0.001);
+
+        $usages = collect($response->json('data'))->keyBy('product_type');
+
+        $this->assertCount(2, $usages);
+        $this->assertSame($usages['link_building']['gift_card_claim']['id'], $usages['new_content']['gift_card_claim']['id']);
+
+        foreach ($usages as $usage) {
+            $this->assertArrayNotHasKey('reward_amount', $usage);
+            $this->assertEqualsWithDelta(50.0, $usage['gift_card_claim']['reward_amount'], 0.001);
+
+            foreach ($usage['items'] as $item) {
+                $this->assertArrayNotHasKey('reward_amount', $item);
+            }
+        }
     }
 
     public function test_gift_card_reward_coupons_are_rejected_on_single_product_endpoints(): void
@@ -434,7 +452,8 @@ class CouponUsageCheckoutCompatibilityTest extends TestCase
 
         $orders = collect($response->json('checkouts.0.orders'))->keyBy('product_type');
 
-        $this->assertEqualsWithDelta(40.0, $orders['link_building']['items'][0]['reward_amount'], 0.001);
+        $this->assertTrue($orders['link_building']['items'][0]['is_coupon_applied']);
+        $this->assertArrayNotHasKey('reward_amount', $orders['link_building']['items'][0]);
         $this->assertFalse($orders['new_content']['is_coupon_applied']);
         $this->assertEqualsWithDelta(40.0, $response->json('checkouts.0.reward_amount'), 0.001);
         $this->assertEqualsWithDelta(500.0, $response->json('checkouts.0.total_amount'), 0.001);

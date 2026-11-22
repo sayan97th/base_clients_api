@@ -15,12 +15,17 @@ class SeoPackageSubscriptionResource extends JsonResource
             'starts_at'  => $this->starts_at?->toIso8601String(),
             'ends_at'    => $this->ends_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
-            'package'    => $this->whenLoaded('package', fn () => [
+            'plan_name'         => $this->displayPlanName(),
+            'pricing_type'      => $this->pricing_type,
+            'monthly_price'     => (float) $this->monthly_price,
+            'auto_renew'        => (bool) $this->auto_renew,
+            'next_billing_date' => $this->next_billing_date?->toDateString(),
+            'package'    => $this->whenLoaded('package', fn () => $this->package ? [
                 'id'              => $this->package->id,
                 'name'            => $this->package->name,
                 'slug'            => $this->package->slug,
                 'price_per_month' => $this->package->price_per_month,
-            ]),
+            ] : null),
         ];
     }
 }

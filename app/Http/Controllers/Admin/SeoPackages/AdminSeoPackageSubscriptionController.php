@@ -4,12 +4,20 @@ namespace App\Http\Controllers\Admin\SeoPackages;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\SeoPackages\CancelAdminSeoPackageSubscriptionRequest;
+use App\Http\Requests\Admin\SeoPackages\ChargeAdminSeoPackageSubscriptionRequest;
 use App\Http\Requests\Admin\SeoPackages\StoreAdminSeoPackageSubscriptionRequest;
+use App\Http\Requests\Admin\SeoPackages\UpdateAdminSeoPackageSubscriptionRequest;
 use App\Http\Resources\AdminSeoPackageSubscriptionResource;
+use App\Http\Resources\AdminSeoSubscriptionChargeResource;
+use App\Models\PaymentProfile;
 use App\Models\SeoPackageSubscription;
+use App\Models\SeoSubscriptionCharge;
+use App\Models\User;
+use App\Services\InvoiceCardPaymentService;
+use App\Services\SeoSubscriptionBillingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class AdminSeoPackageSubscriptionController extends Controller
 {
@@ -17,7 +25,13 @@ class AdminSeoPackageSubscriptionController extends Controller
         'user:id,first_name,last_name,email,organization_id',
         'user.organization:id,name',
         'package:id,name,slug,price_per_month',
+        'paymentProfile:id,user_id,card_brand,last_four,expiry_month,expiry_year',
+        'latestCharge',
     ];
+
+    public function __construct(
+        protected SeoSubscriptionBillingService $billing_service,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -31,7 +45,7 @@ class AdminSeoPackageSubscriptionController extends Controller
                            ->orWhere('email', 'like', "%{$search}%");
                 })->orWhereHas('package', function ($pkg_q) use ($search) {
                     $pkg_q->where('name', 'like', "%{$search}%");
-                });
+                })->orWhere('plan_name', 'like', "%{$search}%");
             });
         }
 
@@ -43,7 +57,19 @@ class AdminSeoPackageSubscriptionController extends Controller
             $query->where('seo_package_id', $package_id);
         }
 
-        $allowed_sort_fields = ['starts_at', 'ends_at', 'created_at', 'status'];
+        if ($pricing_type = $request->query('pricing_type')) {
+            $query->where('pricing_type', $pricing_type);
+        }
+
+        if ($request->query('payment_status') === SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE) {
+            $query->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE);
+        }
+
+        if ($request->has('auto_renew') && $request->query('auto_renew') !== '') {
+            $query->where('auto_renew', filter_var($request->query('auto_renew'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        $allowed_sort_fields = ['starts_at', 'ends_at', 'created_at', 'status', 'monthly_price', 'next_billing_date'];
         $sort_field          = in_array($request->query('sort_field'), $allowed_sort_fields)
             ? $request->query('sort_field')
             : 'created_at';
@@ -72,34 +98,143 @@ class AdminSeoPackageSubscriptionController extends Controller
             ->groupBy('status')
             ->pluck('count', 'status');
 
+        $active = SeoPackageSubscription::where('status', 'active');
+
         return response()->json([
             'data' => [
-                'total'     => $total,
-                'active'    => (int) ($by_status['active']    ?? 0),
-                'cancelled' => (int) ($by_status['cancelled'] ?? 0),
-                'expired'   => (int) ($by_status['expired']   ?? 0),
+                'total'                 => $total,
+                'active'                => (int) ($by_status['active']    ?? 0),
+                'cancelled'             => (int) ($by_status['cancelled'] ?? 0),
+                'expired'               => (int) ($by_status['expired']   ?? 0),
+                'past_due'              => (clone $active)->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE)->count(),
+                'auto_renew'            => (clone $active)->where('auto_renew', true)->count(),
+                'monthly_recurring'     => round((float) (clone $active)->sum('monthly_price'), 2),
+                'renewing_next_7_days'  => (clone $active)
+                    ->where('auto_renew', true)
+                    ->whereDate('next_billing_date', '>=', now()->toDateString())
+                    ->whereDate('next_billing_date', '<=', now()->addDays(7)->toDateString())
+                    ->count(),
+                'collected_this_month'  => round((float) SeoSubscriptionCharge::where('status', SeoSubscriptionCharge::STATUS_SUCCEEDED)
+                    ->where('paid_at', '>=', now()->startOfMonth())
+                    ->sum('amount'), 2),
             ],
         ]);
     }
 
+    public function show(int $id): JsonResponse
+    {
+        $subscription = SeoPackageSubscription::find($id);
+
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
+
+        // Picks up invoices paid from the portal since the last renewal run.
+        $this->billing_service->syncExternalPayments($subscription);
+
+        return $this->detailResponse($subscription);
+    }
+
+    /**
+     * GET /api/admin/seo-packages/subscriptions/payment-profiles?user_id=
+     *
+     * Cards on file for a client, for the activate and edit forms.
+     */
+    public function paymentProfiles(Request $request, InvoiceCardPaymentService $card_payment_service): JsonResponse
+    {
+        $user = User::find((int) $request->query('user_id'));
+
+        if (! $user) {
+            return response()->json(['data' => []]);
+        }
+
+        return response()->json(['data' => $card_payment_service->listPaymentProfiles($user)]);
+    }
+
     public function store(StoreAdminSeoPackageSubscriptionRequest $request): JsonResponse
     {
-        $data = $request->validated();
+        $data         = $request->validated();
+        $subscription = $this->billing_service->activate($data);
+        $charge       = null;
 
-        $subscription = DB::transaction(function () use ($data) {
-            return SeoPackageSubscription::create([
-                'user_id'        => $data['user_id'],
-                'seo_package_id' => $data['package_id'],
-                'status'         => 'active',
-                'starts_at'      => $data['starts_at'],
-                'ends_at'        => $data['ends_at'] ?? null,
-                'notes'          => $data['notes'] ?? null,
-            ]);
-        });
+        if ($request->boolean('charge_now')) {
+            $charge_result = $this->billing_service->chargeCurrentPeriod(
+                $subscription,
+                SeoSubscriptionCharge::TRIGGER_MANUAL,
+                Auth::user(),
+            );
 
-        $subscription->load($this->eagerLoad);
+            $charge = [
+                'success' => $charge_result['success'],
+                'message' => $charge_result['message'],
+            ];
+        }
 
-        return response()->json(['data' => new AdminSeoPackageSubscriptionResource($subscription)], 201);
+        $subscription->refresh()->load($this->eagerLoad);
+
+        return response()->json([
+            'data'          => new AdminSeoPackageSubscriptionResource($subscription),
+            'charge_result' => $charge,
+        ], 201);
+    }
+
+    public function update(UpdateAdminSeoPackageSubscriptionRequest $request, int $id): JsonResponse
+    {
+        $subscription = SeoPackageSubscription::find($id);
+
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
+
+        if (! $subscription->isActive()) {
+            return response()->json(['message' => 'Only active subscriptions can be edited.'], 422);
+        }
+
+        $this->billing_service->updateSettings($subscription, $request->validated());
+
+        return $this->detailResponse($subscription);
+    }
+
+    /**
+     * POST /api/admin/seo-packages/subscriptions/{id}/charge
+     *
+     * Bills the current period now with the card on file.
+     */
+    public function charge(ChargeAdminSeoPackageSubscriptionRequest $request, int $id): JsonResponse
+    {
+        $subscription = SeoPackageSubscription::find($id);
+
+        if (! $subscription) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
+
+        $payment_profile = null;
+
+        if ($request->filled('payment_profile_id')) {
+            $payment_profile = PaymentProfile::where('id', $request->input('payment_profile_id'))
+                ->where('user_id', $subscription->user_id)
+                ->first();
+
+            if (! $payment_profile) {
+                return response()->json(['message' => 'Saved card not found for this client.'], 404);
+            }
+        }
+
+        $result = $this->billing_service->chargeCurrentPeriod(
+            $subscription,
+            SeoSubscriptionCharge::TRIGGER_MANUAL,
+            Auth::user(),
+            $payment_profile,
+        );
+
+        if (! $result['success']) {
+            return response()->json([
+                'message' => $result['message'],
+                'charge'  => $result['charge'] ? new AdminSeoSubscriptionChargeResource($result['charge']->load('invoice')) : null,
+            ], $result['status_code']);
+        }
+
+        return $this->detailResponse($subscription, $result['message']);
     }
 
     public function cancel(CancelAdminSeoPackageSubscriptionRequest $request, int $id): JsonResponse
@@ -119,15 +254,31 @@ class AdminSeoPackageSubscriptionController extends Controller
             ], 422);
         }
 
-        $subscription->status       = 'cancelled';
-        $subscription->cancelled_at = now();
+        $this->billing_service->cancel($subscription, $request->input('notes'));
 
-        if ($request->filled('notes')) {
-            $subscription->notes = $request->input('notes');
-        }
+        return response()->json(['data' => new AdminSeoPackageSubscriptionResource($subscription->load($this->eagerLoad))]);
+    }
 
-        $subscription->save();
+    private function detailResponse(SeoPackageSubscription $subscription, ?string $message = null): JsonResponse
+    {
+        $subscription->refresh()->load([
+            ...$this->eagerLoad,
+            'charges' => fn ($q) => $q->with(['invoice:id,unique_id,invoice_number,status,total_amount', 'chargedBy:id,first_name,last_name,email'])
+                ->orderByDesc('period_start'),
+        ]);
 
-        return response()->json(['data' => new AdminSeoPackageSubscriptionResource($subscription)]);
+        $charges = $subscription->charges;
+
+        return response()->json(array_filter([
+            'data'    => new AdminSeoPackageSubscriptionResource($subscription),
+            'summary' => [
+                'total_collected'  => round((float) $charges->where('status', SeoSubscriptionCharge::STATUS_SUCCEEDED)->sum('amount'), 2),
+                'successful_count' => $charges->where('status', SeoSubscriptionCharge::STATUS_SUCCEEDED)->count(),
+                'failed_count'     => $charges->where('status', SeoSubscriptionCharge::STATUS_FAILED)->count(),
+                'upcoming'         => $this->billing_service->upcomingSchedule($subscription),
+                'card_on_file'     => (bool) $this->billing_service->resolvePaymentProfile($subscription),
+            ],
+            'message' => $message,
+        ], fn ($value) => $value !== null));
     }
 }

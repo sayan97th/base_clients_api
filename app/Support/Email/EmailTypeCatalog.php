@@ -23,6 +23,7 @@ use App\Mail\OrderReportMail;
 use App\Mail\OrderStatusChangeMail;
 use App\Mail\OrderUpdateMail;
 use App\Mail\PaymentSuccessfulEmail;
+use App\Mail\SeoSubscriptionBillingEmail;
 use App\Mail\ServiceVerificationEmail;
 use App\Mail\StaffInvitationMail;
 use App\Mail\TeamInvitationMail;
@@ -221,6 +222,13 @@ final class EmailTypeCatalog
             'audience'    => self::AUDIENCE_CLIENT,
             'category'    => self::CATEGORY_BILLING,
             'classes'     => [InvoiceUpdatedNotification::class],
+        ],
+        'seo_subscription_billing' => [
+            'label'       => 'SEO subscription billing',
+            'description' => 'Sent to the client about their SEO subscription: a reminder before each renewal, the monthly payment confirmation and a notice when a payment fails.',
+            'audience'    => self::AUDIENCE_CLIENT,
+            'category'    => self::CATEGORY_BILLING,
+            'classes'     => [SeoSubscriptionBillingEmail::class],
         ],
         'invoice_reminder' => [
             'label'       => 'Invoice reminder',

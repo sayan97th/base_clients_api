@@ -286,9 +286,11 @@ Route::middleware(['auth:api', 'active'])->group(function () {
 
             // Subscriptions
             Route::prefix('subscriptions')->group(function () {
-                Route::get('stats',         [AdminSeoPackageSubscriptionController::class, 'stats']);
-                Route::get('/',             [AdminSeoPackageSubscriptionController::class, 'index']);
-                Route::patch('{id}/cancel', [AdminSeoPackageSubscriptionController::class, 'cancel']);
+                Route::get('stats',            [AdminSeoPackageSubscriptionController::class, 'stats']);
+                Route::get('payment-profiles', [AdminSeoPackageSubscriptionController::class, 'paymentProfiles']);
+                Route::get('/',                [AdminSeoPackageSubscriptionController::class, 'index']);
+                Route::get('{id}',             [AdminSeoPackageSubscriptionController::class, 'show'])->whereNumber('id');
+                Route::patch('{id}/cancel',    [AdminSeoPackageSubscriptionController::class, 'cancel'])->whereNumber('id');
             });
 
             Route::get('comparison', [AdminSeoPackageComparisonController::class, 'index']);
@@ -298,7 +300,9 @@ Route::middleware(['auth:api', 'active'])->group(function () {
         });
         Route::middleware('role:super_admin,admin')->prefix('seo-packages')->group(function () {
             Route::prefix('subscriptions')->group(function () {
-                Route::post('/', [AdminSeoPackageSubscriptionController::class, 'store']);
+                Route::post('/',          [AdminSeoPackageSubscriptionController::class, 'store']);
+                Route::patch('{id}',      [AdminSeoPackageSubscriptionController::class, 'update'])->whereNumber('id');
+                Route::post('{id}/charge', [AdminSeoPackageSubscriptionController::class, 'charge'])->whereNumber('id');
             });
 
             Route::put('comparison', [AdminSeoPackageComparisonController::class, 'update']);

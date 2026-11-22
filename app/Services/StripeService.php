@@ -402,10 +402,13 @@ class StripeService
         int $amount_cents,
         string $stripe_customer_id,
         string $stripe_payment_method_id,
-        array $metadata
+        array $metadata,
+        ?string $idempotency_key = null,
+        ?string $description = null,
+        ?string $statement_descriptor_suffix = null,
     ): array {
         try {
-            $intent = $this->client->paymentIntents->create([
+            $params = [
                 'amount'               => $amount_cents,
                 'currency'             => 'usd',
                 'capture_method'       => 'manual',
@@ -415,7 +418,21 @@ class StripeService
                 'off_session'          => true,
                 'confirm'              => true,
                 'metadata'             => $metadata,
-            ]);
+            ];
+
+            if ($description !== null) {
+                $params['description'] = $description;
+            }
+
+            if ($statement_descriptor_suffix !== null) {
+                $params['statement_descriptor_suffix'] = $statement_descriptor_suffix;
+            }
+
+            // A retried request with the same key returns the original
+            // PaymentIntent instead of charging the card a second time.
+            $intent = $idempotency_key !== null
+                ? $this->client->paymentIntents->create($params, ['idempotency_key' => $idempotency_key])
+                : $this->client->paymentIntents->create($params);
 
             if ($intent->status !== 'requires_capture' && $intent->status !== 'succeeded') {
                 return [

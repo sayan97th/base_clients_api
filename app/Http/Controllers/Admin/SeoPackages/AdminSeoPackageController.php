@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\SeoPackages\StoreAdminSeoPackageRequest;
 use App\Http\Requests\Admin\SeoPackages\UpdateAdminSeoPackageRequest;
 use App\Models\SeoPackage;
+use App\Models\SeoPackageSubscription;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
@@ -93,6 +94,10 @@ class AdminSeoPackageController extends Controller
 
         $activeSubscriptionsCount = $package->subscriptions()
             ->whereIn('status', ['pending', 'active', 'processing'])
+            ->count();
+
+        $activeSubscriptionsCount += SeoPackageSubscription::where('seo_package_id', $package->id)
+            ->where('status', 'active')
             ->count();
 
         if ($activeSubscriptionsCount > 0) {

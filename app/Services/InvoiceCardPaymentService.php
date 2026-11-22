@@ -144,19 +144,64 @@ class InvoiceCardPaymentService
      */
     public function chargeSavedCard(Invoice $invoice, PaymentProfile $payment_profile, User $admin): array
     {
+        $card_label = $this->formatCardLabel($payment_profile);
+        $admin_name = $admin->full_name ?? $admin->email;
+
+        return $this->chargeInvoiceOffSession(
+            invoice: $invoice,
+            payment_profile: $payment_profile,
+            payment_source: 'admin_card_on_file',
+            extra_metadata: ['charged_by_admin_id' => (string) $admin->id],
+            history: fn (string $payment_intent_id) => [
+                'event'          => 'invoice_paid',
+                'description'    => "Card on file ({$card_label}) charged by admin. PaymentIntent: {$payment_intent_id}",
+                'actor_id'       => $admin->id,
+                'actor_name'     => $admin_name,
+                'actor_initials' => $this->buildInitials($admin_name),
+                'actor_type'     => 'admin',
+            ],
+            transaction_description: "Invoice {$invoice->invoice_number} paid by charging card on file ({$card_label}).",
+        );
+    }
+
+    /**
+     * Charges the invoice owner's saved card off-session for the full invoice
+     * total and marks the invoice as paid. Shared by the admin "charge card on
+     * file" action and SEO subscription renewals.
+     *
+     * $history receives the PaymentIntent id and returns the invoice history
+     * row. $send_client_receipt is false when the caller sends its own, more
+     * specific confirmation email (subscription renewals do).
+     *
+     * Returns ['success' => true, 'payment_intent_id' => '...']
+     *      or ['success' => false, 'message' => '...', 'status_code' => int,
+     *          'error_code' => ?string, 'payment_intent_id' => ?string]
+     */
+    public function chargeInvoiceOffSession(
+        Invoice $invoice,
+        PaymentProfile $payment_profile,
+        string $payment_source,
+        callable $history,
+        string $transaction_description,
+        array $extra_metadata = [],
+        bool $send_client_receipt = true,
+        ?string $idempotency_key = null,
+        ?string $stripe_description = null,
+        ?string $statement_descriptor_suffix = null,
+    ): array {
         if ($payment_profile->user_id !== $invoice->user_id) {
-            return ['success' => false, 'message' => 'This card does not belong to the invoice client.', 'status_code' => 422];
+            return ['success' => false, 'message' => 'This card does not belong to the invoice client.', 'status_code' => 422, 'error_code' => 'card_owner_mismatch'];
         }
 
         if ($this->isPaymentProfileExpired($payment_profile)) {
-            return ['success' => false, 'message' => 'This card has expired. Please choose another card.', 'status_code' => 422];
+            return ['success' => false, 'message' => 'This card has expired. Please choose another card.', 'status_code' => 422, 'error_code' => 'expired_card'];
         }
 
         // Prevents double charges when the action is triggered twice in a row.
         $charge_lock = Cache::lock("invoice-card-charge:{$invoice->id}", 60);
 
         if (! $charge_lock->get()) {
-            return ['success' => false, 'message' => 'A charge for this invoice is already in progress.', 'status_code' => 409];
+            return ['success' => false, 'message' => 'A charge for this invoice is already in progress.', 'status_code' => 409, 'error_code' => 'charge_in_progress'];
         }
 
         try {
@@ -165,56 +210,58 @@ class InvoiceCardPaymentService
             $payable_error = $this->validateCardPayable($invoice);
 
             if ($payable_error !== null) {
-                return ['success' => false, ...$payable_error];
+                return ['success' => false, ...$payable_error, 'error_code' => 'invoice_not_payable'];
             }
 
             $client = $invoice->user;
 
             if (! $client) {
-                return ['success' => false, 'message' => 'The invoice client could not be found.', 'status_code' => 422];
+                return ['success' => false, 'message' => 'The invoice client could not be found.', 'status_code' => 422, 'error_code' => 'client_missing'];
             }
 
             $customer_result = $this->resolvePaymentProfileCustomer($payment_profile, $client);
 
             if (! $customer_result['success']) {
-                return ['success' => false, 'message' => $customer_result['message'], 'status_code' => 422];
+                return ['success' => false, 'message' => $customer_result['message'], 'status_code' => 422, 'error_code' => 'invalid_payment_method'];
             }
 
             $charge_result = $this->stripe_service->chargeSavedCardOffSession(
                 amount_cents: $this->toCents((float) $invoice->total_amount),
                 stripe_customer_id: $customer_result['customer_id'],
                 stripe_payment_method_id: $payment_profile->stripe_payment_method_id,
-                metadata: $this->buildMetadata($invoice, 'admin_card_on_file') + [
-                    'charged_by_admin_id' => (string) $admin->id,
-                ],
+                metadata: $this->buildMetadata($invoice, $payment_source) + $extra_metadata,
+                idempotency_key: $idempotency_key,
+                description: $stripe_description,
+                statement_descriptor_suffix: $statement_descriptor_suffix,
             );
 
             if (! $charge_result['success']) {
-                logger()->warning("Admin card-on-file charge declined for invoice {$invoice->unique_id}", [
+                logger()->warning("Off-session card charge declined for invoice {$invoice->unique_id}", [
                     'payment_profile_id' => $payment_profile->id,
+                    'payment_source'     => $payment_source,
                     'error_code'         => $charge_result['error_code'] ?? null,
                 ]);
 
-                return ['success' => false, 'message' => $charge_result['message'], 'status_code' => 402];
+                return [
+                    'success'           => false,
+                    'message'           => $charge_result['message'],
+                    'status_code'       => 402,
+                    'error_code'        => $charge_result['error_code'] ?? 'card_declined',
+                    'payment_intent_id' => $charge_result['payment_intent_id'] ?? null,
+                ];
             }
 
             $payment_intent_id = $charge_result['payment_intent_id'];
-            $card_label        = $this->formatCardLabel($payment_profile);
-            $admin_name        = $admin->full_name ?? $admin->email;
 
-            return $this->finalizeCardPayment(
+            $result = $this->finalizeCardPayment(
                 invoice: $invoice,
                 payment_intent_id: $payment_intent_id,
-                history: [
-                    'event'          => 'invoice_paid',
-                    'description'    => "Card on file ({$card_label}) charged by admin. PaymentIntent: {$payment_intent_id}",
-                    'actor_id'       => $admin->id,
-                    'actor_name'     => $admin_name,
-                    'actor_initials' => $this->buildInitials($admin_name),
-                    'actor_type'     => 'admin',
-                ],
-                transaction_description: "Invoice {$invoice->invoice_number} paid by charging card on file ({$card_label}).",
+                history: $history($payment_intent_id),
+                transaction_description: $transaction_description,
+                send_client_receipt: $send_client_receipt,
             );
+
+            return $result['success'] ? $result + ['payment_intent_id' => $payment_intent_id] : $result;
         } finally {
             $charge_lock->release();
         }
@@ -293,7 +340,8 @@ class InvoiceCardPaymentService
         Invoice $invoice,
         string $payment_intent_id,
         array $history,
-        string $transaction_description
+        string $transaction_description,
+        bool $send_client_receipt = true,
     ): array {
         $already_paid = false;
 
@@ -360,7 +408,7 @@ class InvoiceCardPaymentService
         $invoice->refresh();
 
         $this->transitionPaymentPendingOrders($invoice, $payment_intent_id);
-        $this->dispatchPaymentNotifications($invoice);
+        $this->dispatchPaymentNotifications($invoice, $send_client_receipt);
 
         return ['success' => true];
     }
@@ -368,12 +416,12 @@ class InvoiceCardPaymentService
     /**
      * Non-critical notifications: failures are logged, never rolled back.
      */
-    private function dispatchPaymentNotifications(Invoice $invoice): void
+    private function dispatchPaymentNotifications(Invoice $invoice, bool $send_client_receipt = true): void
     {
         $client = $invoice->user;
 
         try {
-            if ($client && $client->email) {
+            if ($send_client_receipt && $client && $client->email) {
                 Mail::to($client->email)->queue(new PaymentSuccessfulEmail($client, $invoice));
             }
         } catch (\Exception $e) {
@@ -447,7 +495,7 @@ class InvoiceCardPaymentService
         ];
     }
 
-    private function formatCardLabel(PaymentProfile $payment_profile): string
+    public function formatCardLabel(PaymentProfile $payment_profile): string
     {
         return ucfirst((string) $payment_profile->card_brand) . ' ending in ' . $payment_profile->last_four;
     }

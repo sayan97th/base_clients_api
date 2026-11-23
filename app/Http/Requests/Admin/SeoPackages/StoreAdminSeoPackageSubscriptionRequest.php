@@ -4,6 +4,7 @@ namespace App\Http\Requests\Admin\SeoPackages;
 
 use App\Models\PaymentProfile;
 use App\Models\SeoPackageSubscription;
+use App\Support\BillingCalendar;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -44,7 +45,9 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
             'invoice_item_label'       => ['nullable', 'string', 'max:120'],
             'invoice_item_description' => ['nullable', 'string', 'max:1000'],
             'starts_at'                => ['required', 'date'],
-            'first_billing_date'       => ['nullable', 'date', 'after_or_equal:today'],
+            // Compared against "today" in the admin's own timezone, see after().
+            'first_billing_date'       => ['nullable', 'date'],
+            'timezone'                 => ['nullable', 'string', 'max:64'],
             'ends_at'                  => ['nullable', 'date', 'after:starts_at'],
             'auto_renew'               => ['sometimes', 'boolean'],
             'payment_profile_id'       => [
@@ -54,6 +57,11 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
             ],
             'reminder_days_before'     => ['nullable', 'integer', 'min:0', 'max:' . SeoPackageSubscription::MAX_REMINDER_DAYS],
             'charge_now'               => ['sometimes', 'boolean'],
+            // The client already paid the first period another way (bank
+            // transfer, check, a manual invoice). It is recorded as paid and
+            // never charged again.
+            'first_period_paid_outside' => ['sometimes', 'boolean'],
+            'outside_payment_reference' => ['nullable', 'string', 'max:120'],
             'notes'                    => ['nullable', 'string', 'max:1000'],
         ];
     }
@@ -76,11 +84,24 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
                 }
 
                 $first_billing_date = $this->input('first_billing_date');
+                $timezone           = $this->input('timezone');
 
-                if ($this->boolean('charge_now') && $first_billing_date && ! now()->isSameDay($first_billing_date)) {
+                // Today is allowed: a subscription can start and bill the same day.
+                if ($first_billing_date && BillingCalendar::isPast($first_billing_date, $timezone)) {
+                    $validator->errors()->add('first_billing_date', 'The first billing date cannot be in the past.');
+                }
+
+                if ($this->boolean('charge_now') && $first_billing_date && ! BillingCalendar::isToday($first_billing_date, $timezone)) {
                     $validator->errors()->add(
                         'charge_now',
                         'The first payment can only be charged now when the first billing date is today.'
+                    );
+                }
+
+                if ($this->boolean('charge_now') && $this->boolean('first_period_paid_outside')) {
+                    $validator->errors()->add(
+                        'first_period_paid_outside',
+                        'The first payment is already marked as paid, so it cannot be charged now as well.'
                     );
                 }
             },
@@ -93,7 +114,7 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
             'package_id.required'            => 'Select an SEO package, or switch to a custom price.',
             'custom_price.required'          => 'Enter the monthly amount to charge this client.',
             'custom_price.min'               => 'The monthly amount must be at least $0.50.',
-            'first_billing_date.after_or_equal' => 'The first billing date cannot be in the past.',
+            'outside_payment_reference.max'  => 'The payment reference can be at most 120 characters.',
             'payment_profile_id.exists'      => 'The selected card does not belong to this client.',
             'reminder_days_before.integer'   => 'The reminder must be a whole number of days.',
             'reminder_days_before.max'       => 'The reminder can be sent at most ' . SeoPackageSubscription::MAX_REMINDER_DAYS . ' days before the charge.',

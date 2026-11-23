@@ -13,7 +13,9 @@ use App\Models\PaymentProfile;
 use App\Models\SeoPackage;
 use App\Models\SeoPackageSubscription;
 use App\Models\SeoSubscriptionCharge;
+use App\Models\Transaction;
 use App\Models\User;
+use App\Support\BillingCalendar;
 use App\Support\FrontendUrl;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -24,8 +26,10 @@ use Illuminate\Support\Facades\DB;
  *
  * How a renewal works:
  *   1. Each billing period gets exactly one SeoSubscriptionCharge row
- *      (unique per subscription and period start), so a month can never be
- *      billed twice.
+ *      (unique per subscription and period start), and a calendar month
+ *      that already has a paid period is never charged again, even when the
+ *      schedule was moved by hand. A month paid outside the portal can be
+ *      recorded as paid so the renewal skips it.
  *   2. The period gets a regular portal invoice, "December - SEO Services",
  *      the same kind of invoice the team used to duplicate by hand. The
  *      client can always see and pay it from their portal.
@@ -342,6 +346,22 @@ class SeoSubscriptionBillingService
                 return $this->result(false, 'This subscription ends before the next billing period, so there is nothing left to charge.', 422);
             }
 
+            // Never more than one payment per calendar month: another period
+            // of this month was already paid (for example the schedule was
+            // moved after a payment), so skip ahead instead of charging.
+            $paid_this_month = $this->findPaidChargeForMonth($subscription, $period_start);
+
+            if ($paid_this_month && ! $paid_this_month->period_start->isSameDay($period_start)) {
+                $next_date = $this->skipPaidMonths($subscription);
+
+                return $this->result(
+                    false,
+                    "{$paid_this_month->periodLabel()} is already paid, so the client was not charged again. The next charge is on {$next_date->format('M j, Y')}.",
+                    409,
+                    $paid_this_month,
+                );
+            }
+
             // One row per period (unique index): reused by every retry.
             $charge = $subscription->charges()
                 ->whereDate('period_start', $period_start->toDateString())
@@ -415,6 +435,7 @@ class SeoSubscriptionBillingService
                     'seo_subscription_charge_id' => (string) $charge->id,
                     'billing_period'       => $charge->period_start->toDateString(),
                     'charged_by_admin_id'  => $admin ? (string) $admin->id : '',
+                    'charge_trigger'       => $trigger,
                 ],
                 send_client_receipt: false,
                 send_admin_paid_email: false,
@@ -427,6 +448,12 @@ class SeoSubscriptionBillingService
                     $this->markChargePaidExternally($subscription, $charge, $invoice->fresh());
 
                     return $this->result(true, "The {$period_text} invoice was already paid, no card was charged.", 200, $charge->refresh());
+                }
+
+                // The card was actually tried and declined by Stripe: keep a
+                // record of the attempt next to the successful payments.
+                if (($charge_result['status_code'] ?? null) === 402) {
+                    $this->recordFailedTransaction($subscription, $charge, $invoice, $charge_result, $trigger);
                 }
 
                 return $this->handleFailure($subscription, $charge, $invoice, $charge_result, $trigger);
@@ -458,7 +485,7 @@ class SeoSubscriptionBillingService
     public function processDueRenewals(): array
     {
         $summary = ['attempted' => 0, 'succeeded' => 0, 'failed' => 0, 'skipped' => 0];
-        $today   = now()->toDateString();
+        $today   = BillingCalendar::todayString();
 
         SeoPackageSubscription::query()
             ->where('status', 'active')
@@ -493,7 +520,8 @@ class SeoSubscriptionBillingService
 
                 try {
                     $result = $this->chargeCurrentPeriod($subscription, SeoSubscriptionCharge::TRIGGER_AUTOMATIC);
-                    $summary[$result['success'] ? 'succeeded' : 'failed']++;
+                    // 409: already paid or already being charged, nothing failed.
+                    $summary[$result['success'] ? 'succeeded' : ($result['status_code'] === 409 ? 'skipped' : 'failed')]++;
                 } catch (\Throwable $e) {
                     $summary['failed']++;
                     logger()->error("SEO subscription renewal crashed for subscription {$subscription->id}", [
@@ -512,7 +540,7 @@ class SeoSubscriptionBillingService
     public function sendDueReminders(): int
     {
         $sent  = 0;
-        $today = now()->startOfDay();
+        $today = BillingCalendar::today();
 
         SeoPackageSubscription::query()
             ->with(['user', 'paymentProfile'])
@@ -555,7 +583,7 @@ class SeoSubscriptionBillingService
         return SeoPackageSubscription::query()
             ->where('status', 'active')
             ->whereNotNull('ends_at')
-            ->whereDate('ends_at', '<', now()->toDateString())
+            ->whereDate('ends_at', '<', BillingCalendar::todayString())
             ->update([
                 'status'     => 'expired',
                 'auto_renew' => false,
@@ -619,7 +647,189 @@ class SeoSubscriptionBillingService
         return $schedule;
     }
 
+    /**
+     * The paid period of this subscription that falls in the same calendar
+     * month as $date, if any. A client pays at most once per month.
+     */
+    public function findPaidChargeForMonth(SeoPackageSubscription $subscription, \DateTimeInterface|string $date): ?SeoSubscriptionCharge
+    {
+        $month = Carbon::parse($date);
+
+        return $subscription->charges()
+            ->where('status', SeoSubscriptionCharge::STATUS_SUCCEEDED)
+            ->whereYear('period_start', $month->year)
+            ->whereMonth('period_start', $month->month)
+            ->orderByDesc('period_start')
+            ->first();
+    }
+
+    /**
+     * Records the current period as paid outside the portal (bank transfer,
+     * check, a manual invoice paid before the subscription existed). Nothing
+     * is charged: a paid invoice and a transaction are created so the
+     * payment shows in the client's invoices and in Transactions, and the
+     * schedule moves to the next month so the renewal never bills it again.
+     *
+     * Returns ['success' => bool, 'message' => string, 'status_code' => int,
+     *          'charge' => ?SeoSubscriptionCharge]
+     */
+    public function recordPeriodPaidOutside(
+        SeoPackageSubscription $subscription,
+        ?User $admin = null,
+        ?string $reference = null,
+    ): array {
+        $lock = Cache::lock("seo-subscription-billing:{$subscription->id}", 120);
+
+        if (! $lock->get()) {
+            return $this->result(false, 'A charge for this subscription is already in progress.', 409);
+        }
+
+        try {
+            $subscription->refresh();
+
+            if (! $subscription->isActive()) {
+                return $this->result(false, 'Only active subscriptions can record a payment.', 422);
+            }
+
+            $period_start = $this->ensureNextBillingDate($subscription);
+
+            if ($paid = $this->findPaidChargeForMonth($subscription, $period_start)) {
+                return $this->result(false, "{$paid->periodLabel()} is already paid.", 409, $paid);
+            }
+
+            $charge = $subscription->charges()
+                ->whereDate('period_start', $period_start->toDateString())
+                ->first()
+                ?? SeoSubscriptionCharge::create([
+                    'seo_package_subscription_id' => $subscription->id,
+                    'user_id'                     => $subscription->user_id,
+                    'period_start'                => $period_start->toDateString(),
+                    'period_end'                  => $subscription->periodEndFor($period_start)->toDateString(),
+                    'amount'                      => $subscription->monthly_price,
+                    'status'                      => SeoSubscriptionCharge::STATUS_PENDING,
+                    'trigger'                     => SeoSubscriptionCharge::TRIGGER_EXTERNAL,
+                ]);
+
+            $invoice    = $this->resolvePeriodInvoice($subscription, $charge, $admin);
+            $actor_name = $admin ? ($admin->full_name ?: $admin->email) : 'System';
+            $reference  = $this->nullIfBlank($reference);
+            $period     = $charge->periodLabel();
+
+            DB::transaction(function () use ($subscription, $charge, $invoice, $admin, $actor_name, $reference, $period) {
+                if ($invoice->status !== 'paid') {
+                    $invoice->update([
+                        'status'         => 'paid',
+                        'payment_method' => 'Manual Payment',
+                        'date_paid'      => now(),
+                    ]);
+
+                    InvoiceHistory::create([
+                        'invoice_id'     => $invoice->id,
+                        'event'          => 'invoice paid',
+                        'description'    => "SEO subscription payment for {$period} recorded as paid outside the portal by {$actor_name}."
+                            . ($reference ? " Reference: {$reference}." : ''),
+                        'actor_id'       => $admin?->id,
+                        'actor_name'     => $actor_name,
+                        'actor_initials' => $this->buildInitials($actor_name),
+                        'actor_type'     => $admin ? 'admin' : 'system',
+                    ]);
+
+                    Transaction::create([
+                        'user_id'        => $subscription->user_id,
+                        'type'           => 'purchase',
+                        'status'         => 'success',
+                        'amount'         => $charge->amount,
+                        'payment_method' => 'manual',
+                        'invoice_id'     => (string) $invoice->id,
+                        'description'    => "SEO subscription {$period}, invoice {$invoice->invoice_number} paid outside the portal."
+                            . ($reference ? " Reference: {$reference}." : ''),
+                        'metadata'       => [
+                            'seo_subscription_id'        => (string) $subscription->id,
+                            'seo_subscription_charge_id' => (string) $charge->id,
+                            'billing_period'             => $charge->period_start->toDateString(),
+                            'charge_trigger'             => SeoSubscriptionCharge::TRIGGER_EXTERNAL,
+                            'recorded_by_admin_id'       => $admin ? (string) $admin->id : '',
+                            'reference'                  => $reference ?? '',
+                        ],
+                    ]);
+                }
+
+                $charge->fill([
+                    'status'          => SeoSubscriptionCharge::STATUS_SUCCEEDED,
+                    'trigger'         => SeoSubscriptionCharge::TRIGGER_EXTERNAL,
+                    'charged_by_id'   => $admin?->id,
+                    'paid_at'         => now(),
+                    'next_retry_at'   => null,
+                    'failure_code'    => null,
+                    'failure_message' => null,
+                ])->save();
+
+                $this->advanceBillingDate($subscription, $charge);
+            });
+
+            return $this->result(true, "{$period} was recorded as paid. The client will not be charged for it.", 200, $charge->refresh());
+        } finally {
+            $lock->release();
+        }
+    }
+
     // ── Internals ───────────────────────────────────────────────────────────
+
+    /**
+     * Moves next_billing_date past every month that is already paid and
+     * returns the new date. Capped so bad data can never loop forever.
+     */
+    private function skipPaidMonths(SeoPackageSubscription $subscription): Carbon
+    {
+        $anchor = $subscription->anchorDay();
+        $date   = $subscription->next_billing_date->copy()->startOfDay();
+
+        for ($i = 0; $i < 24 && $this->findPaidChargeForMonth($subscription, $date); $i++) {
+            $date = SeoPackageSubscription::advanceByOneMonth($date, $anchor);
+        }
+
+        $subscription->update(['next_billing_date' => $date->toDateString()]);
+
+        return $date;
+    }
+
+    /**
+     * A declined card attempt, listed in Transactions as a failed purchase
+     * so every charge made for a subscription can be audited in one place.
+     */
+    private function recordFailedTransaction(
+        SeoPackageSubscription $subscription,
+        SeoSubscriptionCharge $charge,
+        Invoice $invoice,
+        array $charge_result,
+        string $trigger,
+    ): void {
+        try {
+            Transaction::create([
+                'user_id'           => $subscription->user_id,
+                'type'              => 'failed_purchase',
+                'status'            => 'failed',
+                'amount'            => $charge->amount,
+                'payment_method'    => 'credit_card',
+                'payment_intent_id' => $charge_result['payment_intent_id'] ?? null,
+                'invoice_id'        => (string) $invoice->id,
+                'description'       => ($trigger === SeoSubscriptionCharge::TRIGGER_AUTOMATIC ? 'SEO subscription auto renewal' : 'SEO subscription charge')
+                    . " for {$charge->periodLabel()} declined on card on file ({$charge->card_label}), attempt {$charge->attempt_count}.",
+                'error_message'     => $charge_result['message'] ?? 'The card could not be charged.',
+                'metadata'          => [
+                    'seo_subscription_id'        => (string) $subscription->id,
+                    'seo_subscription_charge_id' => (string) $charge->id,
+                    'billing_period'             => $charge->period_start->toDateString(),
+                    'charge_trigger'             => $trigger,
+                    'failure_code'               => $charge_result['error_code'] ?? 'card_declined',
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            logger()->warning("Failed to record the declined transaction for SEO subscription charge {$charge->id}", [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 
     private function handleFailure(
         SeoPackageSubscription $subscription,
@@ -735,7 +945,7 @@ class SeoSubscriptionBillingService
             return $subscription->next_billing_date->copy()->startOfDay();
         }
 
-        $today = now()->startOfDay();
+        $today = BillingCalendar::today();
 
         $subscription->update([
             'next_billing_date'  => $today->toDateString(),

@@ -261,6 +261,7 @@ class InvoiceCardPaymentService
                 transaction_description: $transaction_description,
                 send_client_receipt: $send_client_receipt,
                 send_admin_paid_email: $send_admin_paid_email,
+                transaction_metadata: $extra_metadata ?: null,
             );
 
             return $result['success'] ? $result + ['payment_intent_id' => $payment_intent_id] : $result;
@@ -345,11 +346,12 @@ class InvoiceCardPaymentService
         string $transaction_description,
         bool $send_client_receipt = true,
         bool $send_admin_paid_email = true,
+        ?array $transaction_metadata = null,
     ): array {
         $already_paid = false;
 
         try {
-            DB::transaction(function () use ($invoice, $payment_intent_id, $history, $transaction_description, &$already_paid) {
+            DB::transaction(function () use ($invoice, $payment_intent_id, $history, $transaction_description, $transaction_metadata, &$already_paid) {
                 $locked = Invoice::where('id', $invoice->id)->lockForUpdate()->first();
 
                 if (! in_array($locked->status, self::PAYABLE_STATUSES, true)) {
@@ -375,6 +377,7 @@ class InvoiceCardPaymentService
                     'payment_intent_id' => $payment_intent_id,
                     'invoice_id'        => (string) $locked->id,
                     'description'       => $transaction_description,
+                    'metadata'          => $transaction_metadata,
                 ]);
             });
         } catch (\Exception $e) {

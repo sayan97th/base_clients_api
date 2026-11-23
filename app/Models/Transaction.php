@@ -19,7 +19,8 @@ class Transaction extends Model
 
     public const STATUSES = ['success', 'failed'];
 
-    public const PAYMENT_METHODS = ['credit_card', 'account_credits', 'hybrid'];
+    // manual: paid outside the portal (bank transfer, check) and recorded by an admin.
+    public const PAYMENT_METHODS = ['credit_card', 'account_credits', 'hybrid', 'manual'];
 
     protected $fillable = [
         'user_id',

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PaymentProfile;
 use App\Models\SeoPackageSubscription;
 use App\Models\SeoSubscriptionCharge;
+use App\Support\BillingCalendar;
 use Illuminate\Support\Collection;
 
 /**
@@ -131,7 +132,7 @@ class SeoSubscriptionPaymentHealthService
 
         $charges        = $this->chargesOf($subscription);
         $next_date      = $subscription->next_billing_date;
-        $today          = now()->startOfDay();
+        $today          = BillingCalendar::today();
         $current_charge = $next_date
             ? $charges->first(fn (SeoSubscriptionCharge $charge) => $charge->period_start?->isSameDay($next_date))
             : null;

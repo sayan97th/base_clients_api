@@ -4,6 +4,8 @@ namespace App\Http\Requests\Admin\SeoPackages;
 
 use App\Models\PaymentProfile;
 use App\Models\SeoPackageSubscription;
+use App\Services\SeoSubscriptionBillingService;
+use App\Support\BillingCalendar;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -50,7 +52,9 @@ class UpdateAdminSeoPackageSubscriptionRequest extends FormRequest
                 'string',
                 Rule::exists('payment_profiles', 'id')->where('user_id', (int) $subscription?->user_id),
             ],
-            'next_billing_date'        => ['sometimes', 'nullable', 'date', 'after_or_equal:today'],
+            // Compared against "today" in the admin's own timezone, see after().
+            'next_billing_date'        => ['sometimes', 'nullable', 'date'],
+            'timezone'                 => ['sometimes', 'nullable', 'string', 'max:64'],
             'reminder_days_before'     => ['sometimes', 'nullable', 'integer', 'min:0', 'max:' . SeoPackageSubscription::MAX_REMINDER_DAYS],
             'ends_at'                  => ['sometimes', 'nullable', 'date'],
             'notes'                    => ['sometimes', 'nullable', 'string', 'max:1000'],
@@ -74,6 +78,26 @@ class UpdateAdminSeoPackageSubscriptionRequest extends FormRequest
                     );
                 }
 
+                $next_billing_date = $this->input('next_billing_date');
+
+                if ($next_billing_date) {
+                    if (BillingCalendar::isPast($next_billing_date, $this->input('timezone'))) {
+                        $validator->errors()->add('next_billing_date', 'The next billing date cannot be in the past.');
+                    }
+
+                    // A month is billed once: moving the schedule into a month
+                    // that is already paid would charge the client twice.
+                    $paid_charge = app(SeoSubscriptionBillingService::class)
+                        ->findPaidChargeForMonth($subscription, $next_billing_date);
+
+                    if ($paid_charge) {
+                        $validator->errors()->add(
+                            'next_billing_date',
+                            "{$paid_charge->periodLabel()} is already paid. Pick a date in a later month so the client is not charged twice."
+                        );
+                    }
+                }
+
                 $ends_at = $this->input('ends_at');
 
                 if ($ends_at && $subscription->starts_at && $subscription->starts_at->gte($ends_at)) {
@@ -89,7 +113,6 @@ class UpdateAdminSeoPackageSubscriptionRequest extends FormRequest
             'package_id.required'               => 'Select an SEO package, or switch to a custom price.',
             'custom_price.required'             => 'Enter the monthly amount to charge this client.',
             'custom_price.min'                  => 'The monthly amount must be at least $0.50.',
-            'next_billing_date.after_or_equal'  => 'The next billing date cannot be in the past.',
             'payment_profile_id.exists'         => 'The selected card does not belong to this client.',
             'reminder_days_before.integer'      => 'The reminder must be a whole number of days.',
             'reminder_days_before.max'          => 'The reminder can be sent at most ' . SeoPackageSubscription::MAX_REMINDER_DAYS . ' days before the charge.',

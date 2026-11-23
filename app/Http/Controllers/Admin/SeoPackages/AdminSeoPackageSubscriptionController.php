@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\InvoiceCardPaymentService;
 use App\Services\SeoSubscriptionBillingService;
 use App\Services\SeoSubscriptionPaymentHealthService;
+use App\Support\BillingCalendar;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -129,8 +130,8 @@ class AdminSeoPackageSubscriptionController extends Controller
                 'monthly_recurring'     => round((float) (clone $active)->sum('monthly_price'), 2),
                 'renewing_next_7_days'  => (clone $active)
                     ->where('auto_renew', true)
-                    ->whereDate('next_billing_date', '>=', now()->toDateString())
-                    ->whereDate('next_billing_date', '<=', now()->addDays(7)->toDateString())
+                    ->whereDate('next_billing_date', '>=', BillingCalendar::todayString())
+                    ->whereDate('next_billing_date', '<=', BillingCalendar::today()->addDays(7)->toDateString())
                     ->count(),
                 'collected_this_month'  => round((float) SeoSubscriptionCharge::where('status', SeoSubscriptionCharge::STATUS_SUCCEEDED)
                     ->where('paid_at', '>=', now()->startOfMonth())
@@ -199,7 +200,20 @@ class AdminSeoPackageSubscriptionController extends Controller
         $subscription = $this->billing_service->activate($data);
         $charge       = null;
 
-        if ($request->boolean('charge_now')) {
+        if ($request->boolean('first_period_paid_outside')) {
+            // Already paid another way: recorded as paid, never charged.
+            $paid_result = $this->billing_service->recordPeriodPaidOutside(
+                $subscription,
+                Auth::user(),
+                $request->input('outside_payment_reference'),
+            );
+
+            $charge = [
+                'success'      => $paid_result['success'],
+                'message'      => $paid_result['message'],
+                'paid_outside' => true,
+            ];
+        } elseif ($request->boolean('charge_now')) {
             $charge_result = $this->billing_service->chargeCurrentPeriod(
                 $subscription,
                 SeoSubscriptionCharge::TRIGGER_MANUAL,
@@ -207,8 +221,9 @@ class AdminSeoPackageSubscriptionController extends Controller
             );
 
             $charge = [
-                'success' => $charge_result['success'],
-                'message' => $charge_result['message'],
+                'success'      => $charge_result['success'],
+                'message'      => $charge_result['message'],
+                'paid_outside' => false,
             ];
         }
 
@@ -396,7 +411,7 @@ class AdminSeoPackageSubscriptionController extends Controller
             ->where('status', 'active')
             ->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_CURRENT)
             ->whereNotNull('next_billing_date')
-            ->whereDate('next_billing_date', '<', now()->toDateString())
+            ->whereDate('next_billing_date', '<', BillingCalendar::todayString())
             ->where(fn ($q) => $q->whereNull('ends_at')->orWhereColumn('next_billing_date', '<=', 'ends_at'));
     }
 }

@@ -98,6 +98,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Billing Timezone
+    |--------------------------------------------------------------------------
+    |
+    | SEO subscription billing dates are calendar days. This timezone decides
+    | when "today" starts for the billing run and for any request that does
+    | not send the admin's own timezone. Keep it in sync with the timezone the
+    | seo-subscriptions:process-billing schedule runs in.
+    |
+    */
+
+    'billing_timezone' => env('BILLING_TIMEZONE', 'America/Denver'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

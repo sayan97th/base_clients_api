@@ -152,6 +152,30 @@ class AdminSeoPackageSubscriptionController extends Controller
         return response()->json(['data' => $card_payment_service->listPaymentProfiles($user)]);
     }
 
+    /**
+     * GET /api/admin/seo-packages/subscriptions/{id}/payment-profiles
+     *
+     * Cards on file for the owner of this subscription only, used by the
+     * manual checkout page. The client is resolved on the server from the
+     * subscription, so the page can never list another client's cards.
+     */
+    public function subscriptionPaymentProfiles(int $id, InvoiceCardPaymentService $card_payment_service): JsonResponse
+    {
+        $subscription = SeoPackageSubscription::with('user')->find($id);
+
+        if (! $subscription || ! $subscription->user) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
+
+        return response()->json([
+            'data' => $card_payment_service->listPaymentProfiles($subscription->user),
+            'meta' => [
+                'subscription_id' => $subscription->id,
+                'user_id'         => $subscription->user_id,
+            ],
+        ]);
+    }
+
     public function store(StoreAdminSeoPackageSubscriptionRequest $request): JsonResponse
     {
         $data         = $request->validated();
@@ -199,25 +223,42 @@ class AdminSeoPackageSubscriptionController extends Controller
     /**
      * POST /api/admin/seo-packages/subscriptions/{id}/charge
      *
-     * Bills the current period now with the card on file.
+     * Bills the current period now with the card on file. Every failure
+     * response carries an `error_code` so the checkout page can explain
+     * the problem (insufficient funds, expired card, and so on).
      */
-    public function charge(ChargeAdminSeoPackageSubscriptionRequest $request, int $id): JsonResponse
-    {
+    public function charge(
+        ChargeAdminSeoPackageSubscriptionRequest $request,
+        int $id,
+        InvoiceCardPaymentService $card_payment_service,
+    ): JsonResponse {
         $subscription = SeoPackageSubscription::find($id);
 
         if (! $subscription) {
-            return response()->json(['message' => 'Subscription not found.'], 404);
+            return $this->chargeError('Subscription not found.', 'subscription_not_found', 404);
         }
 
         $payment_profile = null;
 
         if ($request->filled('payment_profile_id')) {
+            // Scoped to the subscription owner: a card that belongs to any
+            // other user is treated as if it did not exist.
             $payment_profile = PaymentProfile::where('id', $request->input('payment_profile_id'))
                 ->where('user_id', $subscription->user_id)
                 ->first();
 
             if (! $payment_profile) {
-                return response()->json(['message' => 'Saved card not found for this client.'], 404);
+                return $this->chargeError('Saved card not found for this client.', 'card_not_found', 404);
+            }
+
+            // Rejected before any attempt, so no failed charge is recorded
+            // and the subscription is not flagged as past due.
+            if ($card_payment_service->isPaymentProfileExpired($payment_profile)) {
+                return $this->chargeError(
+                    'This card has expired. Choose another card or ask the client to add a new one.',
+                    'expired_card',
+                    422,
+                );
             }
         }
 
@@ -228,14 +269,38 @@ class AdminSeoPackageSubscriptionController extends Controller
             $payment_profile,
         );
 
+        $charge = $result['charge']?->load('invoice:id,unique_id,invoice_number,status,total_amount');
+
         if (! $result['success']) {
-            return response()->json([
-                'message' => $result['message'],
-                'charge'  => $result['charge'] ? new AdminSeoSubscriptionChargeResource($result['charge']->load('invoice')) : null,
-            ], $result['status_code']);
+            return $this->chargeError(
+                $result['message'],
+                $charge?->isSucceeded()
+                    ? 'already_paid'
+                    : ($charge?->failure_code ?? $this->errorCodeForStatus($result['status_code'])),
+                $result['status_code'],
+                $charge,
+            );
         }
 
-        return $this->detailResponse($subscription, $result['message']);
+        return $this->detailResponse($subscription, $result['message'], $charge);
+    }
+
+    private function chargeError(string $message, string $error_code, int $status_code, ?SeoSubscriptionCharge $charge = null): JsonResponse
+    {
+        return response()->json([
+            'message'    => $message,
+            'error_code' => $error_code,
+            'charge'     => $charge ? new AdminSeoSubscriptionChargeResource($charge) : null,
+        ], $status_code);
+    }
+
+    private function errorCodeForStatus(int $status_code): string
+    {
+        return match ($status_code) {
+            409     => 'charge_conflict',
+            422     => 'charge_not_allowed',
+            default => 'card_declined',
+        };
     }
 
     public function cancel(CancelAdminSeoPackageSubscriptionRequest $request, int $id): JsonResponse
@@ -260,7 +325,11 @@ class AdminSeoPackageSubscriptionController extends Controller
         return response()->json(['data' => new AdminSeoPackageSubscriptionResource($subscription->load($this->eagerLoad))]);
     }
 
-    private function detailResponse(SeoPackageSubscription $subscription, ?string $message = null): JsonResponse
+    private function detailResponse(
+        SeoPackageSubscription $subscription,
+        ?string $message = null,
+        ?SeoSubscriptionCharge $charge = null,
+    ): JsonResponse
     {
         $subscription->refresh()->load([
             ...$this->eagerLoad,
@@ -280,6 +349,7 @@ class AdminSeoPackageSubscriptionController extends Controller
                 'card_on_file'     => (bool) $this->billing_service->resolvePaymentProfile($subscription),
             ],
             'message' => $message,
+            'charge'  => $charge ? new AdminSeoSubscriptionChargeResource($charge) : null,
         ], fn ($value) => $value !== null));
     }
 }

@@ -15,7 +15,7 @@ class ChargeAdminSeoPackageSubscriptionRequest extends FormRequest
     {
         return [
             // Optional one time override; defaults to the subscription's card.
-            'payment_profile_id' => ['nullable', 'string'],
+            'payment_profile_id' => ['nullable', 'string', 'max:64'],
         ];
     }
 }

@@ -418,6 +418,104 @@ class SeoSubscriptionBillingTest extends TestCase
         $this->assertSame(0, $this->billingEmailsOf(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED));
     }
 
+    public function test_manual_charge_failure_returns_the_decline_code_for_the_checkout_page(): void
+    {
+        $this->makeCard();
+        $subscription = $this->makeSubscription(['auto_renew' => false]);
+
+        $this->mockStripe(function (MockInterface $mock) {
+            $mock->shouldReceive('chargeSavedCardOffSession')
+                ->once()
+                ->andReturn(['success' => false, 'message' => 'Your card has insufficient funds.', 'error_code' => 'insufficient_funds']);
+        });
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson("/api/admin/seo-packages/subscriptions/{$subscription->id}/charge")
+            ->assertStatus(402)
+            ->assertJsonPath('error_code', 'insufficient_funds')
+            ->assertJsonPath('charge.status', 'failed')
+            ->assertJsonPath('charge.failure_code', 'insufficient_funds');
+    }
+
+    public function test_successful_manual_charge_returns_the_charge_receipt(): void
+    {
+        $this->makeCard();
+        $subscription = $this->makeSubscription(['auto_renew' => false]);
+
+        $this->mockStripe(function (MockInterface $mock) {
+            $mock->shouldReceive('chargeSavedCardOffSession')
+                ->once()
+                ->andReturn(['success' => true, 'payment_intent_id' => 'pi_receipt']);
+        });
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson("/api/admin/seo-packages/subscriptions/{$subscription->id}/charge")
+            ->assertOk()
+            ->assertJsonPath('charge.status', 'succeeded')
+            ->assertJsonPath('charge.payment_intent_id', 'pi_receipt')
+            ->assertJsonPath('charge.card_label', fn ($label) => str_contains((string) $label, '4242'));
+    }
+
+    public function test_manual_charge_never_uses_a_card_from_another_client(): void
+    {
+        $this->makeCard();
+        $subscription = $this->makeSubscription(['auto_renew' => false]);
+
+        $other_client = User::factory()->create(['is_active' => true]);
+        $other_card   = $this->makeCard(['user_id' => $other_client->id, 'last_four' => '1111']);
+
+        $this->mockStripe(function (MockInterface $mock) {
+            $mock->shouldNotReceive('chargeSavedCardOffSession');
+        });
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson("/api/admin/seo-packages/subscriptions/{$subscription->id}/charge", [
+                'payment_profile_id' => $other_card->id,
+            ])
+            ->assertNotFound()
+            ->assertJsonPath('error_code', 'card_not_found');
+
+        $this->assertSame(0, SeoSubscriptionCharge::count());
+    }
+
+    public function test_manual_charge_rejects_an_expired_card_before_any_attempt(): void
+    {
+        $expired_card = $this->makeCard(['expiry_month' => '01', 'expiry_year' => '2025']);
+        $subscription = $this->makeSubscription(['auto_renew' => false]);
+
+        $this->mockStripe(function (MockInterface $mock) {
+            $mock->shouldNotReceive('chargeSavedCardOffSession');
+        });
+
+        $this->actingAs($this->admin, 'api')
+            ->postJson("/api/admin/seo-packages/subscriptions/{$subscription->id}/charge", [
+                'payment_profile_id' => $expired_card->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error_code', 'expired_card');
+
+        $this->assertSame(0, SeoSubscriptionCharge::count());
+        $this->assertSame('current', $subscription->fresh()->payment_status);
+    }
+
+    public function test_checkout_lists_only_the_cards_of_the_subscription_owner(): void
+    {
+        $own_card     = $this->makeCard(['last_four' => '4242']);
+        $subscription = $this->makeSubscription();
+
+        $other_client = User::factory()->create(['is_active' => true]);
+        $this->makeCard(['user_id' => $other_client->id, 'last_four' => '1111']);
+
+        $response = $this->actingAs($this->admin, 'api')
+            ->getJson("/api/admin/seo-packages/subscriptions/{$subscription->id}/payment-profiles")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $own_card->id)
+            ->assertJsonPath('meta.user_id', $this->client->id);
+
+        $this->assertNotContains('1111', array_column($response->json('data'), 'last_four'));
+    }
+
     public function test_admin_email_reaches_every_recipient_in_email_notification_settings(): void
     {
         EmailNotificationSetting::create([

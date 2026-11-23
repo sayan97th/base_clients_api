@@ -290,6 +290,7 @@ Route::middleware(['auth:api', 'active'])->group(function () {
                 Route::get('payment-profiles', [AdminSeoPackageSubscriptionController::class, 'paymentProfiles']);
                 Route::get('/',                [AdminSeoPackageSubscriptionController::class, 'index']);
                 Route::get('{id}',             [AdminSeoPackageSubscriptionController::class, 'show'])->whereNumber('id');
+                Route::get('{id}/payment-profiles', [AdminSeoPackageSubscriptionController::class, 'subscriptionPaymentProfiles'])->whereNumber('id');
                 Route::patch('{id}/cancel',    [AdminSeoPackageSubscriptionController::class, 'cancel'])->whereNumber('id');
             });
 

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Cart;
 
+use App\Models\Coupon;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpsertCartRequest extends FormRequest
 {
@@ -38,12 +40,12 @@ class UpsertCartRequest extends FormRequest
             'items.*.intake_data.*.*.type_of_content'           => ['nullable', 'string', 'in:Blog Article,Product Page,Home Page,About Us Page,Other'],
             'items.*.intake_data.*.*.notes'                     => ['nullable', 'string', 'max:5000'],
 
-            'applied_coupons'                    => ['nullable', 'array'],
+            'applied_coupons'                    => ['nullable', 'array', 'max:' . Coupon::MAX_PER_ORDER],
             'applied_coupons.*.coupon_id'        => ['required', 'string', 'uuid'],
             'applied_coupons.*.code'             => ['required', 'string', 'max:100'],
             'applied_coupons.*.coupon_name'      => ['required', 'string', 'max:255'],
             'applied_coupons.*.discount_amount'  => ['required', 'numeric', 'min:0'],
-            'applied_coupons.*.discount_type'    => ['required', 'string', 'in:percentage,fixed_amount'],
+            'applied_coupons.*.discount_type'    => ['required', 'string', Rule::in(Coupon::DISCOUNT_TYPES)],
             'applied_coupons.*.discount_value'   => ['required', 'numeric', 'min:0'],
 
             'coupon_input_code'                  => ['nullable', 'string', 'max:100'],

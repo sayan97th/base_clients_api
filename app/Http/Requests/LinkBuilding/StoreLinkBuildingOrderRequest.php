@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\LinkBuilding;
 
+use App\Rules\SinglePromoCodePerOrder;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreLinkBuildingOrderRequest extends FormRequest
@@ -52,7 +53,7 @@ class StoreLinkBuildingOrderRequest extends FormRequest
             'billing.postal_code'                => 'nullable|string|max:20',
             'payment'                            => 'required|array',
             'payment.payment_method_id'          => 'required|string|starts_with:pi_',
-            'coupon_ids'                         => 'nullable|array',
+            'coupon_ids'                         => ['nullable', 'array', new SinglePromoCodePerOrder()],
             'coupon_ids.*'                       => 'string|exists:coupons,id',
         ];
     }

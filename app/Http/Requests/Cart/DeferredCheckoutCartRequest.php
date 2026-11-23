@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Cart;
 
 use App\Models\GiftCardRewardClaim;
+use App\Rules\SinglePromoCodePerOrder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -19,7 +20,7 @@ class DeferredCheckoutCartRequest extends FormRequest
             'deferred_payment'    => ['required', 'boolean', 'accepted'],
             'total_amount'        => ['required', 'numeric', 'min:0.01'],
             'session_id'          => ['nullable', 'string', 'uuid'],
-            'coupon_ids'          => ['nullable', 'array'],
+            'coupon_ids'          => ['nullable', 'array', new SinglePromoCodePerOrder()],
             'coupon_ids.*'        => ['string', 'uuid'],
             // Optional gift card details for money back promo codes (HAPPYHOLIDAYS).
             // The client may skip this and fill it in later from the order page.

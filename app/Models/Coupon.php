@@ -30,6 +30,15 @@ class Coupon extends Model
         self::DISCOUNT_TYPE_GIFT_CARD_REWARD,
     ];
 
+    /**
+     * Only one promo code may be applied per order (checkout). Promo codes can
+     * never be stacked, whatever their type.
+     */
+    public const MAX_PER_ORDER = 1;
+
+    /** Shown when a client tries to apply more than one promo code to an order. */
+    public const COMBINATION_ERROR_MESSAGE = 'This promo cannot be combined with other offers.';
+
     /** Discount scope values stored in applies_to. */
     public const APPLIES_TO_ALL              = 'all';
     public const APPLIES_TO_DR_TIERS         = 'specific_product';

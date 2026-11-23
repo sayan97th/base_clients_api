@@ -92,7 +92,7 @@ class GiftCardRewardServiceTest extends TestCase
             $this->makeRegularCoupon()->id,
         ]);
 
-        $this->assertSame('The HAPPYHOLIDAYS promo code cannot be combined with other promo codes.', $error);
+        $this->assertSame('This promo cannot be combined with other offers.', $error);
     }
 
     public function test_two_regular_coupons_are_not_blocked_by_the_reward_rule(): void

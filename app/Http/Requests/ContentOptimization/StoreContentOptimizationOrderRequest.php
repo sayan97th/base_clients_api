@@ -3,6 +3,7 @@
 namespace App\Http\Requests\ContentOptimization;
 
 use App\Models\ContentOptimizationTier;
+use App\Rules\SinglePromoCodePerOrder;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreContentOptimizationOrderRequest extends FormRequest
@@ -18,7 +19,7 @@ class StoreContentOptimizationOrderRequest extends FormRequest
             'payment'                                                   => ['required', 'array'],
             'payment.payment_method_id'                                 => ['required', 'string'],
             'total_amount'                                              => ['required', 'numeric', 'gt:0'],
-            'coupon_ids'                                                => ['nullable', 'array'],
+            'coupon_ids'                                                => ['nullable', 'array', new SinglePromoCodePerOrder()],
             'coupon_ids.*'                                              => ['string', 'exists:coupons,id'],
             'order_title'                                               => ['nullable', 'string', 'max:255'],
             'order_notes'                                               => ['nullable', 'string'],

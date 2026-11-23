@@ -3,6 +3,7 @@
 namespace App\Http\Requests\NewContent;
 
 use App\Models\NewContentTier;
+use App\Rules\SinglePromoCodePerOrder;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreNewContentOrderRequest extends FormRequest
@@ -17,7 +18,7 @@ class StoreNewContentOrderRequest extends FormRequest
         return [
             'order_notes'                        => ['nullable', 'string'],
             'total_amount'                       => ['required', 'numeric', 'gt:0'],
-            'coupon_ids'                         => ['nullable', 'array'],
+            'coupon_ids'                         => ['nullable', 'array', new SinglePromoCodePerOrder()],
             'coupon_ids.*'                       => ['string', 'exists:coupons,id'],
             'items'                              => ['required', 'array', 'min:1'],
             'items.*.tier_id'                    => ['required', 'string', 'exists:new_content_tiers,id'],

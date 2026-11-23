@@ -71,9 +71,7 @@ class GiftCardRewardService
             ->where('discount_type', Coupon::DISCOUNT_TYPE_GIFT_CARD_REWARD)
             ->first();
 
-        return $reward_coupon
-            ? "The {$reward_coupon->code} promo code cannot be combined with other promo codes."
-            : null;
+        return $reward_coupon ? Coupon::COMBINATION_ERROR_MESSAGE : null;
     }
 
     /**

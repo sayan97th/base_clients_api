@@ -3,6 +3,7 @@
 namespace App\Http\Requests\PremiumMentions;
 
 use App\Models\PremiumMentionsPlan;
+use App\Rules\SinglePromoCodePerOrder;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StorePremiumMentionsOrderRequest extends FormRequest
@@ -18,7 +19,7 @@ class StorePremiumMentionsOrderRequest extends FormRequest
             'plan_id'              => ['required', 'string', 'exists:premium_mentions_plans,id'],
             'order_notes'          => ['nullable', 'string', 'max:2000'],
             'total_amount'         => ['required', 'numeric', 'min:0'],
-            'coupon_ids'           => ['nullable', 'array'],
+            'coupon_ids'           => ['nullable', 'array', new SinglePromoCodePerOrder()],
             'coupon_ids.*'         => ['string', 'exists:coupons,id'],
             'billing'              => ['required', 'array'],
             'billing.company'      => ['nullable', 'string', 'max:255'],

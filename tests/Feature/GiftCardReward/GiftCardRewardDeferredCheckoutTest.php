@@ -109,7 +109,7 @@ class GiftCardRewardDeferredCheckoutTest extends TestCase
     {
         $this->payLater([$this->makeRewardCoupon()->id, $this->makeRegularCoupon()->id])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'The HAPPYHOLIDAYS promo code cannot be combined with other promo codes.');
+            ->assertJsonPath('message', 'This promo cannot be combined with other offers.');
 
         $this->assertSame(0, GiftCardRewardClaim::count());
     }

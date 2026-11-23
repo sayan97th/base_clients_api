@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature\Admin\SeoPackages;
+namespace Tests\Feature\Admin\SeoPackages\Subscriptions;
 
 use App\Jobs\SendAdminInvoicePaidNotificationJob;
 use App\Jobs\SendAdminSeoSubscriptionBillingNotificationJob;

@@ -49,6 +49,7 @@ class AdminSeoPackageSubscriptionResource extends JsonResource
                 'first_name'   => $this->user->first_name,
                 'last_name'    => $this->user->last_name,
                 'email'        => $this->user->email,
+                'company'      => $this->user->company,
                 'organization' => $this->user->organization?->name,
             ]),
             'package'                  => $this->whenLoaded('package', fn () => $this->package ? [

@@ -186,6 +186,7 @@ class InvoiceCardPaymentService
         array $extra_metadata = [],
         bool $send_client_receipt = true,
         ?string $idempotency_key = null,
+        bool $send_admin_paid_email = true,
         ?string $stripe_description = null,
         ?string $statement_descriptor_suffix = null,
     ): array {
@@ -259,6 +260,7 @@ class InvoiceCardPaymentService
                 history: $history($payment_intent_id),
                 transaction_description: $transaction_description,
                 send_client_receipt: $send_client_receipt,
+                send_admin_paid_email: $send_admin_paid_email,
             );
 
             return $result['success'] ? $result + ['payment_intent_id' => $payment_intent_id] : $result;
@@ -342,6 +344,7 @@ class InvoiceCardPaymentService
         array $history,
         string $transaction_description,
         bool $send_client_receipt = true,
+        bool $send_admin_paid_email = true,
     ): array {
         $already_paid = false;
 
@@ -408,7 +411,7 @@ class InvoiceCardPaymentService
         $invoice->refresh();
 
         $this->transitionPaymentPendingOrders($invoice, $payment_intent_id);
-        $this->dispatchPaymentNotifications($invoice, $send_client_receipt);
+        $this->dispatchPaymentNotifications($invoice, $send_client_receipt, $send_admin_paid_email);
 
         return ['success' => true];
     }
@@ -416,7 +419,11 @@ class InvoiceCardPaymentService
     /**
      * Non-critical notifications: failures are logged, never rolled back.
      */
-    private function dispatchPaymentNotifications(Invoice $invoice, bool $send_client_receipt = true): void
+    private function dispatchPaymentNotifications(
+        Invoice $invoice,
+        bool $send_client_receipt = true,
+        bool $send_admin_paid_email = true,
+    ): void
     {
         $client = $invoice->user;
 
@@ -431,7 +438,11 @@ class InvoiceCardPaymentService
         }
 
         try {
-            SendAdminInvoicePaidNotificationJob::dispatch($invoice->id);
+            // Callers with their own, more specific admin email (SEO
+            // subscription renewals) skip the generic "invoice paid" one.
+            if ($send_admin_paid_email) {
+                SendAdminInvoicePaidNotificationJob::dispatch($invoice->id);
+            }
 
             $payer_name = $client?->full_name ?? $client?->email ?? 'A client';
 

@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Jobs\SendAdminSeoSubscriptionBillingNotificationJob;
 use App\Jobs\SendEmailJob;
+use App\Mail\AdminSeoSubscriptionBillingNotification;
 use App\Mail\SeoSubscriptionBillingEmail;
 use App\Models\Invoice;
 use App\Models\InvoiceHistory;
@@ -35,8 +37,9 @@ use Illuminate\Support\Facades\DB;
  *
  * The client gets a payment confirmation, a payment failed notice (first
  * and final failure only) and an optional reminder a few days before each
- * renewal. Admins get the usual invoice paid notification on success and an
- * in-app notification when a renewal fails.
+ * renewal. The admin recipients in Email Notification Settings get their own
+ * email for every collected payment and every failed renewal, plus an in-app
+ * notification when a renewal fails.
  */
 class SeoSubscriptionBillingService
 {
@@ -305,6 +308,7 @@ class SeoSubscriptionBillingService
                     'charged_by_admin_id'  => $admin ? (string) $admin->id : '',
                 ],
                 send_client_receipt: false,
+                send_admin_paid_email: false,
                 idempotency_key: "seo-subscription-charge-{$charge->id}-attempt-{$charge->attempt_count}",
                 stripe_description: "SEO subscription, {$period_text} ({$subscription->displayPlanName()})",
             );
@@ -330,6 +334,7 @@ class SeoSubscriptionBillingService
 
             $this->advanceBillingDate($subscription, $charge);
             $this->sendClientEmail($subscription->refresh(), SeoSubscriptionBillingEmail::VARIANT_PAYMENT_SUCCEEDED, $charge, $invoice->fresh());
+            $this->notifyAdminsByEmail($charge, AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_SUCCEEDED);
 
             return $this->result(true, "Charged \${$this->money($charge->amount)} for {$period_text}.", 200, $charge->refresh());
         } finally {
@@ -551,6 +556,7 @@ class SeoSubscriptionBillingService
             }
 
             $this->notifyAdminsOfFailure($subscription, $charge);
+            $this->notifyAdminsByEmail($charge, AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_FAILED);
         }
 
         return $this->result(false, $message, 402, $charge->refresh());
@@ -783,6 +789,21 @@ class SeoSubscriptionBillingService
             }
         } catch (\Throwable $e) {
             logger()->warning("Failed to notify admins about SEO subscription charge {$charge->id}", [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Admin recipients from Email Notification Settings get their own email
+     * for subscription payments (the generic "invoice paid" one is skipped).
+     */
+    private function notifyAdminsByEmail(SeoSubscriptionCharge $charge, string $variant): void
+    {
+        try {
+            SendAdminSeoSubscriptionBillingNotificationJob::dispatch($charge->id, $variant);
+        } catch (\Throwable $e) {
+            logger()->warning("Failed to queue the admin SEO subscription {$variant} email for charge {$charge->id}", [
                 'error' => $e->getMessage(),
             ]);
         }

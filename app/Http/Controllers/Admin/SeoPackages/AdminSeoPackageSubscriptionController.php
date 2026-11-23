@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Auth;
 class AdminSeoPackageSubscriptionController extends Controller
 {
     private array $eagerLoad = [
-        'user:id,first_name,last_name,email,organization_id',
+        'user:id,first_name,last_name,email,company,organization_id',
         'user.organization:id,name',
         'package:id,name,slug,price_per_month',
         'paymentProfile:id,user_id,card_brand,last_four,expiry_month,expiry_year',
@@ -42,7 +42,8 @@ class AdminSeoPackageSubscriptionController extends Controller
                 $q->whereHas('user', function ($user_q) use ($search) {
                     $user_q->where('first_name', 'like', "%{$search}%")
                            ->orWhere('last_name', 'like', "%{$search}%")
-                           ->orWhere('email', 'like', "%{$search}%");
+                           ->orWhere('email', 'like', "%{$search}%")
+                           ->orWhere('company', 'like', "%{$search}%");
                 })->orWhereHas('package', function ($pkg_q) use ($search) {
                     $pkg_q->where('name', 'like', "%{$search}%");
                 })->orWhere('plan_name', 'like', "%{$search}%");

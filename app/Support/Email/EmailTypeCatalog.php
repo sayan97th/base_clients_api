@@ -9,6 +9,7 @@ use App\Mail\AdminInvoiceRefundedNotification;
 use App\Mail\AdminNewTicketNotification;
 use App\Mail\AdminOrderCommentNotification;
 use App\Mail\AdminPayLaterOrderNotification;
+use App\Mail\AdminSeoSubscriptionBillingNotification;
 use App\Mail\AdminTicketMessageNotification;
 use App\Mail\ClientCommentReplyNotification;
 use App\Mail\ClientInvitationMail;
@@ -121,6 +122,13 @@ final class EmailTypeCatalog
             'audience'    => self::AUDIENCE_ADMIN,
             'category'    => self::CATEGORY_BILLING,
             'classes'     => [AdminInvoiceRefundedNotification::class],
+        ],
+        'admin_seo_subscription_billing' => [
+            'label'       => 'SEO subscription payment',
+            'description' => 'Sent to admins when an SEO subscription payment is collected or fails, with the client, amount, card and invoice.',
+            'audience'    => self::AUDIENCE_ADMIN,
+            'category'    => self::CATEGORY_BILLING,
+            'classes'     => [AdminSeoSubscriptionBillingNotification::class],
         ],
         'admin_order_comment' => [
             'label'       => 'New order comment',

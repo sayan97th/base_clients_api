@@ -2,7 +2,11 @@
 
 namespace Tests\Feature\Admin\SeoPackages;
 
+use App\Jobs\SendAdminInvoicePaidNotificationJob;
+use App\Jobs\SendAdminSeoSubscriptionBillingNotificationJob;
 use App\Jobs\SendEmailJob;
+use App\Mail\AdminSeoSubscriptionBillingNotification;
+use App\Models\EmailNotificationSetting;
 use App\Mail\PaymentSuccessfulEmail;
 use App\Mail\SeoSubscriptionBillingEmail;
 use App\Models\Invoice;
@@ -223,6 +227,11 @@ class SeoSubscriptionBillingTest extends TestCase
 
         $this->assertSame(1, $this->billingEmailsOf(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_SUCCEEDED));
         Mail::assertNotQueued(PaymentSuccessfulEmail::class);
+
+        // Admins get the subscription email instead of the generic invoice paid one.
+        Bus::assertDispatched(SendAdminSeoSubscriptionBillingNotificationJob::class, fn ($job) =>
+            $job->charge_id === $charge->id && $job->variant === AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_SUCCEEDED);
+        Bus::assertNotDispatched(SendAdminInvoicePaidNotificationJob::class);
     }
 
     public function test_running_the_billing_twice_never_charges_twice(): void
@@ -277,6 +286,8 @@ class SeoSubscriptionBillingTest extends TestCase
         $this->assertSame('2026-12-04', $charge->next_retry_at->toDateString());
         $this->assertSame('past_due', $subscription->refresh()->payment_status);
         $this->assertSame(1, $this->billingEmailsOf(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED));
+        Bus::assertDispatched(SendAdminSeoSubscriptionBillingNotificationJob::class, fn ($job) =>
+            $job->variant === AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_FAILED);
 
         // Same day: waits for the retry date, no second attempt.
         $this->runBilling();
@@ -405,6 +416,47 @@ class SeoSubscriptionBillingTest extends TestCase
 
         // Manual attempts are reported to the admin, the client is not emailed.
         $this->assertSame(0, $this->billingEmailsOf(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED));
+    }
+
+    public function test_admin_email_reaches_every_recipient_in_email_notification_settings(): void
+    {
+        EmailNotificationSetting::create([
+            'notify_all_admins' => false,
+            'enabled_user_ids'  => [$this->admin->id],
+            'custom_emails'     => ['billing@example.com'],
+        ]);
+
+        $this->client->update(['company' => 'Printed Image']);
+        $subscription = $this->makeSubscription();
+        $charge       = SeoSubscriptionCharge::create([
+            'seo_package_subscription_id' => $subscription->id,
+            'user_id'                     => $this->client->id,
+            'period_start'                => '2026-12-01',
+            'period_end'                  => '2026-12-31',
+            'amount'                      => 2000,
+            'status'                      => 'failed',
+            'trigger'                     => 'automatic',
+            'attempt_count'               => 1,
+            'card_label'                  => 'Visa ending in 4242',
+            'failure_message'             => 'Insufficient funds.',
+            'next_retry_at'               => '2026-12-04 15:00:00',
+        ]);
+
+        (new SendAdminSeoSubscriptionBillingNotificationJob($charge->id, AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_FAILED))->handle();
+
+        foreach ([$this->admin->email, 'billing@example.com'] as $email) {
+            Bus::assertDispatched(SendEmailJob::class, function (SendEmailJob $job) use ($email) {
+                if ($job->recipient_email !== $email || ! $job->mailable instanceof AdminSeoSubscriptionBillingNotification) {
+                    return false;
+                }
+
+                $html = $job->mailable->render();
+
+                return $job->mailable->client_company === 'Printed Image'
+                    && str_contains($html, 'Insufficient funds.')
+                    && str_contains($html, 'December 4, 2026');
+            });
+        }
     }
 
     // ── Reminders and schedule ──────────────────────────────────────────────

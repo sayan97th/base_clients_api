@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\SendAdminSeoSubscriptionBillingNotificationJob;
+use App\Jobs\SendAdminSeoSubscriptionPaymentMethodAlertJob;
 use App\Jobs\SendEmailJob;
 use App\Mail\AdminSeoSubscriptionBillingNotification;
 use App\Mail\SeoSubscriptionBillingEmail;
@@ -40,6 +41,12 @@ use Illuminate\Support\Facades\DB;
  * renewal. The admin recipients in Email Notification Settings get their own
  * email for every collected payment and every failed renewal, plus an in-app
  * notification when a renewal fails.
+ *
+ * Saved cards matter too: when a client removes the last valid card an auto
+ * renewal depends on, both the client and the admins are told before the
+ * renewal fails, and adding a new card retries a declined renewal on the
+ * next billing run. How far behind a subscription is (payment pending,
+ * months owed) is derived by SeoSubscriptionPaymentHealthService.
  */
 class SeoSubscriptionBillingService
 {
@@ -69,6 +76,7 @@ class SeoSubscriptionBillingService
         protected InvoiceCardPaymentService $card_payment_service,
         protected InvoiceNumberGenerator $invoice_number_generator,
         protected NotificationService $notification_service,
+        protected SeoSubscriptionPaymentHealthService $health_service,
     ) {}
 
     // ── Activation and settings ─────────────────────────────────────────────
@@ -170,8 +178,18 @@ class SeoSubscriptionBillingService
         return $subscription->refresh();
     }
 
-    public function cancel(SeoPackageSubscription $subscription, ?string $notes = null): SeoPackageSubscription
-    {
+    /**
+     * Ends the subscription at any time, including while payments are
+     * pending or several months behind. Unpaid invoices are kept open by
+     * default so the balance can still be collected; the admin can void
+     * them instead when the debt is written off.
+     */
+    public function cancel(
+        SeoPackageSubscription $subscription,
+        ?string $notes = null,
+        bool $void_open_invoices = false,
+        ?User $admin = null,
+    ): SeoPackageSubscription {
         $updates = [
             'status'                 => 'cancelled',
             'cancelled_at'           => now(),
@@ -183,15 +201,106 @@ class SeoSubscriptionBillingService
             $updates['notes'] = $notes;
         }
 
-        $subscription->update($updates);
+        DB::transaction(function () use ($subscription, $updates, $void_open_invoices, $admin) {
+            $subscription->update($updates);
 
-        // Stop pending retries so a cancelled client is never charged again.
-        $subscription->charges()
-            ->where('status', SeoSubscriptionCharge::STATUS_FAILED)
-            ->whereNotNull('next_retry_at')
-            ->update(['next_retry_at' => null]);
+            // Stop pending retries so a cancelled client is never charged again.
+            $subscription->charges()
+                ->where('status', SeoSubscriptionCharge::STATUS_FAILED)
+                ->whereNotNull('next_retry_at')
+                ->update(['next_retry_at' => null]);
+
+            if ($void_open_invoices) {
+                $this->voidOpenInvoices($subscription, $admin);
+            }
+        });
 
         return $subscription->refresh();
+    }
+
+    /**
+     * Unpaid invoices of periods that were never collected.
+     */
+    public function openInvoices(SeoPackageSubscription $subscription): \Illuminate\Support\Collection
+    {
+        $invoice_ids = $subscription->charges()
+            ->where('status', '!=', SeoSubscriptionCharge::STATUS_SUCCEEDED)
+            ->whereNotNull('invoice_id')
+            ->pluck('invoice_id');
+
+        return Invoice::whereIn('id', $invoice_ids)
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->get();
+    }
+
+    // ── Client payment methods ──────────────────────────────────────────────
+
+    /**
+     * Called after a client removes a saved card. When no valid card is
+     * left and an auto renewing subscription depends on it, the client is
+     * asked to add a new card and the admins are told right away, instead
+     * of everyone finding out when the renewal fails.
+     *
+     * Returns the number of subscriptions affected.
+     */
+    public function handlePaymentMethodRemoved(User $user): int
+    {
+        $this->health_service->forgetCardStatus($user->id);
+
+        if ($this->health_service->hasUsableCard($user->id)) {
+            return 0;
+        }
+
+        $subscriptions = SeoPackageSubscription::query()
+            ->with(['user', 'package'])
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->where('auto_renew', true)
+            ->get();
+
+        foreach ($subscriptions as $subscription) {
+            $this->sendClientEmail($subscription, SeoSubscriptionBillingEmail::VARIANT_PAYMENT_METHOD_MISSING);
+            $this->notifyAdminsOfMissingPaymentMethod($subscription);
+        }
+
+        return $subscriptions->count();
+    }
+
+    /**
+     * Called after a client saves a new card. A declined renewal is retried
+     * on the next billing run instead of waiting for the next retry date, or
+     * forever when retries had stopped because there was no usable card.
+     *
+     * Returns the number of charges scheduled for a retry.
+     */
+    public function handlePaymentMethodAdded(User $user): int
+    {
+        $this->health_service->forgetCardStatus($user->id);
+
+        $scheduled = 0;
+
+        SeoPackageSubscription::query()
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->where('auto_renew', true)
+            ->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE)
+            ->whereNotNull('next_billing_date')
+            ->get()
+            ->each(function (SeoPackageSubscription $subscription) use (&$scheduled) {
+                $charge = $subscription->charges()
+                    ->whereDate('period_start', $subscription->next_billing_date->toDateString())
+                    ->where('status', SeoSubscriptionCharge::STATUS_FAILED)
+                    ->first();
+
+                if (! $charge) {
+                    return;
+                }
+
+                $charge->update(['next_retry_at' => now()]);
+                $scheduled++;
+            });
+
+        return $scheduled;
     }
 
     // ── Charging ────────────────────────────────────────────────────────────
@@ -752,7 +861,7 @@ class SeoSubscriptionBillingService
                     card_label:        $card_label,
                     invoice_number:    $invoice ? (string) $invoice->invoice_number : '',
                     invoice_url:       $invoice ? FrontendUrl::to('/invoices/' . $invoice->unique_id) : '',
-                    failure_reason:    $variant === SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED ? $this->clientFacingFailureReason($charge?->failure_code) : '',
+                    failure_reason:    $variant === SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED ? SeoSubscriptionPaymentHealthService::clientFacingFailureReason($charge?->failure_code) : '',
                     next_retry_date:   $charge?->next_retry_at?->format('F j, Y') ?? '',
                     paid_at:           $charge?->paid_at?->format('F j, Y') ?? '',
                     billing_url:       FrontendUrl::to('/billing'),
@@ -809,17 +918,54 @@ class SeoSubscriptionBillingService
         }
     }
 
-    private function clientFacingFailureReason(?string $error_code): string
+    private function notifyAdminsOfMissingPaymentMethod(SeoPackageSubscription $subscription): void
     {
-        return match ($error_code) {
-            'no_payment_method'                                     => 'There is no card on file for your account.',
-            'expired_card'                                          => 'The card on file has expired.',
-            'authentication_required'                               => 'Your bank asked for extra verification for this payment.',
-            'insufficient_funds'                                    => 'Your bank declined the payment due to insufficient funds.',
-            'lost_card', 'stolen_card', 'pickup_card', 'restricted_card' => 'Your bank declined the card on file.',
-            'incorrect_number', 'invalid_payment_method', 'invalid_account' => 'The card on file is no longer valid.',
-            default                                                 => 'Your bank declined the payment.',
-        };
+        try {
+            $recipients  = EmailNotificationSettingService::resolveAdminRecipients();
+            $admin_users = User::whereIn('email', array_column($recipients, 'email'))
+                ->where('is_active', true)
+                ->get();
+
+            $client_name = $subscription->user?->full_name ?: ($subscription->user?->email ?? 'A client');
+            $renews_on   = $subscription->next_billing_date?->format('M j') ?? 'the next billing date';
+
+            foreach ($admin_users as $admin_user) {
+                $this->notification_service->createNotification(
+                    user: $admin_user,
+                    type: 'invoice',
+                    message: "{$client_name} removed their last card. The SEO subscription renewal on {$renews_on} (\${$this->money($subscription->monthly_price)}) will fail unless a card is added.",
+                    extra: ['link' => '/admin/seo-packages-subscriptions/' . $subscription->id],
+                );
+            }
+
+            SendAdminSeoSubscriptionPaymentMethodAlertJob::dispatch($subscription->id);
+        } catch (\Throwable $e) {
+            logger()->warning("Failed to notify admins about the missing card on SEO subscription {$subscription->id}", [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function voidOpenInvoices(SeoPackageSubscription $subscription, ?User $admin): void
+    {
+        $actor_name = $admin ? ($admin->full_name ?: $admin->email) : 'System';
+
+        foreach ($this->openInvoices($subscription) as $invoice) {
+            $invoice->update(['status' => 'void']);
+
+            InvoiceHistory::create([
+                'invoice_id'     => $invoice->id,
+                'event'          => 'invoice voided',
+                'description'    => 'Invoice voided when the SEO subscription was cancelled.',
+                'actor_id'       => $admin?->id,
+                'actor_name'     => $actor_name,
+                'actor_initials' => $this->buildInitials($actor_name),
+                'actor_type'     => $admin ? 'admin' : 'system',
+            ]);
+        }
+
+        // Nothing is owed anymore once the open invoices are voided.
+        $subscription->update(['payment_status' => SeoPackageSubscription::PAYMENT_STATUS_CURRENT]);
     }
 
     private function resolvePlanName(array $data, ?SeoPackage $package): string

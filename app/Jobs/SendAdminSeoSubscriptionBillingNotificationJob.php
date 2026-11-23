@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Mail\AdminSeoSubscriptionBillingNotification;
 use App\Models\SeoSubscriptionCharge;
 use App\Services\EmailNotificationSettingService;
+use App\Services\SeoSubscriptionPaymentHealthService;
 use App\Support\FrontendUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,6 +43,8 @@ class SendAdminSeoSubscriptionBillingNotificationJob implements ShouldQueue
 
     public function handle(): void
     {
+        $health_service = app(SeoSubscriptionPaymentHealthService::class);
+
         $charge = SeoSubscriptionCharge::with(['subscription.user', 'subscription.package', 'invoice', 'chargedBy'])
             ->find($this->charge_id);
 
@@ -56,6 +59,11 @@ class SendAdminSeoSubscriptionBillingNotificationJob implements ShouldQueue
         $charged_by   = $charge->chargedBy ? ' (' . ($charge->chargedBy->full_name ?: $charge->chargedBy->email) . ')' : '';
         $invoice      = $charge->invoice;
         $is_succeeded = $this->variant === AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_SUCCEEDED;
+
+        // How far behind the client is, so admins can judge whether to cancel.
+        $outstanding_label = $is_succeeded
+            ? ''
+            : SeoSubscriptionPaymentHealthService::outstandingLabel($health_service->evaluate($subscription));
 
         foreach (EmailNotificationSettingService::resolveAdminRecipients() as $position => $recipient) {
             SendEmailJob::dispatchWithThrottle(
@@ -84,6 +92,7 @@ class SendAdminSeoSubscriptionBillingNotificationJob implements ShouldQueue
                     subscription_url:  FrontendUrl::to('/admin/seo-packages-subscriptions/' . $subscription->id),
                     invoice_url:       $invoice ? FrontendUrl::to('/admin/invoices/' . $invoice->id) : '',
                     settings_url:      FrontendUrl::to('/admin/email-notifications'),
+                    outstanding_label: $outstanding_label,
                 ),
                 $recipient['email'],
                 $position,

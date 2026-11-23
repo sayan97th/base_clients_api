@@ -81,6 +81,7 @@ class SeoSubscriptionEmailsTest extends TestCase
             'receipt'  => [SeoSubscriptionBillingEmail::VARIANT_PAYMENT_SUCCEEDED, 'Payment received for your SEO subscription, December 2026', 'View invoice'],
             'failed'   => [SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED, 'Action needed: your SEO subscription payment did not go through', 'Pay invoice now'],
             'reminder' => [SeoSubscriptionBillingEmail::VARIANT_RENEWAL_REMINDER, 'Your SEO subscription renews on December 1, 2026', 'Review payment method'],
+            'no card'  => [SeoSubscriptionBillingEmail::VARIANT_PAYMENT_METHOD_MISSING, 'Add a card to keep your SEO subscription running', 'Add a payment method'],
         ];
     }
 
@@ -137,6 +138,18 @@ class SeoSubscriptionEmailsTest extends TestCase
         $this->assertStringNotContainsString('Pay invoice now', $html);
     }
 
+    public function test_card_missing_email_explains_nothing_was_charged_and_links_to_billing(): void
+    {
+        $html = $this->clientEmail(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_METHOD_MISSING, ['card_label' => ''])->render();
+
+        $this->assertStringContainsString('Card needed', $html);
+        $this->assertStringContainsString('No card on file', $html);
+        $this->assertStringContainsString('Nothing has been charged', $html);
+        $this->assertStringContainsString('December 1, 2026', $html);
+        $this->assertStringContainsString('https://portal.test/billing', $html);
+        $this->assertStringNotContainsString('Pay invoice now', $html);
+    }
+
     // ── Admin emails ────────────────────────────────────────────────────────
 
     public function test_admin_payment_received_email(): void
@@ -173,6 +186,38 @@ class SeoSubscriptionEmailsTest extends TestCase
         $html = $this->adminEmail(AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_FAILED, ['next_retry_date' => ''])->render();
 
         $this->assertStringContainsString('Automatic retries have stopped', $html);
+    }
+
+    public function test_admin_failed_email_shows_how_far_behind_the_client_is(): void
+    {
+        $html = $this->adminEmail(AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_FAILED, [
+            'outstanding_label' => '2 months behind, $4,000.00 outstanding',
+        ])->render();
+
+        $this->assertStringContainsString('2 months behind, $4,000.00 outstanding', $html);
+        $this->assertStringContainsString('Outstanding', $html);
+    }
+
+    public function test_admin_card_removed_email(): void
+    {
+        $mail = $this->adminEmail(AdminSeoSubscriptionBillingNotification::VARIANT_PAYMENT_METHOD_REMOVED, [
+            'card_label'      => 'No card on file',
+            'trigger_label'   => 'Card removed by the client',
+            'attempt_label'   => '',
+            'invoice_number'  => '',
+            'invoice_url'     => '',
+            'next_retry_date' => '',
+            'failure_reason'  => 'The client has no valid card on file.',
+        ]);
+        $html = $mail->render();
+
+        $this->assertStringContainsString('Cathleen Siech removed their last card', $mail->envelope()->subject);
+        $this->assertStringContainsString('Cathleen Siech has no card on file', $html);
+        $this->assertStringContainsString('Card needed', $html);
+        $this->assertStringContainsString('What this means.', $html);
+        $this->assertStringContainsString('Cancel if they are leaving', $html);
+        $this->assertStringNotContainsString('Attempt', $html);
+        $this->assertStringNotContainsString('—', $html);
     }
 
     public function test_admin_email_hides_the_invoice_button_without_an_invoice(): void

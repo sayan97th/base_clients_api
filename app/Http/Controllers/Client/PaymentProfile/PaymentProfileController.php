@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Client\PaymentProfile;
 
 use App\Http\Controllers\Controller;
 use App\Models\PaymentProfile;
+use App\Services\SeoSubscriptionBillingService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -115,6 +116,9 @@ class PaymentProfileController extends Controller
             ]);
         });
 
+        // A declined SEO renewal is retried on the next billing run.
+        $this->runSubscriptionHook(fn (SeoSubscriptionBillingService $billing) => $billing->handlePaymentMethodAdded($user));
+
         return response()->json([
             'data'    => $this->formatProfile($profile),
             'message' => 'Payment method saved successfully.',
@@ -147,7 +151,16 @@ class PaymentProfileController extends Controller
                 ?->update(['is_default' => true]);
         }
 
-        return response()->json(['message' => 'Payment method removed successfully.']);
+        // Warns the client and the admins when an auto renewing SEO
+        // subscription is left without a valid card.
+        $affected_subscriptions = $this->runSubscriptionHook(
+            fn (SeoSubscriptionBillingService $billing) => $billing->handlePaymentMethodRemoved(auth()->user())
+        );
+
+        return response()->json([
+            'message' => 'Payment method removed successfully.',
+            'meta'    => ['subscriptions_without_card' => $affected_subscriptions],
+        ]);
     }
 
     public function setDefault(string $id, Request $request): JsonResponse
@@ -177,6 +190,23 @@ class PaymentProfileController extends Controller
             'data'    => $this->formatProfile($profile->fresh()),
             'message' => 'Default payment method updated.',
         ]);
+    }
+
+    /**
+     * Subscription side effects never block saving or removing a card.
+     */
+    private function runSubscriptionHook(callable $hook): int
+    {
+        try {
+            return (int) $hook(app(SeoSubscriptionBillingService::class));
+        } catch (\Throwable $e) {
+            logger()->warning('SEO subscription payment method hook failed', [
+                'user_id' => auth()->id(),
+                'error'   => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     private function formatProfile(PaymentProfile $profile): array

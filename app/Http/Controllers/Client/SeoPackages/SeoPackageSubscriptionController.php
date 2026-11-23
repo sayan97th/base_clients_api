@@ -12,7 +12,10 @@ class SeoPackageSubscriptionController extends Controller
 {
     public function active(Request $request): JsonResponse
     {
-        $subscription = SeoPackageSubscription::with('package:id,name,slug,price_per_month')
+        $subscription = SeoPackageSubscription::with([
+                'package:id,name,slug,price_per_month',
+                'charges' => fn ($q) => $q->with('invoice:id,unique_id,invoice_number,status')->orderByDesc('period_start'),
+            ])
             ->where('user_id', $request->user()->id)
             ->where('status', 'active')
             ->where(function ($q) {

@@ -15,6 +15,7 @@ use App\Models\SeoSubscriptionCharge;
 use App\Models\User;
 use App\Services\InvoiceCardPaymentService;
 use App\Services\SeoSubscriptionBillingService;
+use App\Services\SeoSubscriptionPaymentHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,11 +27,12 @@ class AdminSeoPackageSubscriptionController extends Controller
         'user.organization:id,name',
         'package:id,name,slug,price_per_month',
         'paymentProfile:id,user_id,card_brand,last_four,expiry_month,expiry_year',
-        'latestCharge',
+        'latestCharge.invoice:id,unique_id,invoice_number,status',
     ];
 
     public function __construct(
         protected SeoSubscriptionBillingService $billing_service,
+        protected SeoSubscriptionPaymentHealthService $health_service,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -62,9 +64,17 @@ class AdminSeoPackageSubscriptionController extends Controller
             $query->where('pricing_type', $pricing_type);
         }
 
-        if ($request->query('payment_status') === SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE) {
-            $query->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE);
-        }
+        match ($request->query('payment_status')) {
+            // Declined renewals.
+            SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE => $query->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE),
+            // Still active, a billing date passed and nothing was charged.
+            'pending'   => $this->wherePaymentPending($query),
+            // Either of the two: everything an admin should look at.
+            'attention' => $query->where(fn ($q) => $q
+                ->where(fn ($past_due) => $past_due->where('status', 'active')->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE))
+                ->orWhere(fn ($pending) => $this->wherePaymentPending($pending))),
+            default     => null,
+        };
 
         if ($request->has('auto_renew') && $request->query('auto_renew') !== '') {
             $query->where('auto_renew', filter_var($request->query('auto_renew'), FILTER_VALIDATE_BOOLEAN));
@@ -80,6 +90,9 @@ class AdminSeoPackageSubscriptionController extends Controller
 
         $per_page  = min((int) $request->query('per_page', 20), 100);
         $paginated = $query->paginate($per_page);
+
+        // One card query for the whole page instead of one per row.
+        $this->health_service->primeCardStatus(collect($paginated->items())->pluck('user_id'));
 
         return response()->json([
             'data' => [
@@ -99,7 +112,9 @@ class AdminSeoPackageSubscriptionController extends Controller
             ->groupBy('status')
             ->pluck('count', 'status');
 
-        $active = SeoPackageSubscription::where('status', 'active');
+        $active          = SeoPackageSubscription::where('status', 'active');
+        $past_due        = (clone $active)->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE)->count();
+        $payment_pending = $this->wherePaymentPending(SeoPackageSubscription::query())->count();
 
         return response()->json([
             'data' => [
@@ -107,7 +122,9 @@ class AdminSeoPackageSubscriptionController extends Controller
                 'active'                => (int) ($by_status['active']    ?? 0),
                 'cancelled'             => (int) ($by_status['cancelled'] ?? 0),
                 'expired'               => (int) ($by_status['expired']   ?? 0),
-                'past_due'              => (clone $active)->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_PAST_DUE)->count(),
+                'past_due'              => $past_due,
+                'payment_pending'       => $payment_pending,
+                'needs_attention'       => $past_due + $payment_pending,
                 'auto_renew'            => (clone $active)->where('auto_renew', true)->count(),
                 'monthly_recurring'     => round((float) (clone $active)->sum('monthly_price'), 2),
                 'renewing_next_7_days'  => (clone $active)
@@ -320,7 +337,12 @@ class AdminSeoPackageSubscriptionController extends Controller
             ], 422);
         }
 
-        $this->billing_service->cancel($subscription, $request->input('notes'));
+        $this->billing_service->cancel(
+            $subscription,
+            $request->input('notes'),
+            $request->boolean('void_open_invoices'),
+            Auth::user(),
+        );
 
         return response()->json(['data' => new AdminSeoPackageSubscriptionResource($subscription->load($this->eagerLoad))]);
     }
@@ -347,9 +369,34 @@ class AdminSeoPackageSubscriptionController extends Controller
                 'failed_count'     => $charges->where('status', SeoSubscriptionCharge::STATUS_FAILED)->count(),
                 'upcoming'         => $this->billing_service->upcomingSchedule($subscription),
                 'card_on_file'     => (bool) $this->billing_service->resolvePaymentProfile($subscription),
+                // Unpaid invoices the admin can keep open or void when cancelling.
+                'open_invoices'    => $this->billing_service->openInvoices($subscription)
+                    ->map(fn ($invoice) => [
+                        'id'             => $invoice->id,
+                        'unique_id'      => $invoice->unique_id,
+                        'invoice_number' => $invoice->invoice_number,
+                        'status'         => $invoice->status,
+                        'total_amount'   => (float) $invoice->total_amount,
+                    ])
+                    ->values(),
             ],
             'message' => $message,
             'charge'  => $charge ? new AdminSeoSubscriptionChargeResource($charge) : null,
         ], fn ($value) => $value !== null));
+    }
+
+    /**
+     * Active, not flagged past due, but a billing date already passed
+     * without a payment: manual billing nobody charged, or a renewal that was
+     * never attempted. Shown to admins as "Payment pending".
+     */
+    private function wherePaymentPending($query)
+    {
+        return $query
+            ->where('status', 'active')
+            ->where('payment_status', SeoPackageSubscription::PAYMENT_STATUS_CURRENT)
+            ->whereNotNull('next_billing_date')
+            ->whereDate('next_billing_date', '<', now()->toDateString())
+            ->where(fn ($q) => $q->whereNull('ends_at')->orWhereColumn('next_billing_date', '<=', 'ends_at'));
     }
 }

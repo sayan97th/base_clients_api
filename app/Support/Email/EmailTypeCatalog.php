@@ -125,7 +125,7 @@ final class EmailTypeCatalog
         ],
         'admin_seo_subscription_billing' => [
             'label'       => 'SEO subscription payment',
-            'description' => 'Sent to admins when an SEO subscription payment is collected or fails, with the client, amount, card and invoice.',
+            'description' => 'Sent to admins when an SEO subscription payment is collected or fails (with the decline reason and outstanding balance), and when a client removes the last card an auto renewal depends on.',
             'audience'    => self::AUDIENCE_ADMIN,
             'category'    => self::CATEGORY_BILLING,
             'classes'     => [AdminSeoSubscriptionBillingNotification::class],
@@ -233,7 +233,7 @@ final class EmailTypeCatalog
         ],
         'seo_subscription_billing' => [
             'label'       => 'SEO subscription billing',
-            'description' => 'Sent to the client about their SEO subscription: a reminder before each renewal, the monthly payment confirmation and a notice when a payment fails.',
+            'description' => 'Sent to the client about their SEO subscription: a reminder before each renewal, the monthly payment confirmation, a notice when a payment fails and a request to add a card when none is left on file.',
             'audience'    => self::AUDIENCE_CLIENT,
             'category'    => self::CATEGORY_BILLING,
             'classes'     => [SeoSubscriptionBillingEmail::class],

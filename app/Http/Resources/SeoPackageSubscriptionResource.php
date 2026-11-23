@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\SeoSubscriptionPaymentHealthService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -20,6 +21,9 @@ class SeoPackageSubscriptionResource extends JsonResource
             'monthly_price'     => (float) $this->monthly_price,
             'auto_renew'        => (bool) $this->auto_renew,
             'next_billing_date' => $this->next_billing_date?->toDateString(),
+            'payment_status'    => $this->payment_status,
+            // Lets the client see a failed renewal or a missing card in the portal.
+            'payment_health'    => app(SeoSubscriptionPaymentHealthService::class)->evaluateForClient($this->resource),
             'package'    => $this->whenLoaded('package', fn () => $this->package ? [
                 'id'              => $this->package->id,
                 'name'            => $this->package->name,

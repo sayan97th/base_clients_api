@@ -36,10 +36,12 @@
         $brand_soft   = '#fce7f3';
         $app_name     = config('app.name');
         $first_name   = trim((string) $recipient_name);
-        $is_succeeded = $variant === 'payment_succeeded';
+        $is_succeeded    = $variant === 'payment_succeeded';
+        $is_card_removed = $variant === 'payment_method_removed';
+        $is_failed       = ! $is_succeeded && ! $is_card_removed;
 
-        $theme = $is_succeeded
-            ? [
+        $themes = [
+            'payment_succeeded' => [
                 'from'     => '#ec3c89',
                 'to'       => '#8b5cf6',
                 'chip'     => '&#10003;&nbsp; Subscription payment received',
@@ -47,35 +49,73 @@
                 'subtitle' => $plan_name . ' for ' . $period_label,
                 'preview'  => $client_name . ' was charged ' . $amount . ' for the ' . $period_label . ' SEO subscription period.',
                 'intro'    => 'an SEO subscription payment just went through. Here is everything about it.',
-            ]
-            : [
+                'eyebrow'  => 'Collected',
+                'tag'      => 'Paid',
+                'tag_bg'   => '#dcfce7',
+                'tag_text' => '#166534',
+                'reason'   => '',
+            ],
+            'payment_method_removed' => [
+                'from'     => '#f59e0b',
+                'to'       => '#ec3c89',
+                'chip'     => '&#128179;&nbsp; Card removed',
+                'title'    => $client_name . ' has no card on file',
+                'subtitle' => $plan_name . ' renews on ' . $next_billing_date,
+                'preview'  => $client_name . ' removed their last card. The ' . $amount . ' SEO renewal on ' . $next_billing_date . ' will fail unless a new card is added.',
+                'intro'    => 'a client with an auto renewing SEO subscription just removed their last saved card. We emailed them a link to add a new one.',
+                'eyebrow'  => 'Next renewal',
+                'tag'      => 'Card needed',
+                'tag_bg'   => '#fef3c7',
+                'tag_text' => '#92400e',
+                'reason'   => 'What this means.',
+            ],
+            'payment_failed' => [
                 'from'     => '#f97316',
                 'to'       => '#ec3c89',
                 'chip'     => '&#9888;&#65039;&nbsp; Subscription payment failed',
                 'title'    => 'Payment failed for ' . $client_name,
                 'subtitle' => $plan_name . ' for ' . $period_label,
                 'preview'  => 'The ' . $amount . ' SEO subscription payment for ' . $client_name . ' (' . $period_label . ') failed. ' . ($next_retry_date !== '' ? 'Next retry on ' . $next_retry_date . '.' : 'No more automatic retries.'),
-                'intro'    => 'an SEO subscription payment could not be collected. The client was emailed a link to pay the invoice.',
-            ];
+                'intro'    => 'an SEO subscription payment could not be collected. The client was emailed a link to pay the invoice and update their card.',
+                'eyebrow'  => 'Not collected',
+                'tag'      => $next_retry_date !== '' ? 'Retry scheduled' : 'Action needed',
+                'tag_bg'   => '#ffedd5',
+                'tag_text' => '#9a3412',
+                'reason'   => 'Decline reason.',
+            ],
+        ];
+
+        $theme = $themes[$variant] ?? $themes['payment_failed'];
 
         $details = array_values(array_filter([
             ['Plan', $plan_name . ($is_custom_price ? ' (custom price)' : '')],
             ['Billing period', $period_range],
             ['Card', $card_label],
             ['How', $trigger_label],
-            $is_succeeded ? null : ['Attempt', $attempt_label],
+            $is_failed && $attempt_label !== '' ? ['Attempt', $attempt_label] : null,
             $invoice_number !== '' ? ['Invoice', '#' . $invoice_number] : null,
-            $is_succeeded && $next_billing_date !== '' ? ['Next charge', $next_billing_date . ($auto_renew ? ' (auto renew)' : ' (manual)')] : null,
-            [$is_succeeded ? 'Paid on' : 'Attempted on', $occurred_at],
+            ! $is_failed && $next_billing_date !== '' ? ['Next charge', $next_billing_date . ($auto_renew ? ' (auto renew)' : ' (manual)')] : null,
+            $outstanding_label !== '' ? ['Outstanding', $outstanding_label] : null,
+            [$is_succeeded ? 'Paid on' : ($is_card_removed ? 'Removed on' : 'Attempted on'), $occurred_at],
         ]));
 
-        $steps = $is_succeeded ? [] : [
-            ['Check the reason', $failure_reason !== '' ? $failure_reason : 'The card was declined.'],
-            $next_retry_date !== ''
-                ? ['Automatic retry', 'We will try the card again on ' . $next_retry_date . '. Nothing to do if the client updates their card before then.']
-                : ['Follow up with the client', 'Automatic retries have stopped. Ask the client to update their card or pay the invoice from their portal.'],
-            ['Charge manually if needed', 'Use Charge now on the subscription page once the client has a valid card.'],
-        ];
+        if ($is_card_removed) {
+            $steps = [
+                ['We let the client know', 'The client was emailed a link to add a new card from their billing page.'],
+                ['Follow up if needed', 'If no card is added before ' . $next_billing_date . ', the renewal fails and you will get a payment failed email.'],
+                ['Cancel if they are leaving', 'If the client is ending the service, cancel the subscription from its page at any time.'],
+            ];
+        } elseif ($is_failed) {
+            $steps = [
+                ['Check the reason', $failure_reason !== '' ? $failure_reason : 'The card was declined.'],
+                $next_retry_date !== ''
+                    ? ['Automatic retry', 'We will try the card again on ' . $next_retry_date . '. If the client adds a new card, we retry right away.']
+                    : ['Follow up with the client', 'Automatic retries have stopped. Ask the client to update their card or pay the invoice from their portal.'],
+                ['Charge or cancel', 'Use Charge now once the client has a valid card, or cancel the subscription if the client is not going to pay.'],
+            ];
+        } else {
+            $steps = [];
+        }
     @endphp
 
     {{-- Inbox preview text --}}
@@ -142,11 +182,11 @@
                                                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                                                         <tr>
                                                             <td style="font-size:12px;line-height:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:{{ $brand_color }};">
-                                                                {{ $is_succeeded ? 'Collected' : 'Not collected' }}
+                                                                {{ $theme['eyebrow'] }}
                                                             </td>
                                                             <td align="right">
-                                                                <span style="display:inline-block;background-color:{{ $is_succeeded ? '#dcfce7' : '#ffedd5' }};color:{{ $is_succeeded ? '#166534' : '#9a3412' }};border-radius:999px;padding:4px 10px;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">
-                                                                    {{ $is_succeeded ? 'Paid' : ($next_retry_date !== '' ? 'Retry scheduled' : 'Action needed') }}
+                                                                <span style="display:inline-block;background-color:{{ $theme['tag_bg'] }};color:{{ $theme['tag_text'] }};border-radius:999px;padding:4px 10px;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">
+                                                                    {{ $theme['tag'] }}
                                                                 </span>
                                                             </td>
                                                         </tr>
@@ -169,7 +209,10 @@
                                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
                                                 <tr>
                                                     <td bgcolor="#fff7ed" style="background-color:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;font-size:14px;line-height:21px;color:#9a3412;">
-                                                        <strong style="color:#7c2d12;">Decline reason.</strong> {{ $failure_reason }}
+                                                        <strong style="color:#7c2d12;">{{ $theme['reason'] }}</strong> {{ $failure_reason }}
+                                                        @if ($outstanding_label !== '')
+                                                            <br><strong style="color:#7c2d12;">Balance.</strong> {{ $outstanding_label }}.
+                                                        @endif
                                                     </td>
                                                 </tr>
                                             </table>
@@ -195,7 +238,7 @@
                                             </tr>
                                         </table>
 
-                                        {{-- Next steps (failed only) --}}
+                                        {{-- Next steps (failed and card removed) --}}
                                         @if (count($steps) > 0)
                                             <p style="margin:0 0 12px;font-size:12px;line-height:16px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#6b7280;">
                                                 Next steps

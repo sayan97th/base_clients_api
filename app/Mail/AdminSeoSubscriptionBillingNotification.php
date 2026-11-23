@@ -10,8 +10,9 @@ use Illuminate\Queue\SerializesModels;
 
 /**
  * Sent to the admin recipients in Email Notification Settings when an SEO
- * subscription payment goes through or fails. The client gets their own,
- * client facing version (SeoSubscriptionBillingEmail).
+ * subscription payment goes through or fails, and when a client removes the
+ * last card an auto renewing subscription depends on. The client gets their
+ * own, client facing version (SeoSubscriptionBillingEmail).
  */
 class AdminSeoSubscriptionBillingNotification extends Mailable
 {
@@ -19,6 +20,7 @@ class AdminSeoSubscriptionBillingNotification extends Mailable
 
     public const VARIANT_PAYMENT_SUCCEEDED = 'payment_succeeded';
     public const VARIANT_PAYMENT_FAILED    = 'payment_failed';
+    public const VARIANT_PAYMENT_METHOD_REMOVED = 'payment_method_removed';
 
     public function __construct(
         public string $variant,
@@ -45,6 +47,8 @@ class AdminSeoSubscriptionBillingNotification extends Mailable
         public string $subscription_url,
         public string $invoice_url,
         public string $settings_url,
+        /** "2 months behind, $4,000.00 outstanding", empty when nothing is owed. */
+        public string $outstanding_label = '',
     ) {
         $this->onQueue('emails');
     }
@@ -53,9 +57,11 @@ class AdminSeoSubscriptionBillingNotification extends Mailable
     {
         $app_name = config('app.name');
 
-        $subject = $this->variant === self::VARIANT_PAYMENT_SUCCEEDED
-            ? "\u{2705} {$this->client_name} paid {$this->amount} for their SEO subscription ({$this->period_label}) | {$app_name}"
-            : "\u{26A0}\u{FE0F} SEO subscription payment failed for {$this->client_name} ({$this->amount}) | {$app_name}";
+        $subject = match ($this->variant) {
+            self::VARIANT_PAYMENT_SUCCEEDED      => "\u{2705} {$this->client_name} paid {$this->amount} for their SEO subscription ({$this->period_label}) | {$app_name}",
+            self::VARIANT_PAYMENT_METHOD_REMOVED => "\u{1F4B3} {$this->client_name} removed their last card, the next SEO renewal will fail | {$app_name}",
+            default                              => "\u{26A0}\u{FE0F} SEO subscription payment failed for {$this->client_name} ({$this->amount}) | {$app_name}",
+        };
 
         return new Envelope(subject: $subject);
     }

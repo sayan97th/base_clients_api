@@ -62,6 +62,18 @@
                 'tag_bg'     => '#ffedd5',
                 'tag_text'   => '#9a3412',
             ],
+            'payment_method_missing' => [
+                'from'       => '#f59e0b',
+                'to'         => '#ec3c89',
+                'chip'       => '&#128179;&nbsp; Card needed',
+                'title'      => 'Add a card to keep your SEO subscription running',
+                'subtitle'   => $plan_name . ' renews on ' . $billing_date,
+                'preview'    => 'There is no card on your account for your ' . $amount . ' SEO subscription renewal on ' . $billing_date . '. Add one in less than a minute.',
+                'intro'      => 'we noticed there is no longer a valid card saved on your account. Your SEO subscription renews automatically on ' . $billing_date . ', and without a card on file we will not be able to process that payment.',
+                'ticket_tag' => 'Card needed',
+                'tag_bg'     => '#fef3c7',
+                'tag_text'   => '#92400e',
+            ],
             'renewal_reminder' => [
                 'from'       => '#ec3c89',
                 'to'         => '#8b5cf6',
@@ -78,18 +90,22 @@
 
         $theme = $themes[$variant] ?? $themes['renewal_reminder'];
 
-        $card_text = $card_label !== '' ? $card_label : 'Card on file';
+        $is_card_missing = $variant === 'payment_method_missing';
+        $is_attention    = $variant === 'payment_failed' || $is_card_missing;
+
+        $card_text = $is_card_missing ? 'No card on file' : ($card_label !== '' ? $card_label : 'Card on file');
 
         $amount_caption = match ($variant) {
             'payment_succeeded' => 'Charged to ' . $card_text,
-            'payment_failed'    => 'Amount due for ' . $period_label,
-            default             => 'Will be charged to ' . $card_text,
+            'payment_failed'         => 'Amount due for ' . $period_label,
+            'payment_method_missing' => 'Due on ' . $billing_date,
+            default                  => 'Will be charged to ' . $card_text,
         };
 
         $details = array_values(array_filter([
             ['Subscription', $plan_name],
             ['Billing period', $period_range],
-            $variant === 'renewal_reminder' ? ['Renewal date', $billing_date] : null,
+            in_array($variant, ['renewal_reminder', 'payment_method_missing'], true) ? ['Renewal date', $billing_date] : null,
             $variant === 'payment_succeeded' && $paid_at !== '' ? ['Paid on', $paid_at] : null,
             ['Payment method', $card_text],
             $invoice_number !== '' ? ['Invoice', '#' . $invoice_number] : null,
@@ -101,7 +117,13 @@
             $steps = [
                 ['Check your card', $failure_reason !== '' ? $failure_reason . ' Make sure your card details are up to date.' : 'Make sure your card details are up to date.'],
                 ['Pay the invoice', 'Pay invoice #' . $invoice_number . ' securely from your portal with any card.'],
-                ['You are all set', $next_retry_date !== '' ? 'If you update your card, we will try again automatically on ' . $next_retry_date . '.' : 'Once the invoice is paid, your subscription continues as usual.'],
+                ['You are all set', $next_retry_date !== '' ? 'As soon as you add a new card we try again automatically, at the latest on ' . $next_retry_date . '.' : 'Once you add a new card or pay the invoice, your subscription continues as usual.'],
+            ];
+        } elseif ($is_card_missing) {
+            $steps = [
+                ['Add a new card', 'Open your billing page and add a credit or debit card. It takes less than a minute.'],
+                ['We charge it on the renewal date', 'On ' . $billing_date . ' we charge ' . $amount . ' to your new card and email you a receipt.'],
+                ['Your SEO work continues', 'Your ' . $plan_name . ' services keep running without interruption.'],
             ];
         } elseif ($variant === 'renewal_reminder') {
             $steps = [
@@ -115,8 +137,9 @@
 
         $primary_action = match ($variant) {
             'payment_failed'    => ['Pay invoice now', $invoice_url !== '' ? $invoice_url : $billing_url],
-            'payment_succeeded' => ['View invoice', $invoice_url !== '' ? $invoice_url : $billing_url],
-            default             => ['Review payment method', $billing_url],
+            'payment_succeeded'      => ['View invoice', $invoice_url !== '' ? $invoice_url : $billing_url],
+            'payment_method_missing' => ['Add a payment method', $billing_url],
+            default                  => ['Review payment method', $billing_url],
         };
 
         $secondary_action = match ($variant) {
@@ -243,9 +266,12 @@
                                         {{-- Why am I getting this email --}}
                                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px;">
                                             <tr>
-                                                <td bgcolor="{{ $variant === 'payment_failed' ? '#fff7ed' : '#fdf2f8' }}"
-                                                    style="background-color:{{ $variant === 'payment_failed' ? '#fff7ed' : '#fdf2f8' }};border:1px solid {{ $variant === 'payment_failed' ? '#fed7aa' : '#fbcfe8' }};border-radius:12px;padding:14px 16px;font-size:14px;line-height:21px;color:{{ $variant === 'payment_failed' ? '#9a3412' : '#831843' }};">
-                                                    @if ($variant === 'payment_failed')
+                                                <td bgcolor="{{ $is_attention ? '#fff7ed' : '#fdf2f8' }}"
+                                                    style="background-color:{{ $is_attention ? '#fff7ed' : '#fdf2f8' }};border:1px solid {{ $is_attention ? '#fed7aa' : '#fbcfe8' }};border-radius:12px;padding:14px 16px;font-size:14px;line-height:21px;color:{{ $is_attention ? '#9a3412' : '#831843' }};">
+                                                    @if ($is_card_missing)
+                                                        <strong style="color:#7c2d12;">Why am I getting this email?</strong>
+                                                        Your {{ $plan_name }} subscription renews automatically every month, and there is no valid card on your account to pay for it. Nothing has been charged.
+                                                    @elseif ($variant === 'payment_failed')
                                                         <strong style="color:#7c2d12;">Why this happened.</strong>
                                                         {{ $failure_reason !== '' ? $failure_reason : 'Your bank declined the payment.' }}
                                                         This charge is for your monthly {{ $plan_name }} subscription for {{ $period_label }}.
@@ -280,7 +306,7 @@
                                         {{-- What happens next --}}
                                         @if (count($steps) > 0)
                                             <p style="margin:0 0 12px;font-size:12px;line-height:16px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#6b7280;">
-                                                {{ $variant === 'payment_failed' ? 'How to fix it' : 'What happens next' }}
+                                                {{ $is_attention ? 'How to fix it' : 'What happens next' }}
                                             </p>
                                             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;">
                                                 @foreach ($steps as $index => [$step_title, $step_text])
@@ -328,7 +354,7 @@
                                                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                                                         <tr>
                                                             <td style="font-size:14px;line-height:20px;font-weight:700;color:#111827;">
-                                                                {{ $variant === 'payment_succeeded' ? 'Total paid' : ($variant === 'payment_failed' ? 'Amount due' : 'Amount to be charged') }}
+                                                                {{ $variant === 'payment_succeeded' ? 'Total paid' : ($variant === 'payment_failed' ? 'Amount due' : ($is_card_missing ? 'Amount due on renewal' : 'Amount to be charged')) }}
                                                             </td>
                                                             <td align="right" style="font-size:18px;line-height:22px;font-weight:800;color:{{ $brand_dark }};">
                                                                 {{ $amount }}
@@ -341,7 +367,9 @@
 
                                         {{-- Help --}}
                                         <p style="margin:0;font-size:14px;line-height:22px;color:#6b7280;">
-                                            @if ($variant === 'renewal_reminder')
+                                            @if ($is_card_missing)
+                                                Planning to change or end your plan?
+                                            @elseif ($variant === 'renewal_reminder')
                                                 Want to change your card or have a question about your plan?
                                             @else
                                                 Questions about this payment?

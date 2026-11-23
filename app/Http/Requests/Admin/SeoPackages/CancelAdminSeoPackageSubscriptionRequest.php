@@ -14,7 +14,9 @@ class CancelAdminSeoPackageSubscriptionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'notes' => ['nullable', 'string', 'max:1000'],
+            'notes'              => ['nullable', 'string', 'max:1000'],
+            // Void the unpaid invoices of periods that were never collected.
+            'void_open_invoices' => ['sometimes', 'boolean'],
         ];
     }
 }

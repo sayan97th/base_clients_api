@@ -145,6 +145,38 @@ class SeoPackageSubscription extends Model
     }
 
     /**
+     * Billing dates that have already passed without being paid: the
+     * schedule only moves forward once a period is paid, so every billing
+     * date from next_billing_date up to yesterday is still owed. Dates after
+     * ends_at are never owed. Capped so a long forgotten subscription can
+     * not loop forever.
+     *
+     * @return Carbon[]
+     */
+    public function overdueBillingDates(?CarbonInterface $today = null, int $limit = 36): array
+    {
+        if (! $this->next_billing_date) {
+            return [];
+        }
+
+        $today  = Carbon::parse($today ?? now())->startOfDay();
+        $anchor = $this->anchorDay();
+        $date   = $this->next_billing_date->copy()->startOfDay();
+        $dates  = [];
+
+        while ($date->lt($today) && count($dates) < $limit) {
+            if ($this->ends_at && $date->gt($this->ends_at)) {
+                break;
+            }
+
+            $dates[] = $date->copy();
+            $date    = self::advanceByOneMonth($date, $anchor);
+        }
+
+        return $dates;
+    }
+
+    /**
      * Same anchor day next month, clamped to the end of shorter months, so a
      * subscription anchored on the 31st bills on Feb 28 and on Mar 31 again.
      */

@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\SeoPackageSubscription;
+use App\Services\SeoSubscriptionPaymentHealthService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -36,6 +37,8 @@ class AdminSeoPackageSubscriptionResource extends JsonResource
             'reminder_days_before'     => $this->reminder_days_before,
             'last_reminder_sent_for'   => $this->last_reminder_sent_for?->toDateString(),
             'payment_status'           => $this->payment_status,
+            // Derived on every read: pending payment, months behind, card problems.
+            'payment_health'           => app(SeoSubscriptionPaymentHealthService::class)->evaluate($this->resource),
             'payment_profile_id'       => $this->payment_profile_id,
             'payment_profile'          => $this->whenLoaded('paymentProfile', fn () => $this->paymentProfile ? [
                 'id'           => $this->paymentProfile->id,

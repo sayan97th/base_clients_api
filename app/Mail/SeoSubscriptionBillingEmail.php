@@ -9,10 +9,12 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * Client emails for SEO subscription billing. One template, three moments:
- *   - payment_succeeded: the monthly charge went through (receipt).
- *   - payment_failed:    the monthly charge was declined, action needed.
- *   - renewal_reminder:  heads up a few days before the card is charged.
+ * Client emails for SEO subscription billing. One template, four moments:
+ *   - payment_succeeded:      the monthly charge went through (receipt).
+ *   - payment_failed:         the monthly charge was declined, action needed.
+ *   - renewal_reminder:       heads up a few days before the card is charged.
+ *   - payment_method_missing: the client removed their last card while the
+ *                             subscription still renews automatically.
  */
 class SeoSubscriptionBillingEmail extends Mailable
 {
@@ -21,6 +23,7 @@ class SeoSubscriptionBillingEmail extends Mailable
     public const VARIANT_PAYMENT_SUCCEEDED = 'payment_succeeded';
     public const VARIANT_PAYMENT_FAILED    = 'payment_failed';
     public const VARIANT_RENEWAL_REMINDER  = 'renewal_reminder';
+    public const VARIANT_PAYMENT_METHOD_MISSING = 'payment_method_missing';
 
     public function __construct(
         public string $variant,
@@ -52,6 +55,7 @@ class SeoSubscriptionBillingEmail extends Mailable
         $subject = match ($this->variant) {
             self::VARIANT_PAYMENT_SUCCEEDED => "Payment received for your SEO subscription, {$this->period_label} | {$app_name}",
             self::VARIANT_PAYMENT_FAILED    => "Action needed: your SEO subscription payment did not go through | {$app_name}",
+            self::VARIANT_PAYMENT_METHOD_MISSING => "Add a card to keep your SEO subscription running | {$app_name}",
             default                         => "Your SEO subscription renews on {$this->billing_date} | {$app_name}",
         };
 

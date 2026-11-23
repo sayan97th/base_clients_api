@@ -121,6 +121,15 @@ class SeoSubscriptionEmailsTest extends TestCase
         $this->assertStringContainsString('https://portal.test/billing', $html);
     }
 
+    public function test_failed_email_says_a_new_card_is_retried_right_away(): void
+    {
+        $html = $this->clientEmail(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED)->render();
+        $this->assertStringContainsString('As soon as you add a new card we try again automatically, at the latest on December 4, 2026.', $html);
+
+        $html = $this->clientEmail(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED, ['next_retry_date' => ''])->render();
+        $this->assertStringContainsString('Once you add a new card or pay the invoice, your subscription continues as usual.', $html);
+    }
+
     public function test_failed_email_falls_back_to_the_billing_page_without_an_invoice(): void
     {
         $html = $this->clientEmail(SeoSubscriptionBillingEmail::VARIANT_PAYMENT_FAILED, ['invoice_url' => '', 'invoice_number' => ''])->render();

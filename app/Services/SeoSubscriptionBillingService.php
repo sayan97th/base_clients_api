@@ -727,7 +727,7 @@ class SeoSubscriptionBillingService
                         'invoice_id'     => $invoice->id,
                         'event'          => 'invoice paid',
                         'description'    => "SEO subscription payment for {$period} recorded as paid outside the portal by {$actor_name}."
-                            . ($reference ? " Reference: {$reference}." : ''),
+                            . ($reference ? " Note: {$reference}." : ''),
                         'actor_id'       => $admin?->id,
                         'actor_name'     => $actor_name,
                         'actor_initials' => $this->buildInitials($actor_name),
@@ -742,7 +742,7 @@ class SeoSubscriptionBillingService
                         'payment_method' => 'manual',
                         'invoice_id'     => (string) $invoice->id,
                         'description'    => "SEO subscription {$period}, invoice {$invoice->invoice_number} paid outside the portal."
-                            . ($reference ? " Reference: {$reference}." : ''),
+                            . ($reference ? " Note: {$reference}." : ''),
                         'metadata'       => [
                             'seo_subscription_id'        => (string) $subscription->id,
                             'seo_subscription_charge_id' => (string) $charge->id,

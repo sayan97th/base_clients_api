@@ -311,7 +311,7 @@ class SeoSubscriptionMonthlyGuardEdgeCasesTest extends TestCase
                 'outside_payment_reference' => str_repeat('a', 121),
             ]))
             ->assertUnprocessable()
-            ->assertJsonPath('errors.outside_payment_reference.0', 'The payment reference can be at most 120 characters.');
+            ->assertJsonPath('errors.outside_payment_reference.0', 'The note can be at most 120 characters.');
     }
 
     public function test_the_payment_reference_is_kept_in_the_invoice_history(): void
@@ -325,7 +325,7 @@ class SeoSubscriptionMonthlyGuardEdgeCasesTest extends TestCase
 
         $history = InvoiceHistory::where('event', 'invoice paid')->sole();
         $this->assertStringContainsString('recorded as paid outside the portal', $history->description);
-        $this->assertStringContainsString('Reference: Bank transfer 8812.', $history->description);
+        $this->assertStringContainsString('Note: Bank transfer 8812.', $history->description);
         $this->assertSame($this->admin->id, $history->actor_id);
         $this->assertSame('admin', $history->actor_type);
     }

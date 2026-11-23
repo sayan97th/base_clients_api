@@ -289,7 +289,8 @@ class AdminSeoSubscriptionApiTest extends TestCase
             'custom amount below Stripe minimum' => [['custom_price' => 0.3], 'custom_price'],
             'first payment in the past'         => [['first_billing_date' => '2026-11-01'], 'first_billing_date'],
             'end date before the start'         => [['ends_at' => '2026-11-01'], 'ends_at'],
-            'reminder longer than two weeks'    => [['reminder_days_before' => 30], 'reminder_days_before'],
+            'reminder longer than four weeks'   => [['reminder_days_before' => 29], 'reminder_days_before'],
+            'reminder with a fraction of a day' => [['reminder_days_before' => 2.5], 'reminder_days_before'],
             'unknown pricing type'              => [['pricing_type' => 'yearly'], 'pricing_type'],
         ];
     }
@@ -418,6 +419,28 @@ class AdminSeoSubscriptionApiTest extends TestCase
             ->assertJsonPath('data.reminder_days_before', null)
             ->assertJsonPath('data.monthly_price', 2000)
             ->assertJsonPath('data.auto_renew', true);
+    }
+
+    public function test_update_accepts_a_custom_reminder_up_to_the_limit(): void
+    {
+        $subscription = $this->makeSubscriptionFor($this->client, ['reminder_days_before' => 3]);
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson(self::BASE_URL . "/{$subscription->id}", ['reminder_days_before' => 10])
+            ->assertOk()
+            ->assertJsonPath('data.reminder_days_before', 10);
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson(self::BASE_URL . "/{$subscription->id}", ['reminder_days_before' => SeoPackageSubscription::MAX_REMINDER_DAYS])
+            ->assertOk()
+            ->assertJsonPath('data.reminder_days_before', SeoPackageSubscription::MAX_REMINDER_DAYS);
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson(self::BASE_URL . "/{$subscription->id}", ['reminder_days_before' => SeoPackageSubscription::MAX_REMINDER_DAYS + 1])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('reminder_days_before');
+
+        $this->assertSame(SeoPackageSubscription::MAX_REMINDER_DAYS, $subscription->refresh()->reminder_days_before);
     }
 
     public function test_moving_the_next_billing_date_moves_the_anchor_and_resets_the_reminder(): void

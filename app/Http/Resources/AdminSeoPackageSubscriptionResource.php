@@ -34,6 +34,7 @@ class AdminSeoPackageSubscriptionResource extends JsonResource
             'billing_anchor_day'       => $this->billing_anchor_day,
             'next_billing_date'        => $this->next_billing_date?->toDateString(),
             'reminder_days_before'     => $this->reminder_days_before,
+            'last_reminder_sent_for'   => $this->last_reminder_sent_for?->toDateString(),
             'payment_status'           => $this->payment_status,
             'payment_profile_id'       => $this->payment_profile_id,
             'payment_profile'          => $this->whenLoaded('paymentProfile', fn () => $this->paymentProfile ? [

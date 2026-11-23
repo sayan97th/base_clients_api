@@ -22,6 +22,15 @@ class SeoPackageSubscription extends Model
 
     public const DEFAULT_INVOICE_ITEM_LABEL = 'SEO Services';
 
+    /**
+     * Renewal reminder bounds. The admin can pick any number of days, capped
+     * at the shortest month so a reminder never goes out before the previous
+     * charge of a monthly subscription.
+     */
+    public const DEFAULT_REMINDER_DAYS = 3;
+    public const MIN_REMINDER_DAYS     = 1;
+    public const MAX_REMINDER_DAYS     = 28;
+
     protected $fillable = [
         'user_id',
         'seo_package_id',

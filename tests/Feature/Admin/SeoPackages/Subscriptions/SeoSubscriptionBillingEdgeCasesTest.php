@@ -313,6 +313,24 @@ class SeoSubscriptionBillingEdgeCasesTest extends TestCase
         $this->assertSame(1, $this->clientEmailsOf(SeoSubscriptionBillingEmail::VARIANT_RENEWAL_REMINDER));
     }
 
+    public function test_custom_reminder_windows_are_respected(): void
+    {
+        $this->mockStripe(fn (MockInterface $mock) => $mock->shouldNotReceive('chargeSavedCardOffSession'));
+
+        $today = now()->startOfDay();
+
+        // 20 day reminder, charge in 20 days: inside the window, sent.
+        $this->makeSubscriptionFor($this->client, ['next_billing_date' => $today->copy()->addDays(20)->toDateString(), 'reminder_days_before' => 20]);
+        // 10 day reminder, charge in 11 days: too early.
+        $this->makeSubscriptionFor($this->client, ['next_billing_date' => $today->copy()->addDays(11)->toDateString(), 'reminder_days_before' => 10]);
+        // 28 day reminder, charge in 28 days: the longest window, sent.
+        $this->makeSubscriptionFor($this->client, ['next_billing_date' => $today->copy()->addDays(28)->toDateString(), 'reminder_days_before' => 28]);
+
+        $this->runBilling(['--reminders-only' => true]);
+
+        $this->assertSame(2, $this->clientEmailsOf(SeoSubscriptionBillingEmail::VARIANT_RENEWAL_REMINDER));
+    }
+
     public function test_a_reminder_is_sent_again_for_the_next_period(): void
     {
         $subscription = $this->makeSubscriptionFor($this->client, ['next_billing_date' => '2026-12-03']);

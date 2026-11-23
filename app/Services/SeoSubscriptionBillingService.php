@@ -103,7 +103,7 @@ class SeoSubscriptionBillingService
             'payment_profile_id'       => $data['payment_profile_id'] ?? null,
             'billing_anchor_day'       => $next_billing_date->day,
             'next_billing_date'        => $next_billing_date->toDateString(),
-            'reminder_days_before'     => array_key_exists('reminder_days_before', $data) ? $data['reminder_days_before'] : 3,
+            'reminder_days_before'     => array_key_exists('reminder_days_before', $data) ? $data['reminder_days_before'] : SeoPackageSubscription::DEFAULT_REMINDER_DAYS,
             'payment_status'           => SeoPackageSubscription::PAYMENT_STATUS_CURRENT,
             'status'                   => 'active',
             'starts_at'                => $starts_at->toDateString(),
@@ -413,7 +413,7 @@ class SeoSubscriptionBillingService
             ->whereNotNull('reminder_days_before')
             ->where('reminder_days_before', '>', 0)
             ->whereDate('next_billing_date', '>', $today->toDateString())
-            ->whereDate('next_billing_date', '<=', $today->copy()->addDays(30)->toDateString())
+            ->whereDate('next_billing_date', '<=', $today->copy()->addDays(SeoPackageSubscription::MAX_REMINDER_DAYS)->toDateString())
             ->lazyById(100)
             ->each(function (SeoPackageSubscription $subscription) use ($today, &$sent) {
                 $billing_date = $subscription->next_billing_date;

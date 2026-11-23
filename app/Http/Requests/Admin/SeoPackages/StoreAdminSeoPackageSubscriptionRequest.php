@@ -52,7 +52,7 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
                 'string',
                 Rule::exists('payment_profiles', 'id')->where('user_id', (int) $this->input('user_id')),
             ],
-            'reminder_days_before'     => ['nullable', 'integer', 'min:0', 'max:14'],
+            'reminder_days_before'     => ['nullable', 'integer', 'min:0', 'max:' . SeoPackageSubscription::MAX_REMINDER_DAYS],
             'charge_now'               => ['sometimes', 'boolean'],
             'notes'                    => ['nullable', 'string', 'max:1000'],
         ];
@@ -95,6 +95,8 @@ class StoreAdminSeoPackageSubscriptionRequest extends FormRequest
             'custom_price.min'               => 'The monthly amount must be at least $0.50.',
             'first_billing_date.after_or_equal' => 'The first billing date cannot be in the past.',
             'payment_profile_id.exists'      => 'The selected card does not belong to this client.',
+            'reminder_days_before.integer'   => 'The reminder must be a whole number of days.',
+            'reminder_days_before.max'       => 'The reminder can be sent at most ' . SeoPackageSubscription::MAX_REMINDER_DAYS . ' days before the charge.',
         ];
     }
 }

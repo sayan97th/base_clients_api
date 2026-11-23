@@ -16,7 +16,9 @@ use Throwable;
  *
  * The gift card is always earned per order (one checkout), never per
  * product or item: a checkout with several products still earns a single
- * gift card, calculated on the total of its qualifying products.
+ * gift card, calculated on the total of its qualifying products. When the
+ * coupon has a max_discount_amount, the gift card never exceeds it (for
+ * example HAPPYHOLIDAYS sends at most $1,000 per order).
  *
  * Reward coupons never reduce the price, so they are kept out of the order
  * coupon tables (which drive discount, bulk discount and invoice logic) and
@@ -196,6 +198,7 @@ class GiftCardRewardService
             'coupon_code'       => $coupon->code,
             'order_total'       => $eligible_total,
             'reward_percentage' => (float) $coupon->discount_value,
+            'max_reward_amount' => $coupon->maxDiscountAmount(),
             'reward_amount'     => $this->couponService->calculateRewardAmount($coupon, $eligible_total),
             'recipient_email'   => $has_details ? strtolower(trim($details['recipient_email'])) : null,
             'gift_card_brand'   => $has_details ? $details['gift_card_brand'] : null,
@@ -262,6 +265,9 @@ class GiftCardRewardService
             'promotion_name'    => $claim->coupon?->name ?? $claim->coupon_code,
             'order_total'       => $claim->order_total,
             'reward_percentage' => $claim->reward_percentage,
+            // Highest gift card value of the promo when the order was placed, null when unlimited.
+            'max_reward_amount' => $claim->max_reward_amount,
+            'is_reward_capped'  => $claim->isRewardCapped(),
             'reward_amount'     => $claim->reward_amount,
             'recipient_email'   => $claim->recipient_email,
             'gift_card_brand'   => $claim->gift_card_brand,

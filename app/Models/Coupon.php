@@ -60,6 +60,7 @@ class Coupon extends Model
         'product_types',
         'dr_tier_id',
         'minimum_purchase_amount',
+        'max_discount_amount',
         'starts_at',
         'expires_at',
         'usage_limit',
@@ -73,6 +74,7 @@ class Coupon extends Model
         return [
             'discount_value'          => 'float',
             'minimum_purchase_amount' => 'float',
+            'max_discount_amount'     => 'float',
             'usage_limit'             => 'integer',
             'usage_per_user'          => 'integer',
             'times_used'              => 'integer',
@@ -111,6 +113,50 @@ class Coupon extends Model
     public function isGiftCardReward(): bool
     {
         return $this->discount_type === self::DISCOUNT_TYPE_GIFT_CARD_REWARD;
+    }
+
+    /**
+     * Whether the coupon type can carry a max_discount_amount ceiling. Fixed
+     * amount coupons already define the exact amount, so they never need one.
+     */
+    public static function supportsMaxDiscount(?string $discount_type): bool
+    {
+        return in_array($discount_type, [
+            self::DISCOUNT_TYPE_PERCENTAGE,
+            self::DISCOUNT_TYPE_GIFT_CARD_REWARD,
+        ], true);
+    }
+
+    /**
+     * The ceiling for one order, or null when the coupon has none. For gift
+     * card reward coupons this is the highest gift card value a client can
+     * earn, for percentage coupons the biggest discount.
+     */
+    public function maxDiscountAmount(): ?float
+    {
+        if (! self::supportsMaxDiscount($this->discount_type)) {
+            return null;
+        }
+
+        $max_discount_amount = $this->max_discount_amount;
+
+        return $max_discount_amount !== null && $max_discount_amount > 0
+            ? (float) $max_discount_amount
+            : null;
+    }
+
+    /**
+     * Applies the coupon ceiling to a calculated discount or gift card value.
+     */
+    public function applyMaxDiscount(float $amount): float
+    {
+        $max_discount_amount = $this->maxDiscountAmount();
+
+        if ($max_discount_amount === null) {
+            return $amount;
+        }
+
+        return round(min($amount, $max_discount_amount), 2);
     }
 
     /**

@@ -63,6 +63,9 @@ class StoreCouponRequest extends FormRequest
             'minimum_purchase_amount' => $is_minimum_purchase_scope
                 ? ['required', 'numeric', 'gt:0']
                 : ['nullable', 'numeric', 'gt:0'],
+            // Optional ceiling per order. Only percentage and gift card coupons use it,
+            // the controller clears it for fixed amount coupons.
+            'max_discount_amount'     => ['nullable', 'numeric', 'gt:0', 'max:99999999.99'],
             'starts_at'               => [
                 'nullable',
                 'date_format:Y-m-d',
@@ -103,6 +106,8 @@ class StoreCouponRequest extends FormRequest
             'dr_tier_ids.min'                  => 'At least one DR tier must be selected when the discount scope is DR Tiers.',
             'dr_tier_ids.*.exists'             => 'One or more selected DR tiers are invalid.',
             'minimum_purchase_amount.required' => 'A minimum purchase amount is required when the discount scope is Minimum Purchase.',
+            'max_discount_amount.gt'           => 'The maximum amount must be greater than 0.',
+            'max_discount_amount.numeric'      => 'The maximum amount must be a valid dollar amount.',
         ];
     }
 }

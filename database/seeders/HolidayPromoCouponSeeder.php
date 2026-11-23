@@ -15,7 +15,9 @@ use Illuminate\Database\Seeder;
  *      sent and which gift card they want: Amazon, Visa or Target.
  *   3. The admins subscribed to the gift card notification are emailed each
  *      time a client submits those details, so the card can be sent promptly.
- *   4. The gift card is worth 10% of the order total.
+ *   4. The gift card is worth 10% of the order total, up to $1,000. Clients
+ *      can order as much as they want, but one order never earns a gift
+ *      card worth more than $1,000 (max_discount_amount on the coupon).
  *
  * Promotion dates: November 27 through December 18, 2026. Both days are
  * included. Days begin and end in the promotion timezone
@@ -39,6 +41,9 @@ class HolidayPromoCouponSeeder extends Seeder
 
     public const REWARD_PERCENTAGE = 10.00;
 
+    /** Highest gift card value one order can earn, whatever the order total. */
+    public const MAX_REWARD_AMOUNT = 1000.00;
+
     public const FIRST_DAY = '2026-11-27';
 
     public const LAST_DAY = '2026-12-18';
@@ -47,13 +52,14 @@ class HolidayPromoCouponSeeder extends Seeder
     {
         $promo_settings = [
             'name'                    => 'Happy Holidays 10% Back',
-            'description'             => 'Holiday promo running November 27 through December 18. Clients pay the regular price for links or content and receive a gift card (Amazon, Visa or Target) worth 10% of their order total.',
+            'description'             => 'Holiday promo running November 27 through December 18. Clients pay the regular price for links or content and receive a gift card (Amazon, Visa or Target) worth 10% of their order total, up to $1,000 per order.',
             'discount_type'           => Coupon::DISCOUNT_TYPE_GIFT_CARD_REWARD,
             'discount_value'          => self::REWARD_PERCENTAGE,
             'applies_to'              => Coupon::APPLIES_TO_ALL,
             'product_types'           => null,
             'dr_tier_id'              => null,
             'minimum_purchase_amount' => null,
+            'max_discount_amount'     => self::MAX_REWARD_AMOUNT,
             // Calendar days (Y-m-d). The Coupon model turns them into the start
             // of the first day and the end of the last day.
             'starts_at'               => $this->promoDate('HOLIDAY_PROMO_STARTS_AT', self::FIRST_DAY),

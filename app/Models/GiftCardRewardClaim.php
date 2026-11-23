@@ -40,6 +40,7 @@ class GiftCardRewardClaim extends Model
         'coupon_code',
         'order_total',
         'reward_percentage',
+        'max_reward_amount',
         'reward_amount',
         'recipient_email',
         'gift_card_brand',
@@ -57,6 +58,7 @@ class GiftCardRewardClaim extends Model
             'product_types'     => 'array',
             'order_total'       => 'float',
             'reward_percentage' => 'float',
+            'max_reward_amount' => 'float',
             'reward_amount'     => 'float',
             'submitted_at'      => 'datetime',
             'fulfilled_at'      => 'datetime',
@@ -72,6 +74,21 @@ class GiftCardRewardClaim extends Model
                 fn () => app(CouponRedemptionRecorder::class)->safelyRecordGiftCardClaim($claim)
             );
         });
+    }
+
+    /**
+     * True when the gift card was limited by the coupon ceiling, meaning the
+     * reward percentage of the order total was higher than what is sent.
+     */
+    public function isRewardCapped(): bool
+    {
+        if ($this->max_reward_amount === null) {
+            return false;
+        }
+
+        $uncapped_reward = round((float) $this->order_total * ((float) $this->reward_percentage / 100), 2);
+
+        return $uncapped_reward > (float) $this->reward_amount;
     }
 
     public static function brandKeys(): array

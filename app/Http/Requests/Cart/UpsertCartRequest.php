@@ -47,6 +47,7 @@ class UpsertCartRequest extends FormRequest
             'applied_coupons.*.discount_amount'  => ['required', 'numeric', 'min:0'],
             'applied_coupons.*.discount_type'    => ['required', 'string', Rule::in(Coupon::DISCOUNT_TYPES)],
             'applied_coupons.*.discount_value'   => ['required', 'numeric', 'min:0'],
+            'applied_coupons.*.max_discount_amount' => ['nullable', 'numeric', 'gt:0'],
 
             'coupon_input_code'                  => ['nullable', 'string', 'max:100'],
             'order_title'                        => ['nullable', 'string', 'max:500'],

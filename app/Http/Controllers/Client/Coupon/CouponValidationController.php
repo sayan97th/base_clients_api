@@ -53,6 +53,8 @@ class CouponValidationController extends Controller
             return response()->json($this->buildInvalidResponse($code, $result['message']));
         }
 
+        $max_discount_amount = $coupon->maxDiscountAmount();
+
         return response()->json([
             'valid'                   => true,
             'coupon_id'               => $coupon->id,
@@ -64,15 +66,43 @@ class CouponValidationController extends Controller
             'product_types'           => $coupon->product_types ?? [],
             'dr_tier_id'              => $coupon->dr_tier_id,
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
+            // Highest discount (or gift card value) one order can get, null when unlimited.
+            'max_discount_amount'     => $max_discount_amount,
             'discount_amount'         => $result['discount_amount'],
             'is_gift_card_reward'     => $coupon->isGiftCardReward(),
             'reward_percentage'       => $coupon->isGiftCardReward() ? (float) $coupon->discount_value : null,
             'reward_amount'           => $result['reward_amount'] ?? 0,
+            'is_reward_capped'        => $coupon->isGiftCardReward()
+                && ($result['reward_amount'] ?? 0) < $this->couponService->calculateUncappedRewardAmount($coupon, $order_amount),
             'gift_card_brands'        => $coupon->isGiftCardReward() ? GiftCardRewardClaim::brandOptions() : [],
             'message'                 => $coupon->isGiftCardReward()
-                ? 'Promo code applied. You will receive one gift card for this whole order, worth ' . rtrim(rtrim(number_format((float) $coupon->discount_value, 2), '0'), '.') . '% of your order total.'
+                ? $this->buildGiftCardRewardMessage($coupon, $max_discount_amount)
                 : 'Coupon applied successfully.',
         ]);
+    }
+
+    /**
+     * For example "Promo code applied. You will receive one gift card for this
+     * whole order, worth 10% of your order total, up to $1,000."
+     */
+    private function buildGiftCardRewardMessage(Coupon $coupon, ?float $max_discount_amount): string
+    {
+        $percentage = rtrim(rtrim(number_format((float) $coupon->discount_value, 2), '0'), '.');
+        $message    = "Promo code applied. You will receive one gift card for this whole order, worth {$percentage}% of your order total";
+
+        if ($max_discount_amount !== null) {
+            $message .= ', up to $' . $this->formatMoney($max_discount_amount);
+        }
+
+        return $message . '.';
+    }
+
+    /** 1000 becomes "1,000" and 1000.5 becomes "1,000.50". */
+    private function formatMoney(float $amount): string
+    {
+        return fmod($amount, 1.0) === 0.0
+            ? number_format($amount, 0)
+            : number_format($amount, 2);
     }
 
     private function buildInvalidResponse(string $code, string $message): array
@@ -88,10 +118,12 @@ class CouponValidationController extends Controller
             'product_types'           => [],
             'dr_tier_id'              => null,
             'minimum_purchase_amount' => null,
+            'max_discount_amount'     => null,
             'discount_amount'         => 0,
             'is_gift_card_reward'     => false,
             'reward_percentage'       => null,
             'reward_amount'           => 0,
+            'is_reward_capped'        => false,
             'gift_card_brands'        => [],
             'message'                 => $message,
         ];

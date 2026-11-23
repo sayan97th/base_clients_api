@@ -51,7 +51,7 @@
 
         $details = array_values(array_filter([
             ['Gift card', '1 ' . $gift_card_label . ' gift card for the whole order'],
-            ['Value', $reward_amount . ' (' . $reward_percentage . ' back)'],
+            ['Value', $reward_amount . ' (' . $reward_percentage . ' back' . ($reward_cap !== '' ? ', capped at the ' . $reward_cap . ' promo limit' : '') . ')'],
             ['Order total', $order_total],
             ['Products', $products],
             ['Order', '#' . $order_reference],
@@ -147,7 +147,7 @@
                                                         </tr>
                                                         <tr>
                                                             <td colspan="2" style="padding:0 0 18px;font-size:13px;line-height:20px;color:{{ $theme['muted'] }};">
-                                                                {{ $reward_percentage }} back on a {{ $order_total }} order
+                                                                {{ $reward_percentage }} back on a {{ $order_total }} order{{ $reward_cap !== '' ? ', capped at ' . $reward_cap : '' }}
                                                             </td>
                                                         </tr>
                                                         <tr>

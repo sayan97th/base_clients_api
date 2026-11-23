@@ -63,6 +63,9 @@ class UpdateCouponRequest extends FormRequest
                 Rule::exists('dr_tiers', 'id'),
             ],
             'minimum_purchase_amount' => $this->minimumPurchaseRules($applies_to),
+            // Optional ceiling per order. Only percentage and gift card coupons use it,
+            // the controller clears it for fixed amount coupons.
+            'max_discount_amount'     => ['sometimes', 'nullable', 'numeric', 'gt:0', 'max:99999999.99'],
             'starts_at'               => [
                 'sometimes',
                 'nullable',
@@ -106,6 +109,8 @@ class UpdateCouponRequest extends FormRequest
             'dr_tier_ids.min'                  => 'At least one DR tier must be selected when the discount scope is DR Tiers.',
             'dr_tier_ids.*.exists'             => 'One or more selected DR tiers are invalid.',
             'minimum_purchase_amount.required' => 'A minimum purchase amount is required when the discount scope is Minimum Purchase.',
+            'max_discount_amount.gt'           => 'The maximum amount must be greater than 0.',
+            'max_discount_amount.numeric'      => 'The maximum amount must be a valid dollar amount.',
         ];
     }
 
@@ -116,6 +121,14 @@ class UpdateCouponRequest extends FormRequest
     public function effectiveAppliesTo(): ?string
     {
         return $this->input('applies_to', $this->currentCoupon()?->applies_to);
+    }
+
+    /**
+     * The discount type the coupon will have after this update.
+     */
+    public function effectiveDiscountType(): ?string
+    {
+        return $this->input('discount_type', $this->currentCoupon()?->discount_type);
     }
 
     /**

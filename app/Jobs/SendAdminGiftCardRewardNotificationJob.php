@@ -106,6 +106,7 @@ class SendAdminGiftCardRewardNotificationJob implements ShouldQueue
                     is_payment_pending: $this->isPaymentPending($claim),
                     submitted_at:       ($claim->submitted_at ?? now())->format('F j, Y \a\t g:i A'),
                     promotion_ends_at:  $this->formatPromotionLastDay($claim->coupon?->endDate()),
+                    reward_cap:         $claim->isRewardCapped() ? '$' . number_format((float) $claim->max_reward_amount, 2) : '',
                     view_order_url:     $view_order_url,
                     view_claims_url:    $view_claims_url,
                     settings_url:       FrontendUrl::to('/admin/email-notifications'),

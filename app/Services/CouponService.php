@@ -121,9 +121,23 @@ class CouponService
 
     /**
      * Gift card value earned with a gift card reward coupon. discount_value
-     * holds the reward percentage (10 means 10% back).
+     * holds the reward percentage (10 means 10% back) and max_discount_amount,
+     * when set, is the highest value the gift card can reach for one order.
      */
     public function calculateRewardAmount(Coupon $coupon, float $order_total): float
+    {
+        if (! $coupon->isGiftCardReward()) {
+            return 0.0;
+        }
+
+        return $coupon->applyMaxDiscount($this->calculateUncappedRewardAmount($coupon, $order_total));
+    }
+
+    /**
+     * Gift card value before the coupon ceiling, used to tell the client when
+     * the ceiling was reached.
+     */
+    public function calculateUncappedRewardAmount(Coupon $coupon, float $order_total): float
     {
         if (! $coupon->isGiftCardReward()) {
             return 0.0;
@@ -206,7 +220,7 @@ class CouponService
         }
 
         if ($coupon->discount_type === 'percentage') {
-            return round($base_amount * ($coupon->discount_value / 100), 2);
+            return $coupon->applyMaxDiscount(round($base_amount * ($coupon->discount_value / 100), 2));
         }
 
         // fixed_amount — capped at the base amount so total never goes negative

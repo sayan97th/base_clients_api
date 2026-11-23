@@ -128,6 +128,7 @@ class CouponController extends Controller
     public function store(StoreCouponRequest $request): JsonResponse
     {
         $validated   = $this->normalizeScopeFields($request->validated(), $request->validated('applies_to'));
+        $validated   = $this->normalizeMaxDiscount($validated, $request->validated('discount_type'));
         $dr_tier_ids = $validated['dr_tier_ids'] ?? [];
         unset($validated['dr_tier_ids']);
 
@@ -161,6 +162,7 @@ class CouponController extends Controller
 
         $applies_to  = $request->effectiveAppliesTo();
         $validated   = $this->normalizeScopeFields($request->validated(), $applies_to);
+        $validated   = $this->normalizeMaxDiscount($validated, $request->effectiveDiscountType());
         $dr_tier_ids = $validated['dr_tier_ids'] ?? null;
         unset($validated['dr_tier_ids']);
 
@@ -228,6 +230,19 @@ class CouponController extends Controller
         return $validated;
     }
 
+    /**
+     * Fixed amount coupons already define the exact discount, so a ceiling
+     * never applies to them and any stale value is cleared.
+     */
+    private function normalizeMaxDiscount(array $validated, ?string $discount_type): array
+    {
+        if (! Coupon::supportsMaxDiscount($discount_type)) {
+            $validated['max_discount_amount'] = null;
+        }
+
+        return $validated;
+    }
+
     private function loadCouponDetails(Coupon $coupon): Coupon
     {
         return $coupon->load('drTiers')->loadCount([
@@ -249,6 +264,8 @@ class CouponController extends Controller
             'dr_tier_ids'             => $coupon->drTiers->pluck('id')->values()->toArray(),
             'dr_tiers'                => $coupon->drTiers->values()->toArray(),
             'minimum_purchase_amount' => $coupon->minimum_purchase_amount,
+            // Highest discount (or gift card value) one order can get, null when unlimited.
+            'max_discount_amount'     => $coupon->max_discount_amount,
             // Calendar days in the promotion timezone, both days included.
             'starts_at'               => $coupon->startDate(),
             'expires_at'              => $coupon->endDate(),

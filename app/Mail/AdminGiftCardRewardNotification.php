@@ -39,6 +39,8 @@ class AdminGiftCardRewardNotification extends Mailable
         public string $view_claims_url,
         public string $settings_url,
         public string $promotion_ends_at = '',
+        // Formatted promo ceiling (for example "$1,000.00"), only set when it limited this gift card.
+        public string $reward_cap = '',
     ) {
         $this->onQueue('emails');
     }

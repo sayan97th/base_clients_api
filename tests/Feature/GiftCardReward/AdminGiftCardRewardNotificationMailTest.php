@@ -69,6 +69,23 @@ class AdminGiftCardRewardNotificationMailTest extends TestCase
         }
     }
 
+    public function test_it_explains_when_the_gift_card_was_capped_by_the_promo_limit(): void
+    {
+        $html = $this->makeMail([
+            'reward_amount' => '$1,000.00',
+            'order_total'   => '$50,000.00',
+            'reward_cap'    => '$1,000.00',
+        ])->render();
+
+        $this->assertStringContainsString('10% back on a $50,000.00 order, capped at $1,000.00', $html);
+        $this->assertStringContainsString('capped at the $1,000.00 promo limit', $html);
+    }
+
+    public function test_it_has_no_cap_note_when_the_gift_card_was_not_capped(): void
+    {
+        $this->assertStringNotContainsString('capped at', $this->makeMail()->render());
+    }
+
     public function test_it_lists_the_next_steps_and_links_to_the_portal(): void
     {
         $html = $this->makeMail()->render();

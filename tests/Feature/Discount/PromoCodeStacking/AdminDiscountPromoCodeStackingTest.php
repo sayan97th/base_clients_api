@@ -100,4 +100,62 @@ class AdminDiscountPromoCodeStackingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.allow_promo_code_stacking', false);
     }
+
+    public function test_update_rejects_a_non_boolean_stacking_option(): void
+    {
+        $discount = Discount::create($this->discountPayload());
+
+        $this->actingAs($this->admin, 'api')
+            ->patchJson("/api/admin/discounts/{$discount->id}", ['allow_promo_code_stacking' => 'yes please'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('allow_promo_code_stacking');
+
+        $this->assertFalse($discount->fresh()->allow_promo_code_stacking);
+    }
+
+    public function test_admin_list_shows_the_stacking_option_of_every_discount(): void
+    {
+        Discount::create($this->discountPayload(['name' => 'Not stackable']));
+        Discount::create($this->discountPayload(['name' => 'Stackable', 'allow_promo_code_stacking' => true]));
+
+        $response = $this->actingAs($this->admin, 'api')->getJson('/api/admin/discounts')->assertOk();
+
+        $flags_by_name = collect($response->json('data'))->pluck('allow_promo_code_stacking', 'name')->all();
+        $this->assertSame(['Not stackable' => false, 'Stackable' => true], array_intersect_key(
+            $flags_by_name,
+            ['Not stackable' => null, 'Stackable' => null]
+        ));
+    }
+
+    public function test_admin_detail_shows_the_stacking_option_for_the_edit_form(): void
+    {
+        $discount = Discount::create($this->discountPayload(['allow_promo_code_stacking' => true]));
+
+        $this->actingAs($this->admin, 'api')
+            ->getJson("/api/admin/discounts/{$discount->id}")
+            ->assertOk()
+            ->assertJsonPath('data.allow_promo_code_stacking', true);
+    }
+
+    public function test_staff_can_change_the_stacking_option(): void
+    {
+        $discount = Discount::create($this->discountPayload());
+
+        $this->actingAs($this->makeUserWithRole('staff'), 'api')
+            ->patchJson("/api/admin/discounts/{$discount->id}", ['allow_promo_code_stacking' => true])
+            ->assertOk();
+
+        $this->assertTrue($discount->fresh()->allow_promo_code_stacking);
+    }
+
+    public function test_clients_cannot_change_the_stacking_option(): void
+    {
+        $discount = Discount::create($this->discountPayload());
+
+        $this->actingAs($this->makeUserWithRole('client'), 'api')
+            ->patchJson("/api/admin/discounts/{$discount->id}", ['allow_promo_code_stacking' => true])
+            ->assertForbidden();
+
+        $this->assertFalse($discount->fresh()->allow_promo_code_stacking);
+    }
 }

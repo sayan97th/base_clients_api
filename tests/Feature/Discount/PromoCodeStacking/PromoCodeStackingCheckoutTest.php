@@ -3,7 +3,6 @@
 namespace Tests\Feature\Discount\PromoCodeStacking;
 
 use App\Models\Coupon;
-use App\Models\Discount;
 use App\Models\DrTier;
 use App\Models\GiftCardRewardClaim;
 use App\Models\Invoice;
@@ -15,6 +14,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Mockery;
+use Tests\Support\Discount\InteractsWithBulkDiscounts;
 use Tests\Support\GiftCardReward\InteractsWithGiftCardRewards;
 use Tests\TestCase;
 
@@ -30,11 +30,12 @@ use Tests\TestCase;
 class PromoCodeStackingCheckoutTest extends TestCase
 {
     use RefreshDatabase;
+    use InteractsWithBulkDiscounts;
     use InteractsWithGiftCardRewards;
 
-    private const LINK_QUANTITY  = 10;
-    private const FULL_PRICE     = 4000.0;
-    private const BULK_PRICE     = 3600.0;
+    private const LINK_QUANTITY = 10;
+    private const FULL_PRICE    = 4000.0;
+    private const BULK_PRICE    = 3600.0;
 
     private User $client;
     private DrTier $dr_tier;
@@ -69,19 +70,6 @@ class PromoCodeStackingCheckoutTest extends TestCase
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
-
-    private function makeBulkDiscount(array $overrides = []): Discount
-    {
-        return Discount::create(array_merge([
-            'name'          => 'Bulk Link Building Discount',
-            'description'   => '10% off when ordering 10 links or more.',
-            'discount_type' => 'bulk',
-            'discount_rate' => 10.0,
-            'min_quantity'  => 10,
-            'applies_to'    => 'link_building',
-            'is_active'     => true,
-        ], $overrides));
-    }
 
     private function linkBuildingItems(): array
     {
@@ -186,7 +174,7 @@ class PromoCodeStackingCheckoutTest extends TestCase
 
     public function test_money_back_promo_code_keeps_the_bulk_discount_when_stacking_is_allowed(): void
     {
-        $this->makeBulkDiscount(['allow_promo_code_stacking' => true]);
+        $this->makeStackableBulkDiscount();
         $coupon = $this->makeRewardCoupon();
 
         $response = $this->cardCheckout([$coupon->id], self::BULK_PRICE);
@@ -198,7 +186,7 @@ class PromoCodeStackingCheckoutTest extends TestCase
 
     public function test_stacking_is_blocked_when_any_active_discount_for_the_product_disallows_it(): void
     {
-        $this->makeBulkDiscount(['allow_promo_code_stacking' => true]);
+        $this->makeStackableBulkDiscount();
         $this->makeBulkDiscount(['name' => 'Store wide bulk', 'applies_to' => 'all']);
         $coupon = $this->makeRewardCoupon();
 
@@ -210,7 +198,7 @@ class PromoCodeStackingCheckoutTest extends TestCase
 
     public function test_inactive_discounts_do_not_block_stacking(): void
     {
-        $this->makeBulkDiscount(['allow_promo_code_stacking' => true]);
+        $this->makeStackableBulkDiscount();
         $this->makeBulkDiscount(['name' => 'Old bulk', 'is_active' => false]);
         $coupon = $this->makeRewardCoupon();
 
@@ -238,7 +226,7 @@ class PromoCodeStackingCheckoutTest extends TestCase
 
     public function test_deferred_checkout_keeps_the_bulk_discount_when_stacking_is_allowed(): void
     {
-        $this->makeBulkDiscount(['allow_promo_code_stacking' => true]);
+        $this->makeStackableBulkDiscount();
         $coupon = $this->makeRewardCoupon();
 
         $response = $this->deferredCheckout([$coupon->id], self::BULK_PRICE);
@@ -253,7 +241,7 @@ class PromoCodeStackingCheckoutTest extends TestCase
     {
         // Even with stacking allowed, a promo code that lowers the price never
         // combines with the bulk discount: only one discount applies.
-        $this->makeBulkDiscount(['allow_promo_code_stacking' => true]);
+        $this->makeStackableBulkDiscount();
         $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
 
         $response = $this->cardCheckout([$coupon->id], 3800.0);

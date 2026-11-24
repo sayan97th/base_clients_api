@@ -57,13 +57,12 @@ class Discount extends Model
     }
 
     /**
-     * Whether the automatic discount of a product type may stay on an order
-     * that also uses a money back promo code (gift card reward).
+     * Whether the automatic discount of a product type may be combined with a
+     * promo code on the same order (any kind of promo code).
      *
-     * Promotions never stack by default, so this is only true when at least
+     * Promotions do not stack by default, so this is only true when at least
      * one active discount covers the product type and every one of them has
-     * the admin opt in enabled. Price discount promo codes always replace
-     * the automatic discount, regardless of this setting.
+     * the admin option "allow_promo_code_stacking" enabled.
      */
     public static function allowsPromoCodeStacking(string $product_type): bool
     {
@@ -73,5 +72,24 @@ class Discount extends Model
             ->pluck('allow_promo_code_stacking');
 
         return $stacking_flags->isNotEmpty() && $stacking_flags->every(fn ($flag) => (bool) $flag);
+    }
+
+    /**
+     * Bulk discount that ends up on an order.
+     *
+     * Without a promo code the bulk discount always applies. With a promo code
+     * (price discount or money back) it is removed, unless the admin allowed
+     * combining discounts and promo codes, in which case the client gets both.
+     */
+    public static function resolveBulkDiscount(
+        float $potential_bulk,
+        bool $has_promo_code,
+        bool $allow_promo_code_stacking
+    ): float {
+        if (! $has_promo_code || $allow_promo_code_stacking) {
+            return $potential_bulk;
+        }
+
+        return 0.0;
     }
 }

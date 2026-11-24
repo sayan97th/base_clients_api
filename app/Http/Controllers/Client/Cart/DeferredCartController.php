@@ -9,6 +9,7 @@ use App\Jobs\SendAdminPayLaterOrderNotificationJob;
 use App\Models\ContentBriefOrder;
 use App\Models\ContentOptimizationOrder;
 use App\Models\Coupon;
+use App\Models\Discount;
 use App\Models\DrTier;
 use App\Models\Invoice;
 use App\Models\LinkBuildingOrder;
@@ -79,9 +80,10 @@ class DeferredCartController extends Controller
         // out of order creation and recorded as a gift card claim afterwards.
         [$coupon_models, $reward_coupon] = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
 
-        // Promotions never stack: a money back promo code replaces the bulk
-        // discount unless the admin allowed stacking on the discount record.
-        $skip_bulk_discount = ! $this->giftCardRewardService->allowsBulkDiscountWith($reward_coupon, 'link_building');
+        // Promotions do not stack: any promo code removes the bulk discount,
+        // unless the admin allowed combining them on the discount record.
+        $has_reward_coupon         = $reward_coupon !== null;
+        $allow_promo_code_stacking = Discount::allowsPromoCodeStacking('link_building');
 
         $order_title      = $request->input('order_title');
         $order_notes      = $request->input('order_notes');
@@ -100,7 +102,8 @@ class DeferredCartController extends Controller
         try {
             DB::transaction(function () use (
                 $user, $order_title, $order_notes,
-                $coupon_models, $session_id, $session_title, $skip_bulk_discount,
+                $coupon_models, $session_id, $session_title,
+                $has_reward_coupon, $allow_promo_code_stacking,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
                 &$created_orders
@@ -109,7 +112,7 @@ class DeferredCartController extends Controller
                     $link_building_entry = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_bulk_discount
+                        $has_reward_coupon, $allow_promo_code_stacking
                     );
                     $created_orders[] = $link_building_entry;
 
@@ -303,7 +306,8 @@ class DeferredCartController extends Controller
         ?string $order_notes,
         ?string $session_id,
         ?string $session_title,
-        bool $skip_bulk_discount = false
+        bool $has_reward_coupon = false,
+        bool $allow_promo_code_stacking = false
     ): array {
         $items = $this->tierPricingService->resolveItemPrices('link_building', $items);
 
@@ -326,10 +330,7 @@ class DeferredCartController extends Controller
 
         $subtotal = round($subtotal, 2);
 
-        // Only one discount type applies per order: an explicitly submitted coupon always wins;
-        // bulk discount is only used as a fallback when no coupon was provided.
-        // $skip_bulk_discount covers money back promo codes, which also never stack.
-        $potential_bulk = (! $skip_bulk_discount && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
+        $potential_bulk = $total_links >= self::BULK_DISCOUNT_THRESHOLD
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 
@@ -356,15 +357,11 @@ class DeferredCartController extends Controller
             }
         }
 
-        // When a coupon is explicitly submitted it always overrides the bulk discount
-        // so only one discount type applies per order — matching CartController behaviour.
-        if ($potential_coupon_amount > 0) {
-            $bulk_discount   = 0.0;
-            $applied_coupons = $potential_coupons;
-        } else {
-            $bulk_discount   = $potential_bulk;
-            $applied_coupons = [];
-        }
+        // Promotions do not stack: any promo code (price discount or money back)
+        // removes the bulk discount, unless the admin allowed combining them.
+        $has_promo_code  = $potential_coupon_amount > 0 || $has_reward_coupon;
+        $bulk_discount   = Discount::resolveBulkDiscount($potential_bulk, $has_promo_code, $allow_promo_code_stacking);
+        $applied_coupons = $potential_coupon_amount > 0 ? $potential_coupons : [];
 
         $total_discount = $bulk_discount + array_sum(array_column($applied_coupons, 'discount_amount'));
         $order_total    = max(0.0, round($subtotal - $total_discount, 2));

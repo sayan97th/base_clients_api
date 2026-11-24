@@ -137,13 +137,33 @@ class PromoCodeStackingPriceAuthorityTest extends TestCase
         $this->assertEquals([self::BULK_PRICE], $this->verified_amounts);
     }
 
-    public function test_the_api_expects_the_promo_price_for_a_price_discount_promo_code(): void
+    public function test_the_api_expects_the_promo_price_for_a_price_discount_promo_code_by_default(): void
     {
-        $this->makeStackableBulkDiscount();
+        $this->makeBulkDiscount();
         $this->mockStripeAuthorizedFor(3800.0);
 
         $this->checkout([$this->makeRegularCoupon(['discount_value' => 5.0])->id], 3800.0)->assertOk();
 
         $this->assertEquals([3800.0], $this->verified_amounts);
+    }
+
+    public function test_a_payment_for_the_combined_price_is_rejected_by_default(): void
+    {
+        $this->makeBulkDiscount();
+        $this->mockStripeAuthorizedFor(3400.0);
+
+        $this->checkout([$this->makeRegularCoupon(['discount_value' => 5.0])->id], 3400.0)->assertStatus(402);
+
+        $this->assertDatabaseCount('link_building_orders', 0);
+    }
+
+    public function test_the_api_expects_the_combined_price_when_combining_is_allowed(): void
+    {
+        $this->makeStackableBulkDiscount();
+        $this->mockStripeAuthorizedFor(3400.0);
+
+        $this->checkout([$this->makeRegularCoupon(['discount_value' => 5.0])->id], 3400.0)->assertOk();
+
+        $this->assertEquals([3400.0], $this->verified_amounts);
     }
 }

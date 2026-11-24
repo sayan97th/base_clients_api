@@ -193,4 +193,49 @@ class PromoCodeStackingInvoiceTest extends TestCase
             ->assertJsonPath('data.discounts.0.name', 'Bulk Link Building Discount')
             ->assertJsonPath('data.discounts.0.discount_amount', 400);
     }
+
+    // ─── Price discount promo codes ───────────────────────────────────────────
+
+    public function test_invoice_shows_only_the_promo_code_when_it_replaced_the_bulk_discount(): void
+    {
+        $this->makeBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $this->checkout(['total_amount' => 3800.0, 'coupon_ids' => [$coupon->id]])->assertOk();
+
+        $invoice = $this->latestInvoice();
+        $this->assertEquals(0.0, (float) $invoice->discount_amount);
+        $this->assertEquals(3800.0, (float) $invoice->total_amount);
+    }
+
+    public function test_invoice_shows_the_bulk_discount_and_the_promo_code_when_combining_is_allowed(): void
+    {
+        $this->makeStackableBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $this->checkout(['total_amount' => 3400.0, 'coupon_ids' => [$coupon->id]])->assertOk();
+
+        $invoice = $this->latestInvoice();
+        $this->assertEquals(400.0, (float) $invoice->discount_amount);
+        $this->assertEquals(3400.0, (float) $invoice->total_amount);
+        $this->assertDatabaseHas('invoice_coupon_discounts', [
+            'invoice_id'      => $invoice->id,
+            'code'            => $coupon->code,
+            'discount_amount' => 200.0,
+        ]);
+    }
+
+    public function test_order_detail_lists_the_bulk_discount_and_the_promo_code_when_combining_is_allowed(): void
+    {
+        $this->makeStackableBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $this->checkout(['total_amount' => 3400.0, 'coupon_ids' => [$coupon->id]])->assertOk();
+
+        $this->orderDetail()
+            ->assertOk()
+            ->assertJsonPath('data.discounts.0.discount_amount', 400)
+            ->assertJsonPath('data.coupons.0.code', 'SAVE10')
+            ->assertJsonPath('data.coupons.0.discount_amount', 200);
+    }
 }

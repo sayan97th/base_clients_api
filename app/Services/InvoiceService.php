@@ -420,21 +420,23 @@ class InvoiceService
     }
 
     /**
-     * Bulk discount shown on the invoice of a Link Building order. Only one
-     * promotion applies per order, so it is zero when a promo code was used
-     * (coupon rows, or a money back promo code that left the order at full
-     * price) and when the order was not actually discounted (credits).
+     * Bulk discount shown on the invoice of a Link Building order: the part of
+     * the order savings not explained by its promo codes. It is zero when a
+     * promo code replaced the bulk discount (promotions do not stack by
+     * default) and when the order was not discounted at all (credits). When
+     * the admin allowed combining discounts and promo codes, the invoice shows
+     * both the bulk discount and the promo code.
      */
     private function linkBuildingBulkDiscountAmount(LinkBuildingOrder $order, int $total_links): float
     {
-        $has_coupon_applied   = $order->orderCoupons->isNotEmpty();
-        $was_order_discounted = round((float) $order->subtotal_before_discount - (float) $order->total_amount, 2) > 0;
-
-        if ($has_coupon_applied || ! $was_order_discounted || $total_links < self::BULK_DISCOUNT_THRESHOLD) {
+        if ($total_links < self::BULK_DISCOUNT_THRESHOLD) {
             return 0.0;
         }
 
-        return round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2);
+        $coupon_savings = (float) $order->orderCoupons->sum('discount_amount');
+        $bulk_discount  = round((float) $order->subtotal_before_discount - (float) $order->total_amount - $coupon_savings, 2);
+
+        return $bulk_discount >= 0.01 ? $bulk_discount : 0.0;
     }
 
     private function buildInvoice(

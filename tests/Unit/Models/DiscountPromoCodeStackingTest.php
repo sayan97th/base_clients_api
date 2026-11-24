@@ -9,8 +9,8 @@ use Tests\TestCase;
 
 /**
  * Discount model pieces behind "promotions never stack": the
- * allow_promo_code_stacking attribute, the active / forProductType scopes and
- * Discount::allowsPromoCodeStacking.
+ * allow_promo_code_stacking attribute, the active / forProductType scopes,
+ * Discount::allowsPromoCodeStacking and Discount::resolveBulkDiscount.
  */
 class DiscountPromoCodeStackingTest extends TestCase
 {
@@ -131,5 +131,29 @@ class DiscountPromoCodeStackingTest extends TestCase
 
         $this->assertTrue(Discount::allowsPromoCodeStacking('link_building'));
         $this->assertFalse(Discount::allowsPromoCodeStacking('new_content'));
+    }
+
+    // ── resolveBulkDiscount ──────────────────────────────────────────────────
+
+    public function test_bulk_discount_applies_without_a_promo_code(): void
+    {
+        $this->assertSame(400.0, Discount::resolveBulkDiscount(400.0, false, false));
+        $this->assertSame(400.0, Discount::resolveBulkDiscount(400.0, false, true));
+    }
+
+    public function test_a_promo_code_removes_the_bulk_discount_by_default(): void
+    {
+        $this->assertSame(0.0, Discount::resolveBulkDiscount(400.0, true, false));
+    }
+
+    public function test_a_promo_code_keeps_the_bulk_discount_when_combining_is_allowed(): void
+    {
+        $this->assertSame(400.0, Discount::resolveBulkDiscount(400.0, true, true));
+    }
+
+    public function test_no_bulk_discount_stays_at_zero(): void
+    {
+        $this->assertSame(0.0, Discount::resolveBulkDiscount(0.0, true, true));
+        $this->assertSame(0.0, Discount::resolveBulkDiscount(0.0, false, false));
     }
 }

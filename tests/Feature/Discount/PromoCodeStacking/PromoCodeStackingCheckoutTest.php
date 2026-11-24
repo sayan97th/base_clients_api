@@ -19,10 +19,10 @@ use Tests\Support\GiftCardReward\InteractsWithGiftCardRewards;
 use Tests\TestCase;
 
 /**
- * Promotions never stack: when a client applies a promo code, the automatic
- * bulk discount is removed from the order. Admins can opt a discount back in
- * with "allow_promo_code_stacking", which only keeps it next to money back
- * promo codes (gift card rewards). Price discount promo codes always replace it.
+ * Promotions do not stack by default: when a client applies any promo code
+ * (price discount or money back), the automatic bulk discount is removed from
+ * the order. When the admin enables "allow_promo_code_stacking" on the
+ * discount, the client gets both the bulk discount and the promo code.
  *
  * Every scenario orders 10 links at $400 ($4,000), which meets the bulk
  * discount threshold (10% off, $3,600).
@@ -237,11 +237,9 @@ class PromoCodeStackingCheckoutTest extends TestCase
 
     // ─── Price discount promo codes ───────────────────────────────────────────
 
-    public function test_price_discount_promo_code_always_replaces_the_bulk_discount(): void
+    public function test_price_discount_promo_code_replaces_the_bulk_discount_by_default(): void
     {
-        // Even with stacking allowed, a promo code that lowers the price never
-        // combines with the bulk discount: only one discount applies.
-        $this->makeStackableBulkDiscount();
+        $this->makeBulkDiscount();
         $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
 
         $response = $this->cardCheckout([$coupon->id], 3800.0);
@@ -252,5 +250,83 @@ class PromoCodeStackingCheckoutTest extends TestCase
             'coupon_id'       => $coupon->id,
             'discount_amount' => 200.0,
         ]);
+    }
+
+    public function test_price_discount_promo_code_replaces_the_bulk_discount_even_when_it_saves_less(): void
+    {
+        $this->makeBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_type' => 'fixed_amount', 'discount_value' => 50.0]);
+
+        $response = $this->cardCheckout([$coupon->id], 3950.0);
+
+        $response->assertOk();
+        $this->assertEquals(3950.0, $this->orderTotal($response));
+    }
+
+    public function test_price_discount_promo_code_and_bulk_discount_both_apply_when_combining_is_allowed(): void
+    {
+        // Both are calculated on the full subtotal: 10% bulk ($400) plus 5% promo ($200).
+        $this->makeStackableBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $response = $this->cardCheckout([$coupon->id], 3400.0);
+
+        $response->assertOk();
+        $this->assertEquals(3400.0, $this->orderTotal($response));
+        $this->assertDatabaseHas('link_building_orders', [
+            'user_id'                  => $this->client->id,
+            'subtotal_before_discount' => self::FULL_PRICE,
+            'total_amount'             => 3400.0,
+        ]);
+        $this->assertDatabaseHas('link_building_order_coupons', [
+            'coupon_id'       => $coupon->id,
+            'discount_amount' => 200.0,
+        ]);
+    }
+
+    public function test_fixed_amount_promo_code_combines_with_the_bulk_discount_when_allowed(): void
+    {
+        // $4,000 minus the $400 bulk discount minus the $500 promo code.
+        $this->makeStackableBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_type' => 'fixed_amount', 'discount_value' => 500.0]);
+
+        $response = $this->cardCheckout([$coupon->id], 3100.0);
+
+        $response->assertOk();
+        $this->assertEquals(3100.0, $this->orderTotal($response));
+    }
+
+    public function test_deferred_checkout_combines_both_when_combining_is_allowed(): void
+    {
+        $this->makeStackableBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $response = $this->deferredCheckout([$coupon->id], 3400.0);
+
+        $response->assertOk();
+        $this->assertEquals(3400.0, $this->orderTotal($response));
+    }
+
+    public function test_deferred_checkout_replaces_the_bulk_discount_with_a_price_discount_promo_code_by_default(): void
+    {
+        $this->makeBulkDiscount();
+        $coupon = $this->makeRegularCoupon(['discount_value' => 5.0]);
+
+        $response = $this->deferredCheckout([$coupon->id], 3800.0);
+
+        $response->assertOk();
+        $this->assertEquals(3800.0, $this->orderTotal($response));
+    }
+
+    public function test_an_invalid_promo_code_does_not_remove_the_bulk_discount(): void
+    {
+        $this->makeBulkDiscount();
+        $expired_coupon = $this->makeRegularCoupon(['expires_at' => now()->subDays(5)]);
+
+        $response = $this->cardCheckout([$expired_coupon->id], self::BULK_PRICE);
+
+        $response->assertOk();
+        $this->assertEquals(self::BULK_PRICE, $this->orderTotal($response));
+        $this->assertDatabaseCount('link_building_order_coupons', 0);
     }
 }

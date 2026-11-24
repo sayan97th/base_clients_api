@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Jobs\SendAdminGiftCardRewardNotificationJob;
 use App\Models\Coupon;
-use App\Models\Discount;
 use App\Models\GiftCardRewardClaim;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -53,21 +52,6 @@ class GiftCardRewardService
         }
 
         return [$discount_coupons, $reward_coupon];
-    }
-
-    /**
-     * Promotions never stack: a money back promo code replaces the automatic
-     * bulk discount of a product type, unless every active discount for that
-     * product type has "allow_promo_code_stacking" enabled by an admin.
-     * Returns true when the bulk discount may stay on the order.
-     */
-    public function allowsBulkDiscountWith(?Coupon $reward_coupon, string $product_type): bool
-    {
-        if (! $reward_coupon) {
-            return true;
-        }
-
-        return Discount::allowsPromoCodeStacking($product_type);
     }
 
     /**

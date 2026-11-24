@@ -140,14 +140,15 @@ class GiftCardRewardCheckoutTest extends TestCase
         Queue::assertPushed(SendAdminGiftCardRewardNotificationJob::class);
     }
 
-    public function test_reward_is_based_on_the_total_after_bulk_discount(): void
+    public function test_reward_is_based_on_the_full_price_because_promotions_do_not_stack(): void
     {
         $coupon = $this->makeRewardCoupon();
 
-        // 10 links trigger the 10% bulk discount, which still applies with a reward coupon.
+        // 10 links would trigger the 10% bulk discount, but promotions never stack
+        // by default, so the reward coupon replaces it and the client pays full price.
         $response = $this->actingAs($this->client, 'api')->postJson('/api/cart/checkout', [
             'payment_method_id'   => 'pi_test_card',
-            'total_amount'        => 3600.0,
+            'total_amount'        => 4000.0,
             'session_id'          => (string) Str::uuid(),
             'billing'             => ['company' => null, 'address' => '', 'city' => '', 'state' => '', 'country' => '', 'postal_code' => ''],
             'coupon_ids'          => [$coupon->id],
@@ -159,8 +160,8 @@ class GiftCardRewardCheckoutTest extends TestCase
             ]],
         ]);
 
-        $response->assertOk()->assertJsonPath('data.gift_card_reward.reward_amount', 360);
-        $this->assertEquals(3600.0, (float) $response->json('data.orders.0.total_amount'));
+        $response->assertOk()->assertJsonPath('data.gift_card_reward.reward_amount', 400);
+        $this->assertEquals(4000.0, (float) $response->json('data.orders.0.total_amount'));
     }
 
     public function test_skipping_the_form_creates_a_pending_claim_without_notifying(): void

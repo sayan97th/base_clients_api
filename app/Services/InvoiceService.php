@@ -46,11 +46,7 @@ class InvoiceService
 
         $resolved_total_links = $total_links ?? (int) $order->items->sum('quantity');
 
-        // Bulk discount only applies when no coupon won — only one discount type is applied per order.
-        $has_coupon_applied   = $order->orderCoupons->isNotEmpty();
-        $bulk_discount_amount = (! $has_coupon_applied && $resolved_total_links >= self::BULK_DISCOUNT_THRESHOLD)
-            ? round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2)
-            : 0.0;
+        $bulk_discount_amount = $this->linkBuildingBulkDiscountAmount($order, $resolved_total_links);
 
         $line_items_data = $order->items->map(function ($item) use ($order) {
             return [
@@ -357,11 +353,7 @@ class InvoiceService
                 $order_subtotal = (float) $order->items->sum('subtotal');
                 $subtotal_amount += $order_subtotal;
 
-                // Bulk discount only applies when no coupon won — only one discount type per order.
-                $has_coupon_applied = $order->orderCoupons->isNotEmpty();
-                if (! $has_coupon_applied && $total_links >= self::BULK_DISCOUNT_THRESHOLD) {
-                    $discount_amount += round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2);
-                }
+                $discount_amount += $this->linkBuildingBulkDiscountAmount($order, $total_links);
 
                 foreach ($order->items as $item) {
                     $all_line_items[] = [
@@ -425,6 +417,24 @@ class InvoiceService
         }
 
         return $invoice;
+    }
+
+    /**
+     * Bulk discount shown on the invoice of a Link Building order. Only one
+     * promotion applies per order, so it is zero when a promo code was used
+     * (coupon rows, or a money back promo code that left the order at full
+     * price) and when the order was not actually discounted (credits).
+     */
+    private function linkBuildingBulkDiscountAmount(LinkBuildingOrder $order, int $total_links): float
+    {
+        $has_coupon_applied   = $order->orderCoupons->isNotEmpty();
+        $was_order_discounted = round((float) $order->subtotal_before_discount - (float) $order->total_amount, 2) > 0;
+
+        if ($has_coupon_applied || ! $was_order_discounted || $total_links < self::BULK_DISCOUNT_THRESHOLD) {
+            return 0.0;
+        }
+
+        return round($order->subtotal_before_discount * self::BULK_DISCOUNT_RATE, 2);
     }
 
     private function buildInvoice(

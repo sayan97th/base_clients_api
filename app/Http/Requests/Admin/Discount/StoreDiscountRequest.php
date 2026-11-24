@@ -20,6 +20,7 @@ class StoreDiscountRequest extends FormRequest
             'discount_rate'   => ['required', 'numeric', 'min:0.01', 'max:100'],
             'min_quantity'    => ['required', 'integer', 'min:1'],
             'applies_to'      => ['required', 'string', 'in:link_building,new_content,content_optimization,content_brief,all'],
+            'allow_promo_code_stacking' => ['boolean'],
             'is_active'       => ['boolean'],
             'dr_tier_ids'     => ['nullable', 'array'],
             'dr_tier_ids.*'   => ['string', 'exists:dr_tiers,id'],

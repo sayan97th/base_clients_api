@@ -79,6 +79,10 @@ class DeferredCartController extends Controller
         // out of order creation and recorded as a gift card claim afterwards.
         [$coupon_models, $reward_coupon] = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
 
+        // Promotions never stack: a money back promo code replaces the bulk
+        // discount unless the admin allowed stacking on the discount record.
+        $skip_bulk_discount = ! $this->giftCardRewardService->allowsBulkDiscountWith($reward_coupon, 'link_building');
+
         $order_title      = $request->input('order_title');
         $order_notes      = $request->input('order_notes');
         $session_id       = $request->input('session_id') ?? (string) Str::uuid();
@@ -96,7 +100,7 @@ class DeferredCartController extends Controller
         try {
             DB::transaction(function () use (
                 $user, $order_title, $order_notes,
-                $coupon_models, $session_id, $session_title,
+                $coupon_models, $session_id, $session_title, $skip_bulk_discount,
                 $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items,
                 &$created_orders
@@ -104,7 +108,8 @@ class DeferredCartController extends Controller
                 if (! empty($link_building_items)) {
                     $link_building_entry = $this->createLinkBuildingOrder(
                         $user, $link_building_items, $coupon_models,
-                        $order_title, $order_notes, $session_id, $session_title
+                        $order_title, $order_notes, $session_id, $session_title,
+                        $skip_bulk_discount
                     );
                     $created_orders[] = $link_building_entry;
 
@@ -297,7 +302,8 @@ class DeferredCartController extends Controller
         ?string $order_title,
         ?string $order_notes,
         ?string $session_id,
-        ?string $session_title
+        ?string $session_title,
+        bool $skip_bulk_discount = false
     ): array {
         $items = $this->tierPricingService->resolveItemPrices('link_building', $items);
 
@@ -322,7 +328,8 @@ class DeferredCartController extends Controller
 
         // Only one discount type applies per order: an explicitly submitted coupon always wins;
         // bulk discount is only used as a fallback when no coupon was provided.
-        $potential_bulk = $total_links >= self::BULK_DISCOUNT_THRESHOLD
+        // $skip_bulk_discount covers money back promo codes, which also never stack.
+        $potential_bulk = (! $skip_bulk_discount && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 

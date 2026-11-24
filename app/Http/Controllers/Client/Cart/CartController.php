@@ -242,6 +242,10 @@ class CartController extends Controller
         // out of order creation and recorded as a gift card claim afterwards.
         [$coupon_models, $reward_coupon] = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
 
+        // Promotions never stack: a money back promo code replaces the bulk
+        // discount unless the admin allowed stacking on the discount record.
+        $skip_bulk_discount = ! $this->giftCardRewardService->allowsBulkDiscountWith($reward_coupon, 'link_building');
+
         $billing       = $request->input('billing');
         $order_title   = $request->input('order_title');
         $order_notes   = $request->input('order_notes');
@@ -276,7 +280,7 @@ class CartController extends Controller
                 $coupon_models, $session_id, $session_title, $is_credits_payment,
                 $is_atomic_credits, $credits_amount,
                 $is_hybrid_payment, $hybrid_credits_amount, $skip_discounts,
-                $link_building_items, $content_optimization_items,
+                $skip_bulk_discount, $link_building_items, $content_optimization_items,
                 $new_content_items, $content_brief_items, $defer_details,
                 $snapshot_payment_method,
                 &$effective_payment_method_id,
@@ -334,7 +338,7 @@ class CartController extends Controller
                         $user, $link_building_items, $billing,
                         $effective_payment_method_id, $coupon_models,
                         $order_title, $order_notes, $session_id, $session_title,
-                        $skip_discounts, $defer_details
+                        $skip_discounts, $defer_details, $skip_bulk_discount
                     );
                     $created_orders[] = $link_building_entry;
 
@@ -724,6 +728,11 @@ class CartController extends Controller
             }
         }
 
+        // Mirrors checkout(): a money back promo code replaces the bulk discount
+        // unless the admin allowed stacking on the discount record.
+        [, $reward_coupon]  = $this->giftCardRewardService->splitRewardCoupon($coupon_models);
+        $skip_bulk_discount = ! $this->giftCardRewardService->allowsBulkDiscountWith($reward_coupon, 'link_building');
+
         $grand_total = 0.0;
 
         // ── Link Building ──
@@ -746,7 +755,7 @@ class CartController extends Controller
             }
             $subtotal = round($subtotal, 2);
 
-            $potential_bulk = (! $is_credits_payment && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
+            $potential_bulk = (! $is_credits_payment && ! $skip_bulk_discount && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
                 ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
                 : 0.0;
 
@@ -863,7 +872,8 @@ class CartController extends Controller
         ?string $session_id,
         ?string $session_title,
         bool $skip_discounts = false,
-        bool $defer_details = false
+        bool $defer_details = false,
+        bool $skip_bulk_discount = false
     ): array {
         $items = $this->tierPricingService->resolveItemPrices('link_building', $items);
 
@@ -887,8 +897,9 @@ class CartController extends Controller
         $subtotal = round($subtotal, 2);
 
         // Bulk discounts and coupons are skipped when paying with credits.
-        // Only one discount type applies — whichever saves more.
-        $potential_bulk = (! $skip_discounts && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
+        // Promotions never stack: a promo code always replaces the bulk discount
+        // ($skip_bulk_discount covers money back promo codes).
+        $potential_bulk = (! $skip_discounts && ! $skip_bulk_discount && $total_links >= self::BULK_DISCOUNT_THRESHOLD)
             ? round($subtotal * self::BULK_DISCOUNT_RATE, 2)
             : 0.0;
 
